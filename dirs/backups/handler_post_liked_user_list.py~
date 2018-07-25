@@ -1,0 +1,84 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# @Date    : 2015-05-18 17:41:52
+# @Author  : Your Name (you@example.org)
+# @Link    : http://example.org
+# @Version : $Id$
+from handler_baseHt import BaseHtHandler
+from log import get_logger
+import tornado.web
+from tornado.web import asynchronous
+from tornado.options import options
+import json
+import hashlib
+import datetime
+import hashlib
+from bson import ObjectId
+import random
+import time
+from log import get_logger
+from model.comment import Comment
+from model.activities import Activities
+import optionsSetting
+from utils.secret import *
+import traceback
+from utils.redis_client import RedisClient
+from utils.mongo_front import MongoFront
+from mongo_field_encoder import MongoFieldEncoder
+from model.posts import Post
+from mongolog import MongoHandler
+from mongokit.helpers import totimestamp, fromtimestamp
+from utils.token_im import TokenService
+from tornado.httpclient import HTTPRequest
+from utils.mongo_client import MongoClient
+import pymongo
+from auth import requires_auth
+try:
+    from tornado.curl_httpclient import CurlAsyncHTTPClient as AsyncHTTPClient
+except ImportError:
+    from tornado.simple_httpclient import SimpleAsyncHTTPClient as AsyncHTTPClient
+log = get_logger()
+class PostLikedUserListHandler(BaseHtHandler):
+    @requires_auth
+    @asynchronous
+    def get(self):
+        log.info("PostLikedUserListHandler.post is called")
+
+        post_id_list = self.get_argument('post_id_list',None)
+
+        post_id_array=post_id_list.split(",")
+
+        lookup = {
+            "post_id":{"$in":post_id_array}
+        }
+        # log.info("lookup:"+json.dumps(lookup,
+        #                   indent=2,
+        #                   ensure_ascii=False,
+        #                   cls=MongoFieldEncoder))
+        user_like_cursor=options.dbconn.User_Like_post.find(lookup)
+        post_liked_user_set={}
+        for user_like in user_like_cursor:
+            username=user_like["username"]
+            post_id=user_like["post_id"]
+            post_liked_user_array=post_liked_user_set.get(post_id,[])
+            post_liked_user_array.append(username)
+            post_liked_user_set[post_id]=post_liked_user_array
+
+        response_array=[]
+        for key in  post_liked_user_set:
+            response_array.append(
+                {
+                    "post_id":key,
+                    "liked_user_list":post_liked_user_set[key]
+                }
+            )
+
+        reponse_json={}
+        reponse_json["entities"]=response_array
+        response = json.dumps(reponse_json,
+                          indent=2,
+                          ensure_ascii=False,
+                          cls=MongoFieldEncoder)
+        # log.info("response:"+response)
+        self.write(response)
+        self.finish()

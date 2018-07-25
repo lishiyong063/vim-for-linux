@@ -1,0 +1,237 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# @Date    : 2015-06-26 10:41:52
+# @Author  : Your Name (you@example.org)
+# @Link    : http://example.org
+# @Version : $Id$
+from handler_baseHt import BaseHtHandler
+from log import get_logger
+import tornado.web
+from tornado.web import asynchronous
+from tornado.options import options
+import json
+import hashlib
+import datetime
+import hashlib
+import random
+import pymongo
+import time
+from log import get_logger
+from model.accounts_ht import Account_ht
+from model.users import Users
+import optionsSetting
+import datetime
+from utils.secret import *
+import traceback
+from utils.redis_client import RedisClient
+from mongo_field_encoder import MongoFieldEncoder
+from mongolog import MongoHandler
+from mongokit.helpers import totimestamp, fromtimestamp
+from utils.token_im import TokenService
+from tornado.httpclient import HTTPRequest
+from utils.mongo_client import MongoClient
+import copy
+from auth import requires_auth
+try:
+    from tornado.curl_httpclient import CurlAsyncHTTPClient as AsyncHTTPClient
+except ImportError:
+    from tornado.simple_httpclient import SimpleAsyncHTTPClient as AsyncHTTPClient
+log = get_logger()
+class StatisticHandler(BaseHtHandler):
+    @asynchronous
+    @requires_auth
+    def get(self):
+        log.info("StatisticHandler.get start")
+        type=self.get_argument('type','post')
+        #根据type来区分查询条件，和分组key
+        #一共有四种post,post_gps,comment,comment_gps
+        condition = {}
+        datemin = self.get_argument('datemin',None)
+        datemax = self.get_argument('datemax',None)
+        if datemin!=None:
+           log.info("datemin:"+datemin)
+           datemin = datetime.datetime.strptime(datemin, "%Y-%m-%d")
+           condition["created"]={"$gte":datemin}
+ 
+        if datemax!=None:
+           log.info("datemax:"+datemax)
+           datemax = datetime.datetime.strptime(datemax, "%Y-%m-%d")
+           created = condition["created"]
+           created["$lte"] = datemax
+           condition["created"]=created
+        if 'post' in type:
+            condition['act']='posts'
+            func = '''function(obj, prev) { if(obj.act=="posts"){prev.count++;}}'''
+        if 'comment' in type:
+             condition['act']='comment'
+             func = '''function(obj, prev) { if(obj.act=="comment"){prev.count++;}}'''
+        if 'gps' in type:
+             key =[ 'admin','gps_info.city']
+        else:
+            key =[ 'admin']
+        response = self.count(key,condition,func)
+        response = json.dumps(response,
+                                  indent=2,
+                                  ensure_ascii=False,
+                                  cls=MongoFieldEncoder)
+        self.write(response)
+        self.finish()
+
+    @asynchronous
+    @requires_auth
+    def post(self):
+        log.info('StatisticHandler.post is called:'+self.request.body)
+        condition = {}
+        where = {}
+        request_dic = json.loads(self.request.body,encoding="utf-8")
+        datemin = request_dic.get('datemin',None)
+        datemax = request_dic.get('datemax',None)
+        if datemin!=None:
+           log.info("datemin:"+datemin)
+           datemin = datetime.datetime.strptime(datemin, "%Y-%m-%d")
+           condition["post_created"]={"$gte":datemin}
+           where["created"]={"$gte":datemin}
+
+        if datemax!=None:
+           log.info("datemax:"+datemax)
+           datemax = datetime.datetime.strptime(datemax, "%Y-%m-%d")
+           created = condition["post_created"]
+           created["$lte"] = datemax
+           condition["post_created"]=created
+           where["created"]=created
+
+        account_city_array = self.account()
+        post_count_dic = self.getPostCount(account_city_array,where)
+        condition['act'] ='comment'
+        response = self.getCommentCount(post_count_dic,condition)
+        response = json.dumps(response,
+                                  indent=2,
+                                  ensure_ascii=False,
+                                  cls=MongoFieldEncoder)
+        self.write(response)
+        self.finish()
+
+
+
+    def count(self,key,condition,func):
+        initial = {'count': 0}
+        post_activities = MongoClient.group('admin_post_activiy',key,condition,initial,func)
+        response = {}
+        entities = []
+
+        #gps需要返回所占百分比，信息结构为{"info":{"admin":{"北京市":{"num":1,"percent":0.5},"count":5}}}
+        if "gps_info.city" in key:
+            info = {}
+            self.count_dic = {}
+            for post_activity in post_activities:
+                admin = post_activity.get("admin")
+                city = post_activity.get("gps_info.city")
+                count = post_activity.get("count")
+                self.admin_count(admin,count)
+                self.dic_deal(info,admin,{"name":city,"num":count})
+            self.percent_deal(info)
+            response = info
+        else:
+            for post_activity in post_activities:
+                entities.append(post_activity)
+            response["entities"] = entities
+
+        return response
+
+
+    def admin_count(self,admin,count):
+        if self.count_dic.has_key(admin):
+            self.count_dic[admin] = self.count_dic[admin]+count
+        else:
+            self.count_dic[admin] = count
+
+
+
+    
+  
+    def dic_deal(self,dic,admin,city_dic):
+       if dic.has_key(admin):
+           dic[admin]["city"].append(city_dic)
+       else:
+           dic[admin]={
+                       "city":[city_dic]
+                       }
+            
+    def percent_deal(self,dic):
+        for dic_el in dic:
+            city_list = dic[dic_el]["city"]
+            city_list_tmp=[]
+            for city_info in city_list:
+                num = city_info["num"]
+                percent = num/self.count_dic[dic_el]
+                city_info["percent"] = round(percent*100,0)
+                city_list_tmp.append(city_info)
+
+            dic[dic_el]["count"] = self.count_dic[dic_el]
+            
+            
+            
+
+    '''
+    获得每个运营人员管理的城市
+    '''
+    def account(self):
+        lookup = {"province_city_array":{"$exists":True}}
+        filters = {'_id':0,"username":1,"province_city_array":1,"real_name":1}
+        accounts = MongoClient.find_all(lookup,"accounts", filters)
+        account_city_array = []
+        for account in accounts:
+            province_city_array = account["province_city_array"]
+            citys_array = []
+            for province_city in province_city_array:
+                citys = province_city.get("citys","")
+                if citys != "":
+                    citys_array_tmp = citys.split(",")
+                    citys_array.extend(citys_array_tmp)
+            account_city_array.append({"username":account["username"],"citys":citys_array})
+        return account_city_array
+
+    '''
+    获得每个人所负责地区的渔获总数
+    '''
+    def getPostCount(self,account_city_array,condition):
+        where = copy.copy(condition)
+        post_count_dic = {}
+        for account_city in account_city_array:
+            username = account_city["username"]
+            citys = account_city["citys"]
+            if len(citys)>0:
+                where["gps_info.city"] = {"$in":citys}
+                where ['deleted']= {'$ne': True}
+                count = options.dbconn.Post.find(where).count()
+                post_count_dic[username] =count
+        return post_count_dic
+
+    '''
+    获得每个运营人员的（根据渔获id去重后的）评论数
+    '''
+    def getCommentCount(self,post_count_dic,condition):
+        key =[ 'admin']
+        initial = {'com_count': 0,'post_dic':{}}
+        func = '''function(obj, prev) { if(obj.post_id in prev.post_dic){}else{prev.com_count++;prev.post_dic[obj.post_id]=1}}'''
+        post_activities = MongoClient.group('admin_post_activiy',key,condition,initial,func)
+
+        response = {}
+        entities = []
+        for post_activity in post_activities:
+                admin = post_activity["admin"]
+                if post_count_dic.has_key(admin):
+                    count = post_count_dic.get(admin)
+                    post_activity["count"]=count
+                    post_activity["percent"]=post_activity["com_count"]*100/count
+                    del post_activity['post_dic']
+                    entities.append(post_activity)
+        response["entities"] = entities
+
+        return response
+
+
+            
+            
+        
+        

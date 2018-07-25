@@ -1,0 +1,134 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# @Date    : 2015-05-18 17:41:52
+# @Author  : Your Name (you@example.org)
+# @Link    : http://example.org
+# @Version : $Id$
+from handler_baseHt import BaseHtHandler
+from log import get_logger
+import tornado.web
+from tornado.web import asynchronous
+from tornado.options import options
+import json
+import hashlib
+import datetime
+import hashlib
+import random
+import pymongo
+import time
+from log import get_logger
+from model.accounts_ht import Account_ht
+from model.users import Users
+import optionsSetting
+import datetime
+import  time
+from utils.secret import *
+import traceback
+from utils.redis_client import RedisClient
+from mongo_field_encoder import MongoFieldEncoder
+from mongolog import MongoHandler
+from mongokit.helpers import totimestamp, fromtimestamp
+from utils.token_im import TokenService
+from tornado.httpclient import HTTPRequest
+from utils.mongo_client import MongoClient
+from utils.mongo_front import MongoFront
+from auth import requires_auth
+import re
+try:
+    from tornado.curl_httpclient import CurlAsyncHTTPClient as AsyncHTTPClient
+except ImportError:
+    from tornado.simple_httpclient import SimpleAsyncHTTPClient as AsyncHTTPClient
+log = get_logger()
+class VestSearchHandler(BaseHtHandler):
+    @asynchronous
+    @requires_auth
+    def get(self):
+        log.info("VestSearchHandler.get:"+self.request.body)
+        self.set_header("Access-Control-Allow-Origin", "*")
+        where={
+            'freeze_status': {'$ne': "2"},
+            'user_type':'2'
+        }
+        sort_by = "created"
+        sort_val = pymongo.DESCENDING
+        condition = self.get_argument('condition',"")
+        # log.info("condition:"+condition)
+
+
+        curr_username=self.username
+        if curr_username=="admin" or curr_username=="fenglin" or curr_username=='ziya009':
+            if condition:
+                condition_dic = json.loads(condition,encoding="utf-8")
+                belong_to=condition_dic.get("belong_to","")
+                if belong_to:
+                    where["belong_to"]=belong_to
+        else:
+           where["belong_to"]=curr_username
+
+        log.info("1111111:"+str(where))
+        response={}
+
+        filter={
+            "_id":0,
+            "username":1,
+            "sex":1,
+            "followed_num":1,
+            "post_count":1,
+            "nick":1,
+            "last_login":1,
+            "gps_info":1,
+            "last_post_date":1,
+            "following_num":1,
+            "created":1,
+            "mobile":1,
+            "avatar_url":1
+        }
+        # log.info("where:"+json.dumps(where,indent=2, ensure_ascii=False,cls=MongoFieldEncoder))
+
+        limit=1000
+        curr = self.get_argument('curr',"")
+        # log.info("curr:"+curr)
+        if curr=="":
+            user_cursor = options.dbconn.Users.find(where,fields=filter).sort(sort_by, sort_val).limit(limit)
+        else:
+            user_cursor = options.dbconn.Users.find(where,fields=filter).sort(sort_by, sort_val).skip((int(curr)-1)*limit).limit(limit)
+
+        log.info("user_cursor:"+str(user_cursor.count()))
+        users=[]
+        for user in user_cursor:
+            users.append(user)
+
+        ###由于只取最近1000个小号,子牙团队因为创建太早没能拍到1000位,只能另外附加
+        if curr_username=="admin" or curr_username=="fenglin" or curr_username=='ziya009':
+            where={
+                "username":{"$in":["0f3d707e70b311e58b9200163e0044d9","e1c7d92b0fe311e5acdd34363b6f45fc"]}
+            }
+            user_cursor = options.dbconn.Users.find(where,fields=filter)
+            for user in user_cursor:
+                users.append(user)
+
+
+        post_count_sum=0
+        # post_count_sum_db=MongoFront.aggregate_sum("post_count","users",where)
+        # if post_count_sum_db and len(post_count_sum_db)==1:
+        #     log.info("post_count_sum_db:"+str(post_count_sum_db))
+        #     post_count_sum=post_count_sum_db[0]["count"]
+
+
+        response["entities"]=users
+        response["post_count_sum"]=post_count_sum
+        response["count"]=str(user_cursor.count())
+
+        self.write(json.dumps(response, ensure_ascii=False,cls=MongoFieldEncoder))
+        self.finish()
+    
+    def fire_response_bad_response(self):
+        """
+        返回登录请求错误响应
+        """
+        self.set_status(400)
+        response = {}
+        response["error"] = "invalid_grant"
+        response["error_description"] = "invalid username or password"
+        self.write(json.dumps(response, indent=2, ensure_ascii=False))
+        self.finish()

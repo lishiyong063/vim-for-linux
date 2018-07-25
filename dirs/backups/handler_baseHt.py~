@@ -1,0 +1,253 @@
+#!/usr/bin/env python
+
+# -*- coding: utf-8 -*-
+# @Date    : 2015-05-15 11:05:00
+# @Author  : Your Name (you@example.org)
+# @Link    : http://example.org
+# @Version : $Id$
+
+import tornado.web
+import datetime
+import time
+from tornado.options import options
+import json
+from log import get_logger
+from utils.secret import *
+import traceback
+from urllib import quote
+from sms.sms_selector import SMS_Selector
+from utils.mongo_client import MongoClient
+from utils.redis_client import RedisClient
+from model.accounts_ht import Account_ht
+from model.permissions_ht import Permissions_ht
+from mongo_field_encoder import MongoFieldEncoder
+from tornado import gen
+from tornado.httpclient import HTTPRequest
+from sms.mandao_channel import MandaoChannel
+try:
+    from tornado.curl_httpclient import CurlAsyncHTTPClient as AsyncHTTPClient
+except ImportError:
+    from tornado.simple_httpclient import SimpleAsyncHTTPClient as AsyncHTTPClient
+log = get_logger()
+class BaseHtHandler(tornado.web.RequestHandler):
+
+    def __init__(self, application, request, **kwargs):
+        super(BaseHtHandler, self).__init__(application, request, **kwargs)
+        self._me = None
+        self._username=None
+
+    @property
+    def me(self):
+        if self._me is None:
+            token = self.get_cookie("houtai_token")
+            
+            '''
+            lookup = {'token': token} 
+            filters = {'_id':0, 'username':1}
+            account = options.dbconn.Account.find_one(lookup, filters)
+            if account is None:
+                return self._me
+            username = account["username"]
+            '''
+            username = self.username
+            lookup = {'username': username}
+            filters = {'_id':0,"password":0}
+            self._me = options.dbconn_ht.Account_ht.one(lookup, filters)
+        return self._me
+
+    @property
+    def username(self):
+        if self._username is None:
+            token = self.get_cookie("houtai_token")
+            if token is not None or token !="":
+                try:
+                    real_token=decrypt(token,options.token_key)
+                    token_array=real_token.split(":")
+                    self._username=token_array[0]
+                except:
+                    self.fire_response_bad_request()
+
+        return self._username
+
+    def fire_response_sys_error(self):
+        self.set_status(400)
+        response = {}
+        response["error"] = "sys_error"
+        response["error_description"] = "System Exception,please retry"
+        self.write(json.dumps(response, indent=2, ensure_ascii=False))
+        self.finish()
+
+    def fire_response_error_info(self,error,desc):
+        self.set_status(400)
+        response = {}
+        response["error"] = error
+        response["error_description"] = desc
+        self.write(json.dumps(response, indent=2, ensure_ascii=False))
+        self.finish()
+
+    def fire_response_bad_content(self,error,des,content):
+        self.set_status(400)
+        response = {}
+        response["error"] = error
+        response["error_description"] = des
+        response["content"] = content
+        self.write(json.dumps(response, indent=2, ensure_ascii=False))
+        self.finish()
+        
+        
+    def fire_response_bad_request(self, key_required=None):
+        self.set_status(400)
+        response = {}
+        response["error"] = "bad_request"
+        if key_required is None:
+            response["error_description"] = "page and location are required"
+        else:
+            response["error_description"] = "%s is required" % key_required
+        self.write(json.dumps(response, indent=2, ensure_ascii=False))
+        self.finish()
+
+    def fire_response_bad_response(self):
+        """
+        返回登录请求错误响应
+        """
+        self.set_status(400)
+        response = {}
+        response["error"] = "invalid_grant"
+        response["error_description"] = "invalid username or password"
+        self.write(json.dumps(response, indent=2, ensure_ascii=False))
+        self.finish()
+
+
+    ###http get请求
+    @gen.coroutine
+    def request_get_json(self, url, token=None):
+        headers = {}
+        headers["Host"] = options.api_host
+        if token:
+            headers["Authorization"] = " Bearer %s" % (token)
+        request = HTTPRequest(url=url, \
+                              method="GET", \
+                              headers=headers, \
+                              follow_redirects=False, \
+                              request_timeout=3000)
+
+        response = yield gen.Task(AsyncHTTPClient().fetch, request)
+        # log.info("response.code:"+str(response.code))
+        # log.info("response.body:"+str(response.body))
+
+        raise gen.Return(response)
+
+    ###http post请求
+    @gen.coroutine
+    def request_post_json(self, url, data, token=None, headers={}):
+
+        headers["Host"] = options.api_host
+        if token:
+            headers["Authorization"] = " Bearer %s" % (token)
+        request = HTTPRequest(url=url, \
+                              method="POST", \
+                              headers=headers, \
+                              body=json.dumps(data, indent=2, ensure_ascii=False, cls=MongoFieldEncoder), \
+                              follow_redirects=False, \
+                              request_timeout=3000)
+
+        response = yield gen.Task(AsyncHTTPClient().fetch, request)
+        log.info("response.code:" + str(response.code))
+        log.info("response.body:" + str(response.body))
+
+        raise gen.Return(response)
+
+    ##http delete请求
+    @gen.coroutine
+    def request_delete_json(self, url, data="", token=None):
+        headers = {}
+        headers["Host"] = options.api_host
+        if token:
+            headers["Authorization"] = " Bearer %s" % (token)
+        request = HTTPRequest(url=url, \
+                              method="DELETE", \
+                              headers=headers, \
+                              follow_redirects=False, \
+                              request_timeout=3000)
+
+        response = yield gen.Task(AsyncHTTPClient().fetch, request)
+        # log.info("response.code:"+str(response.code))
+        # log.info("response.body:"+str(response.body))
+
+        raise gen.Return(response)
+
+    def sendHuanxinMessages(self,message_event):
+        try:
+            queue_name="q_fish_message_event_debug"
+
+            #### 保存消息监控表
+            message_monitor_entity={
+                "created":datetime.datetime.utcnow(),
+                "begin_milli":int(round(time.time() * 1000)),
+                "message_event":message_event
+            }
+            id=MongoClient.insert(message_monitor_entity,"message_monitor")
+
+            message_event["message_monitor_id"]=id
+            message_event["message_type"]="check"
+
+            message_event = json.dumps(message_event,
+                              indent=2,
+                              ensure_ascii=False,
+                              cls=MongoFieldEncoder)
+            log.info("message_event:"+message_event)
+            result =RedisClient.rpush(queue_name,message_event)
+
+        except Exception as e:
+            log.info('Exception:%s' % e.message)
+            log.error(traceback.format_exc())
+
+    def sendSMSMessages(self,tel,content):
+        try:
+            content=content+u" 退订回复T【子牙钓鱼】"
+            content=quote(content.encode('GBK'))
+            log.info("begin_send:"+tel)
+            #
+            log.info("sms_content:"+content)
+
+            sms_channel, index = SMS_Selector.getRandomSMSChanel(tel)
+            # 内网用漫道
+            # sms_channel = MandaoChannel()
+            log.info("url:" + sms_channel.get_url())
+            sms_url = sms_channel.get_url() % (tel, content)
+            log.info("sms_url:" + sms_url)
+
+            # # sms_url_temp="http://sdk.entinfo.cn:8060/webservice.asmx/mt?sn=SDK-WSS-010-09569&pwd=A05AD359AD6B6B69250C784AE29279C9&mobile=%s&content=%s&ext=&stime=&rrid="
+            # sms_url_temp="http://sdk.entinfo.cn:8060/webservice.asmx/mt?sn=SDK-WSS-010-06443&pwd=5223B6D90FE32809C0BB7A1C84351973&mobile=%s&content=%s&ext=1&stime=&rrid="
+            # # sms_url_temp="http://221.179.180.158:9007/QxtSms/QxtFirewall?OperID=nbchat&OperPass=Nbchat178&SendTime=&ValidTime=&AppendID=&DesMobile=%s&Content=%s&ContentType=8"
+            # sms_url=sms_url_temp%(tel,content)
+            # # log.info("sms_url:"+sms_url)
+            http_request  = tornado.httpclient.HTTPRequest(url=sms_url,
+                                               method='GET',
+                                               headers={},
+                                               use_gzip=True,
+                                               connect_timeout=2000,
+                                               request_timeout=2000)
+            http_client = tornado.httpclient.HTTPClient()
+            response = http_client.fetch(http_request)
+            log.info("response:"+response.body)
+
+            # 使用下一个通道
+            if not sms_channel.is_response_ok(response):
+                sms_channel, index = SMS_Selector.getRandomSMSChanel(tel)
+                sms_extra_url = sms_channel.get_url() % (tel, content)
+                log.info("reply_sms_url:" + sms_extra_url)
+                http_request = tornado.httpclient.HTTPRequest(url=sms_url,
+                                                              method='GET',
+                                                              headers={},
+                                                              use_gzip=True,
+                                                              connect_timeout=2000,
+                                                              request_timeout=2000)
+                http_client = tornado.httpclient.HTTPClient()
+                response_extra = http_client.fetch(http_request)
+                log.info("response_extra:" + response_extra.body)
+
+        except Exception as e:
+            log.info('Exception:%s' % e.message)
+            log.error(traceback.format_exc())
+

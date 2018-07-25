@@ -1,0 +1,121 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# @Date    : 2015-05-18 17:41:52
+# @Author  : Your Name (you@example.org)
+# @Link    : http://example.org
+# @Version : $Id$
+from bson import ObjectId
+from handler_baseHt import BaseHtHandler
+from log import get_logger, get_logger
+from model.informs import Inform
+from model.permissions_ht import Permissions_ht
+from mongo_field_encoder import MongoFieldEncoder
+from mongokit.helpers import totimestamp, fromtimestamp
+from mongolog import MongoHandler
+from tornado.httpclient import HTTPRequest
+from tornado.options import options
+from tornado.web import asynchronous
+from utils.mongo_client import MongoClient
+from utils.mongo_front import MongoFront
+from utils.redis_client import RedisClient
+from utils.secret import *
+from utils.token_im import TokenService
+import datetime
+import hashlib
+import hashlib
+import json
+import optionsSetting
+import pymongo
+import random
+import time
+import tornado.web
+import traceback
+from auth import requires_auth
+import copy
+
+try:
+    from tornado.curl_httpclient import CurlAsyncHTTPClient as AsyncHTTPClient
+except ImportError:
+    from tornado.simple_httpclient import SimpleAsyncHTTPClient as AsyncHTTPClient
+log = get_logger()
+class CityCountHandler(BaseHtHandler):
+    @asynchronous
+    @requires_auth
+    def post(self):
+        log.info("CityCountHandler.get:"+self.request.body)
+        body = json.loads(self.request.body, encoding='utf-8')
+        cities = body.get("cities",[])
+        citite_tmp = copy.copy(cities)
+        where = {}
+        self.city_deal(citite_tmp,where)
+
+        response = {}
+        if len(cities)>0:
+            keys={"city":"$gps_info.city"}
+            result = MongoFront.aggregate_one(keys,"users",where)
+            for doc in result:
+                keys = doc["_id"]
+                city = keys["city"]
+                if (city==None or city=="") and "其他" in cities:
+                    city="其他"
+                elif city=="" and "海外" in cities:
+                    city="海外"
+                count = doc["count"]
+                if city in response:
+                     response[city]=response[city]+count
+                else:
+                    response[city]=count
+               
+
+
+
+        self.write(json.dumps(response,indent=2, ensure_ascii=False,cls=MongoFieldEncoder))
+        self.finish()
+
+    def city_deal(self,cities,where):
+
+        if cities!=None and len(cities)>0:
+            for city in cities:
+                if '海外' in city:
+                    index = cities.index('海外')
+                    del cities[index]
+                    where['$or']=[
+                                  {'gps_info.city':{'$in':cities}},
+                                  {'gps_info.country_code':{'$nin':['','cn'],'$exists':True}}
+                                  ]
+    
+                elif '其他' in city:
+                    index = cities.index('其他')
+                    del cities[index]
+                    cities.append('')
+    
+                    #由于海外的数据存在只有country_code,没有city，所以其他的数据应该把这类排除在外
+                    where['$or']=[
+                                  {'gps_info.city':{'$in':cities},'gps_info.country_code':'cn'},
+                                  {'gps_info.city':{'$exists':False},'gps_info.country_code':{'$exists':False}},
+                                  {'gps_info.city':{'$exists':False},'gps_info.country_code':'cn'}
+                                  ]
+    
+    
+                else:
+                     where['gps_info.city']={'$in':cities}
+
+
+
+
+
+
+        
+        
+    def fire_response_bad_response(self):
+        """
+        返回登录请求错误响应
+        """
+        self.set_status(400)
+        response = {}
+        response["error"] = "invalid_grant"
+        response["error_description"] = "invalid data"
+        self.write(json.dumps(response, indent=2, ensure_ascii=False))
+        self.finish()
+    
+   

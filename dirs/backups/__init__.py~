@@ -1,0 +1,27 @@
+"""
+招标网站爬取
+
+河北：
+http://www.hebpr.cn/fwdt/003005/003005001/serList.html
+
+北京:
+http://www.ccgp-beijing.gov.cn/  
+
+山西:
+http://www.ccgp-shanxi.gov.cn/view.php?ntype=fnotice&nodeid=100  
+
+内蒙古:
+http://www.nmgzfcg.gov.cn/nmzc/jygg/zbgkyqgg/A094401web_1.htm
+
+天津
+http://www.tjgpc.gov.cn/webInfo/getWebInfoList1.do?fkWebInfoclassId=W001_001_001
+
+国家的:
+http://search.ccgp.gov.cn/bxsearch?searchtype=1&page_index=1&bidSort=0&buyerName=&projectId=&pinMu=0&bidType=0&dbselect=bidx&kw=%E7%8E%AF%E4%BF%9D&start_time=2018%3A07%3A10&end_time=2018%3A07%3A17&timeType=2&displayZone=&zoneId=&pppStatus=0&agentName=
+
+国家分区域:
+    北京 天津 河北 山西 内蒙
+
+后台过滤关键字：
+微信推送：早六晚十自动更新。 可主动拉取最新数据。
+"""

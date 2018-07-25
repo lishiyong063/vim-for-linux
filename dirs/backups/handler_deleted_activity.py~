@@ -1,0 +1,208 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# @Date    : 2015-05-18 17:41:52
+# @Author  : Your Name (you@example.org)
+# @Link    : http://example.org
+# @Version : $Id$
+from handler_baseHt import BaseHtHandler
+from log import get_logger
+import tornado.web
+from tornado.web import asynchronous
+import re
+from tornado.options import options
+import json
+import hashlib
+import datetime
+import hashlib
+import random
+import pymongo
+import time
+from log import get_logger
+from model.accounts_ht import Account_ht
+from model.posts import Post
+import optionsSetting
+from utils.secret import *
+import traceback
+from utils.redis_client import RedisClient
+from mongo_field_encoder import MongoFieldEncoder
+from mongolog import MongoHandler
+from mongokit.helpers import totimestamp, fromtimestamp
+from utils.token_im import TokenService
+from tornado.httpclient import HTTPRequest
+from utils.mongo_front import MongoFront
+from services.service_post import getPostList
+from services.service_activity import *
+from services.service_post_display_count import *
+from bson import ObjectId
+from auth import requires_auth
+try:
+    from tornado.curl_httpclient import CurlAsyncHTTPClient as AsyncHTTPClient
+except ImportError:
+    from tornado.simple_httpclient import SimpleAsyncHTTPClient as AsyncHTTPClient
+log = get_logger()
+class ActivityDeletedHandler(BaseHtHandler):
+    @asynchronous
+    @requires_auth
+    def get(self):
+        log.info("ActivityDeletedHandler.get is called:"+str(self.request.remote_ip))
+        #初始化
+        where = { 'deleted': True}
+        sort= {}
+        sort_by = 'created'
+        sort_value = pymongo.DESCENDING
+        entities = []
+        response = {}
+
+        #查询参数设置
+        limit = int(self.get_argument('limit',10))
+        curr = self.get_argument('curr','')
+        datemin = self.get_argument('datemin',None)
+        datemax = self.get_argument('datemax',None)
+        post_type = self.get_argument('post_type','')
+        city = self.get_argument('city',None)
+        username = self.get_argument('username',None)
+
+        if username is not None:
+            where["actor.username"] = username
+
+        if datemin != None:
+           log.info("datemin:"+datemin)
+           datemin = datetime.datetime.strptime(datemin, "%Y-%m-%d")
+           where["created"] = {"$gte":datemin}
+
+        if datemax != None:
+           log.info("datemax:"+datemax)
+           datemax = datetime.datetime.strptime(datemax, "%Y-%m-%d")
+           between={}
+           if where.has_key("created"):
+               between=where["created"]
+
+           between["$lte"]=datemax
+           where["created"]=between
+
+        if post_type != "":
+            if post_type == "2":
+                where["post_type"] = "2"
+            elif post_type == "1":
+                where["post_type"] = {"$ne":"2"}
+
+
+
+        self.city_deal(city,where)
+
+        province = self.get_argument('province',None)
+        if province!=None:
+            log.info("province:"+province)
+            where['gps_info.province']=province
+
+
+
+        condition = self.get_argument('condition',None)
+
+        if condition!=None:
+            condition_dic=json.loads(condition,encoding="utf-8")
+            if condition_dic.has_key("ids"):
+                ids=condition_dic["ids"]
+                id_array=ids.split(",")
+                objectIdArray=[]
+                for id in id_array:
+                    objectIdArray.append(ObjectId(id))
+                where['_id'] = {"$in":objectIdArray}
+
+        ##排序
+        sort_by = self.get_argument("sort_by","")
+        sort_value = self.get_argument('sort_value',"")
+
+        log.info("where:"+str(where))
+        # log.info("sort_by:"+sort_by)
+        # log.info("sort_value:"+sort_value)
+        sort=[]
+        if sort_by=="":
+            order_by=self.get_argument("order_by","")
+            if order_by!="":
+                if order_by=="post":
+                    sort = [('rank_in_post',pymongo.ASCENDING),('created', pymongo.DESCENDING)]
+                if order_by=="boutique":
+                    sort = [('rank_in_boutique',pymongo.ASCENDING),('created', pymongo.DESCENDING)]
+            else:
+                ##默认排序：先按排名排，然后按发活动时间排
+                sort = [('rank',pymongo.ASCENDING),('created', pymongo.DESCENDING)]
+        else:
+            sort=[(sort_by,int(sort_value))]
+        #查询
+        log.info("sort:"+str(sort))
+        if curr=="":
+            activities = options.dbconn.Activities.find(where).sort(sort).limit(limit)
+        else:
+            activities = options.dbconn.Activities.find(where).sort(sort).skip((int(curr)-1)*limit).limit(limit)
+        #
+
+
+        #结果处理
+        #for activity in activities:
+            #entities.append(activity)
+        if activities!=None:
+            entities = self.getActivityList(activities)
+        response["entities"] = entities
+        response["count"] = str(activities.count())
+        self.write(json.dumps(response,indent=2, ensure_ascii=False,cls=MongoFieldEncoder))
+        self.finish()
+        
+        
+        
+    '''
+        获取帖子列表信息
+    '''
+    def getActivityList(self,posts_cursor):
+        username_array=[]
+        posts = []
+        if posts_cursor is not None:
+            for post in posts_cursor:
+                posts.append(post)
+                username_array.append(post["actor"]["username"])
+    
+        user_map=assembleActor(username_array)
+            
+        for post in posts:
+            ###组装帖子的actor信息
+            if user_map is not None and user_map.has_key(post["actor"]["username"]):
+                ##合并新数据和原有actor数据
+                post["actor"]=dict(post["actor"],**user_map[post["actor"]["username"]])   
+            
+        
+    
+        return posts
+        
+        
+        
+    def city_deal(self,city,where):
+        
+        if city!=None:
+            log.info("city:"+city) 
+            cities = city.split(',')
+            if '海外' in city:
+                index = cities.index('海外')
+                del cities[index]
+                where['$or']=[
+                              {'gps_info.city':{'$in':cities}},
+                              {'gps_info.country_code':{'$nin':['','cn'],'$exists':True}}
+                              ]
+            
+            elif '其他' in city:
+                index = cities.index('其他')
+                del cities[index]
+                cities.append('')
+                
+                #由于海外的数据存在只有country_code,没有city，所以其他的数据应该把这类排除在外
+                where['$or']=[
+                              {'gps_info.city':{'$in':cities},'gps_info.country_code':'cn'},
+                              {'gps_info.city':{'$exists':False},'gps_info.country_code':{'$exists':False}},
+                              {'gps_info.city':{'$exists':False},'gps_info.country_code':'cn'}
+                              ]
+                
+              
+            else:
+                 where['gps_info.city']={'$in':cities}
+
+
+                              

@@ -1,0 +1,124 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
+import pymongo
+conn = None
+db = None
+try:
+    from pymongo.objectid import ObjectId
+except ImportError:
+    from bson.objectid import ObjectId
+
+class MongoClient:
+    def __init__(self):
+        self.conn = pymongo.MongoClient('localhost',27017)
+        self.db = self.conn.banshiguide
+
+    def insert(self, post_json, collection):
+        table = self.db[collection] 
+        return table.insert(post_json),self.db.error()
+
+    def remove(self, where, collection):
+        if where is None or len(where)==0:
+            return
+        table = self.db[collection]
+        table.remove(where)
+
+    def update(self, where,updated,collection):
+        if where is None or len(where)==0:
+            return
+        table = self.db[collection]
+        return table.update(where,updated,multi=True)
+
+    def upsert(self, where,updated,collection):
+        if where is None or len(where)==0:
+            return
+        table = self.db[collection]
+        return table.update(where,updated,upsert=True)
+
+    def find(self, where,collection,orderby,asc,index,count_pre_page):
+        table = self.db[collection]
+        if orderby == "":
+             return table.find(where).limit(count_pre_page).skip(index)
+        else:
+            if asc:
+                return table.find(where).sort(orderby,pymongo.ASCENDING).limit(count_pre_page).skip(index)
+            else:
+                return table.find(where).sort(orderby,pymongo.DESCENDING).limit(count_pre_page).skip(index)
+
+
+    def finds(self, where,collection,filter=None,orderby="",asc=True,index=0,count_pre_page=0):
+        table = self.db[collection]
+        if orderby == "":
+             return table.find(where,filter).limit(count_pre_page).skip(index)
+        else:
+            if asc:
+                return table.find(where,filter).sort(orderby,pymongo.ASCENDING).limit(count_pre_page).skip(index)
+            else:
+                return table.find(where,filter).sort(orderby,pymongo.DESCENDING).limit(count_pre_page).skip(index)
+
+    def find_one(self, where,collection,filter=None):
+        table = self.db[collection]
+        if filter !=None or filter !="":
+            return table.find_one(where,filter)
+        else:
+          return table.find_one(where)
+
+    def find_all(self, where,collection,filter=None):
+        table = self.db[collection]
+        if filter !=None or filter !="":
+            return table.find(where,filter)
+        else:
+            return table.find(where)
+
+    def find_and_modify(self, where,updated,collection):
+        if where is None or len(where)==0:
+             return
+        table = self.db[collection]
+        return table.find_and_modify(where,updated,multi=True, new=True)
+
+    def  getObjectByID(self, id,collection):
+        table = self.db[collection]
+        where={'_id':ObjectId(id)}
+        """
+        where_dumps=json.dumps(where, cls=JSONEncoder)
+        
+        where_dic=json.loads(where_dumps, object_hook=decoder)
+        """
+        return table.find_one(where)
+
+    def delete(self, where,collection):
+        if where is None or len(where)==0:
+            return
+        table = self.db[collection]
+        table.remove(where)
+    
+    def count(self, where,collection):
+        table = self.db[collection]
+        return table.find(where).count()
+    
+    def aggregate_one(self, keys,collection,where={},count_name="count"):
+        table = self.db[collection]
+        result = {}
+        result = table.aggregate([
+                                    {"$match":where},
+                                        {"$group":
+                                                {"_id":keys,count_name: {"$sum": 1}}
+                                         }
+                                    ])
+
+        if result.has_key("result"):
+            return result.get("result")
+        else:
+            return None
+
+    def find_all_sorted_limited(self, where, collection, sorted, limited,filter=None):
+        table = self.db[collection]
+
+        if filter !=None or filter !="":
+            return table.find(where,filter).sort(sorted).limit(limited)
+        else:
+            return table.find(where).sort(sorted).limit(limited)
+
+
+mongo = MongoClient()

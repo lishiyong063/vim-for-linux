@@ -1,0 +1,178 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# @Date    : 2015-05-18 17:41:52
+# @Author  : Your Name (you@example.org)
+# @Link    : http://example.org
+# @Version : $Id$
+from handler_baseHt import BaseHtHandler
+from log import get_logger
+import tornado.web
+from tornado.web import asynchronous
+from tornado.options import options
+import json
+import hashlib
+import datetime
+import hashlib
+from bson import ObjectId
+import pymongo
+import random
+import time
+from log import get_logger
+from model.informs import Inform
+from model.permissions_ht import Permissions_ht
+import optionsSetting
+from utils.secret import *
+import traceback
+from utils.redis_client import RedisClient
+from utils.mongo_front import MongoFront
+from mongo_field_encoder import MongoFieldEncoder
+from services.service_user import *
+from services.service_activities import *
+from services.service_post import *
+from mongolog import MongoHandler
+from mongokit.helpers import totimestamp, fromtimestamp
+from utils.token_im import TokenService
+from tornado.httpclient import HTTPRequest
+from utils.mongo_client import MongoClient
+from auth import requires_auth
+try:
+    from tornado.curl_httpclient import CurlAsyncHTTPClient as AsyncHTTPClient
+except ImportError:
+    from tornado.simple_httpclient import SimpleAsyncHTTPClient as AsyncHTTPClient
+log = get_logger()
+class InformDetailHandler(BaseHtHandler):
+    @asynchronous
+    @requires_auth
+    def get(self):
+        log.info("InformDetailHandler.get is called")
+
+        id = self.get_argument('id',"")
+        where={
+            '_id':ObjectId(id)
+        }
+        informs=[]
+        inform=options.dbconn.Inform.find_one(where)
+
+        user_name_array=[]
+        post_id_array=[]
+        activity_id_array=[]
+        # for inform in inform_cursor:
+        user_name_array.append(inform["username"])
+        type=inform["inform_type"]
+        if type=="user":
+            user_name_array.append(inform["informed_username"])
+
+        if type=="post":
+            post_id_array.append(ObjectId(str(inform["informed_post_id"])))
+
+        if type=="activity":
+            activity_id_array.append(ObjectId(str(inform["informed_post_id"])))
+
+        informs.append(inform)
+
+        ##获取投诉人及被投诉人的账号信息
+        user_map={}
+        if len(user_name_array)>0:
+            user_map=get_actors_toMap(user_name_array)
+
+        ###获取被投诉的帖子信息
+        post_map={}
+        if len(post_id_array)>0:
+            lookup={
+                "_id":{"$in":post_id_array}
+            }
+            posts,cursor=getPostListByLookup(lookup)
+            for post in posts:
+                post_map[str(post["_id"])]=post
+
+        ##获取被投诉的活动信息
+        activity_map={}
+        if len(activity_id_array)>0:
+            lookup={
+                "_id":{"$in":activity_id_array}
+            }
+            activities,cursor=getActivityListByLookup(lookup)
+            for activity in activities:
+                activity_map[str(activity["_id"])]=activity
+
+        ###将用户、帖子、活动信息组装到informs对象中
+        for inform in informs:
+            if user_map.has_key(inform["username"]):
+                inform["actor"]=user_map[inform["username"]]
+
+            type=inform["inform_type"]
+            if type=="user":
+                if user_map.has_key(inform["informed_username"]):
+                    inform["informed_entity"]=user_map[inform["informed_username"]]
+
+            if type=="post":
+                if post_map.has_key(inform["informed_post_id"]):
+                    inform["informed_entity"]=post_map[inform["informed_post_id"]]
+
+            if type=="activity":
+                if activity_map.has_key(inform["informed_post_id"]):
+                    inform["informed_entity"]=activity_map[inform["informed_post_id"]]
+
+        response={}
+        response["entities"]=informs
+        self.write(json.dumps(response,indent=2, ensure_ascii=False,cls=MongoFieldEncoder))
+        self.finish()
+    
+    @asynchronous
+    def put(self):
+        log.info("InformHandler.put:"+self.request.body)
+
+        request_dic = json.loads(self.request.body,encoding="utf-8")
+        message=request_dic["message"]
+        inform_id=request_dic["inform_id"]
+        to_username=request_dic["to_username"]
+        to_nick=request_dic["to_nick"]
+
+
+        ##将举报设置成已处理
+        lookup={
+            "_id":ObjectId(inform_id)
+        }
+        updated={
+            '$set':{
+                "modified":datetime.datetime.utcnow(),
+                "is_reply":1
+            }
+        }
+        MongoFront.update(lookup,updated,"informs")
+        response={}
+        self.write(json.dumps(response,indent=2, ensure_ascii=False,cls=MongoFieldEncoder))
+        self.finish()
+
+        ###给发举报者发送建议回复的消息
+        if message.startswith('钓友'):
+            message=to_nick+message
+
+        message_json={
+             "message_type": "inform",
+             "content":message,
+             "to_usernames":[to_username],
+             "target":"apoint"
+
+        }
+
+        message_event = json.dumps(message_json,
+                               indent=2,
+                               ensure_ascii=False,
+                               cls=MongoFieldEncoder)
+        queue_name=options.redis_queue_message_event
+        log.info("insert queue:%s"%queue_name)
+        log.info("insert message_event:%s"%message_event)
+        result =RedisClient.rpush(queue_name,message_event)
+
+
+    def fire_response_bad_response(self):
+        """
+        返回登录请求错误响应
+        """
+        self.set_status(400)
+        response = {}
+        response["error"] = "invalid_grant"
+        response["error_description"] = "invalid username or password"
+        self.write(json.dumps(response, indent=2, ensure_ascii=False))
+        self.finish()

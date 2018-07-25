@@ -1,0 +1,722 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# @Date    : 2014-10-10 10:19:40
+# @Author  : Your Name (you@example.org)
+# @Link    : http://example.org
+# @Version : $Id$
+from mongokit import *
+from mongokit.helpers import totimestamp, fromtimestamp
+from utils.mongo_client import MongoClient
+from utils.mongo_slave_client import MongoSlaveClient
+from log import get_logger
+import traceback
+import json
+from utils.redis_client import RedisClient
+from tornado.options import options
+from bson import ObjectId
+import bson
+from mongo_field_encoder import MongoFieldEncoder
+from services.service_user import *
+from model.posts import Post
+from model.comment import Comment
+from model.user_post_activiy import User_post_activiy
+from model.user_like_post import User_Like_post
+from model.user_following import UserFollowing
+from utils.banner import getBanner
+from model.user_collect_tool import User_collect_tool
+#
+import pymongo
+import math
+
+log = get_logger()
+
+'''
+根据帖子ID获取帖子信息
+'''
+def getPostDetail(post_id,username=None,mold="post"):
+    try:
+        lookup = {
+            "_id":ObjectId(post_id),
+            "deleted": {"$ne": True}
+        }
+        filters = {"_id":1,"page":1,"content":1,"actor":1,"gps_info":1,"created":1,\
+                   "like_count":1,"comment_count":1,"display_count":1,"reward_count":1,\
+                   "yuhuo_type":1,"video":1,"type":1, "boutique": 1,"tag_tool" : 1, \
+                   "price":1,"title":1,"desc":1,"oldth":1,"tool_type":1,"contact_tel":1,
+                   "product_detail_array": 1,"deleted": 1,"at_user_list":1,"share_count":1, "label": 1
+                   }
+        # fields 返回字段 与filters 匹配，不使用fields 默认返回所有字段
+        post = options.dbconn.Post.find_one(lookup,fields=filters)
+        if post is None:
+            return None
+        # 封装用户信息
+        post = assemblatuserlist(post)
+
+        assembleAddress(post)
+
+        # mold 用来区分鱼获或者活动 装备:post activity tool
+        post["mold"]=mold
+        # yuhuo_type 0 为post  1 装备
+        # yuhuo_type 存数据库的  mold 返回给前端使用的
+        if post.get("yuhuo_type",0)==1:
+             post["mold"]="tool"
+        # 点赞
+        post["liked"]=False
+        # 收藏
+        post["collect"]=False
+        # 精品 is_boutique 为2是 为热门 热门 如何来定义
+        is_boutique = post.get("boutique", "")
+        if is_boutique == "2":
+            post["isHot"] = 1
+
+        ##获取是否点赞
+        if username is not None:
+
+            like_map=get_user_like(username,[post_id])
+            if like_map.has_key(post_id):
+                post["liked"]=True
+
+            # lookup={
+            #     'username':username,
+            #     'post_id':post_id
+            # }
+            #
+            # activity = options.dbconn.User_Like_post.find_one(lookup)
+            # if activity is not None:
+            #     post["liked"]=True
+
+            where_collect={
+                "post_id":post_id,
+                "username":username
+            }
+            if post.get("yuhuo_type",0)==1:#装备
+                activity = options.dbconn.User_collect_tool.find_one(where_collect)
+                if activity is not None:
+                    post["collect"]=True
+            else:#渔获
+                activity = options.dbconn.User_collect_post.find_one(where_collect)
+                if activity is not None:
+                    post["collect"]=True
+
+
+
+                
+        post["actor"]["follow"]=0
+        ##获取相互关注信息
+        if username is not None and username!=post["actor"]["username"]:
+            post_actor=post["actor"]["username"]
+            # 我关注了哪些人 我是关注者 找被关注者
+            # 哪些人关注了我 我是被关注者 找关注者
+            lookup={
+                "$or":
+                [
+                    {"followed":username,"following":post_actor},
+                    {"following":username,"followed":post_actor}
+                ]
+            }
+            
+            follows = options.dbconn.UserFollowing.find(lookup)
+            if follows is None or follows.count()==0:   
+                post["actor"]["follow"]=0            ##当前用户未关注发帖人
+            else:
+                if follows.count()==2:
+                    post["actor"]["follow"]=2        ###已经相互关注
+                else:
+                    follow=follows[0]
+                    
+                    if follow["followed"]==username and follow["following"]==post_actor:
+                        post["actor"]["follow"]=1       ##当前用户已关注发帖人(但是发帖用户并没有关注当前用户)
+                    else:
+                        post["actor"]["follow"]=3      ##当前用户未关注发帖人，但是发帖人已经关注用户
+
+        lookup = {
+            "to_post_id":post_id,
+            "type":"comments"
+        }
+        limit=15
+        comment_cursor = options.dbconn.Comment.find(lookup).sort('created', pymongo.DESCENDING).limit(limit+1)
+
+        username_array=[]
+        username_array.append(post["actor"]["username"])
+
+        comments = []
+        comment_id_array=[]
+        if comment_cursor is not None:
+            for comment in comment_cursor:
+                comments.append(comment)
+                username_array.append(comment["actor"]["username"])
+                comment_id_array.append(str(comment["_id"]))
+
+
+        cursor=""
+        if len(comments)==limit+1:
+            # del username_array[-1]
+            del comments[-1]
+            del comment_id_array[-1]
+            cursor = str(totimestamp(comments[-1]["created"]))
+
+        # log.info("cursor="+cursor)
+
+        ##构建用户的回复信息
+        reply_map=getReply(comment_id_array)
+
+        for comment in comments:
+            comment_id=str(comment["_id"])
+            if reply_map.has_key(comment_id):
+                reply_array=reply_map[comment_id]
+                comment["reply"]=reply_array
+                for reply in reply_array:
+                    username_array.append(reply["actor"]["username"])
+
+        actor_map=assembleActor(username_array)
+
+        ###组装帖子、评论和回复的actor消息
+        if actor_map.has_key(post["actor"]["username"]):
+            post["actor"]=dict(post["actor"],**actor_map[post["actor"]["username"]])
+
+        for comment in comments:
+            if actor_map.has_key(comment["actor"]["username"]):
+                comment["actor"]=actor_map[comment["actor"]["username"]]
+
+            if comment.has_key("reply"):
+                reply_array=comment["reply"]
+                for reply in reply_array:
+                    if actor_map.has_key(reply["actor"]["username"]):
+                        reply["actor"]=actor_map[reply["actor"]["username"]]
+
+        comment_info={}
+        if cursor !="":
+            comment_info["cursor"]=cursor
+
+        if comments is not None and len(comments)>0:
+            comment_info["content"]=comments
+
+        if len(comment_info)>0:
+            post["comment"]=comment_info
+
+        return post
+
+    except bson.errors.InvalidId as e:
+        log.info('PostHandler.fetch_post Exception(bson.errors.InvalidId):%s' % e.message)
+        log.error(traceback.format_exc())
+    except Exception as e:
+        log.info('PostHandler.fetch_post Exception():%s' % e.message)
+        log.error(traceback.format_exc())
+
+def getReply(comment_id_array):
+    lookup={
+        "to_comment_id":{'$in':comment_id_array}
+    }
+
+    reply_cursor=options.dbconn.Comment.find(lookup).sort('created', pymongo.ASCENDING)
+    # log.info("reply_cursor:"+str(reply_cursor.count()))
+
+    to_comment_map={}
+    for reply in reply_cursor:
+        to_comment_id=reply["to_comment_id"]
+        if to_comment_map.has_key(to_comment_id):
+            reply_array=to_comment_map[to_comment_id]
+            reply_array.append(reply)
+            to_comment_map[to_comment_id]=reply_array
+        else:
+            reply_array=[reply]
+            to_comment_map[to_comment_id]=reply_array
+
+    return to_comment_map
+
+
+'''
+获取帖子列表信息
+'''
+def getPostList(lookup={},limit=15,orderby=[('created', pymongo.DESCENDING)],username=None,mold="post"):
+
+    filter = {"_id":1,"page":1,"content":1,"actor":1,"gps_info":1,"created":1,"like_count":1,"comment_count":1,\
+              "display_count":1,"reward_count":1,"yuhuo_type":1, "tools_rank":1,"rank":1,"video":1,"type":1,\
+              "created_micros":1, "boutique": 1,"tool_type":1,"tag_tool" : 1, \
+              "price":1,"title":1,"desc":1,"oldth":1,"tool_type":1,"contact_tel":1,"product_detail_array":1,"at_user_list":1}
+    if len(orderby)==0:
+        posts_cursor = options.dbconn.Post.find(lookup,filter).limit(limit+1)
+    else:
+        posts_cursor = options.dbconn.Post.find(lookup,filter).sort(orderby).limit(limit+1)
+
+
+    username_array=[]
+    post_id_array=[]
+    posts = []
+    if posts_cursor is not None:
+        for post in posts_cursor:
+            post["mold"]=mold
+            post["liked"]=False
+            post["actor"]["follow"]=0
+            is_boutique = post.get("boutique", "")
+            if is_boutique == "2":
+                post["isHot"] = 1
+            post = assemblatuserlist(post)
+            assembleAddress(post)
+            posts.append(post)
+
+            username_array.append(post["actor"]["username"])
+            post_id_array.append(str(post["_id"]))
+            # log.info("content:"+post["content"]+" created:"+str(post["created"])+":"+str(totimestamp(post["created"])))
+
+    user_map=assembleActor(username_array)
+
+    cursor=""
+    if len(posts)==limit+1:
+        del username_array[-1]
+        del posts[-1]
+        del post_id_array[-1]
+        cursor = str(totimestamp(posts[-1]["created"]))
+
+    activity_map={}
+    follow_map={}
+    ##获取帖子是否被用户点赞信息
+    if username is not None:
+        activity_map=get_user_like(username,post_id_array)
+        # lookup={
+        #     'username':username,
+        #     'post_id':{'$in':post_id_array}
+        # }
+        #
+        # filter={
+        #     'post_id':1,"_id":0
+        # }
+        # activity_cursor =  options.dbconn.User_Like_post.find(lookup,filter)
+        # if activity_cursor is not None:
+        #     for activity in activity_cursor:
+        #         activity_post_id=activity["post_id"]
+        #         activity_map[activity_post_id]="1"
+
+        follow_map=assembleFollow(username,username_array)
+        
+        
+    for post in posts:
+        ###组装帖子的actor信息
+        if user_map is not None and user_map.has_key(post["actor"]["username"]):
+            ##合并新数据和原有actor数据
+            post["actor"]=dict(post["actor"],**user_map[post["actor"]["username"]])   
+        
+        ###组装帖子是否点赞
+        if activity_map is not None and activity_map.has_key(str(post["_id"])):
+            post["liked"]=True
+    
+        ###组装帖子的发帖人和当前用户之间的关注关系
+        if follow_map is not None and len(follow_map)>0:
+            folllow_post_actor_key=username+":"+post["actor"]["username"]       ###当前用户关注发帖用户
+            folllow_cur_user_key=post["actor"]["username"]+":"+username          ###发帖用户关注当前用户
+            if follow_map.has_key(folllow_post_actor_key) and follow_map.has_key(folllow_cur_user_key):
+                post["actor"]["follow"]=2
+
+            if follow_map.has_key(folllow_post_actor_key) and not follow_map.has_key(folllow_cur_user_key):
+                post["actor"]["follow"]=1
+
+            if not follow_map.has_key(folllow_post_actor_key) and follow_map.has_key(folllow_cur_user_key):
+                post["actor"]["follow"]=3
+
+            if not follow_map.has_key(folllow_post_actor_key) and not follow_map.has_key(folllow_cur_user_key):
+                post["actor"]["follow"]=0
+
+    return posts,cursor,post_id_array
+
+
+'''
+获取帖子列表信息
+'''
+def getPostSearchList(lookup={},limit=15,orderby=[('created_micros', pymongo.DESCENDING)],username=None,mold="post"):
+
+    if len(orderby)==0:
+        posts_search = list(MongoSlaveClient.find_all(lookup,"posts_search").limit(limit+1)) or []
+    else:
+        posts_search = list(MongoSlaveClient.find_all(lookup,"posts_search").sort(orderby).limit(limit+1)) or []
+
+    cursor=""
+    if len(posts_search)==limit+1:
+        del posts_search[-1]
+        cursor = str(posts_search[-1]["created_micros"])
+
+
+    post_id_array = []
+    post_objectid_array = []
+    for post in posts_search:
+        post_id = post["post_id"]
+        post_id_array.append(post_id)
+        post_objectid_array.append(ObjectId(post_id))
+
+    lookup = {"_id":{"$in":post_objectid_array}}
+    filter = {"_id":1,"page":1,"content":1,"actor":1,"gps_info":1,"created":1,"like_count":1,"comment_count":1,"display_count":1,"reward_count":1,"yuhuo_type":1, "tools_rank":1,"rank":1,"video":1,"type":1,"created_micros":1}
+    posts_cursor = list(options.dbconn.Post.find(lookup,filter)) or []
+
+    username_array=[]
+    posts = []
+    for post in posts_cursor:
+            post["mold"]=mold
+            post["liked"]=False
+            post["actor"]["follow"]=0
+            assembleAddress(post)
+            posts.append(post)
+            username_array.append(post["actor"]["username"])
+
+    user_map=assembleActor(username_array)
+
+
+    activity_map={}
+    follow_map={}
+    ##获取帖子是否被用户点赞信息
+    if username is not None:
+        activity_map=get_user_like(username,post_id_array)
+        follow_map=assembleFollow(username,username_array)
+
+
+    post_dic = {}
+    for post in posts:
+        ###组装帖子的actor信息
+        if user_map is not None and user_map.has_key(post["actor"]["username"]):
+            ##合并新数据和原有actor数据
+            post["actor"]=dict(post["actor"],**user_map[post["actor"]["username"]])
+
+        ###组装帖子是否点赞
+        if activity_map is not None and activity_map.has_key(str(post["_id"])):
+            post["liked"]=True
+
+        ###组装帖子的发帖人和当前用户之间的关注关系
+        if follow_map is not None and len(follow_map)>0:
+            folllow_post_actor_key=username+":"+post["actor"]["username"]       ###当前用户关注发帖用户
+            folllow_cur_user_key=post["actor"]["username"]+":"+username          ###发帖用户关注当前用户
+            if follow_map.has_key(folllow_post_actor_key) and follow_map.has_key(folllow_cur_user_key):
+                post["actor"]["follow"]=2
+
+            if follow_map.has_key(folllow_post_actor_key) and not follow_map.has_key(folllow_cur_user_key):
+                post["actor"]["follow"]=1
+
+            if not follow_map.has_key(folllow_post_actor_key) and follow_map.has_key(folllow_cur_user_key):
+                post["actor"]["follow"]=3
+
+            if not follow_map.has_key(folllow_post_actor_key) and not follow_map.has_key(folllow_cur_user_key):
+                post["actor"]["follow"]=0
+        post_id = str(post["_id"])
+        post_dic[post_id]=post
+
+    post_back = []
+    for post_id in post_id_array:
+        if post_id in post_dic:
+            post_back.append(post_dic[post_id])
+
+    return post_back,cursor,post_id_array
+
+
+'''
+获取帖子列表信息
+'''
+def getPostsFromRedis(begin,limit,list_name,username=None,mold="post"):
+    post_array=RedisClient.getListByScore(list_name,begin,limit+1)
+
+
+    post_id_array = []
+    post_objectid_array = []
+    for post in post_array:
+        post_id = post[0]
+        post_id_array.append(post_id)
+        post_objectid_array.append(ObjectId(post_id))
+
+    lookup = {"_id":{"$in":post_objectid_array}}
+    filter = {"_id":1,"page":1,"content":1,"actor":1,"gps_info":1,"created":1,"like_count":1,"comment_count":1,"display_count":1,"reward_count":1,"yuhuo_type":1, "tools_rank":1,"rank":1,"video":1,"type":1,"created_micros":1}
+    posts_cursor = list(options.dbconn.Post.find(lookup,filter)) or []
+
+    username_array=[]
+    posts = []
+    post_dic={}
+    for post in posts_cursor:
+        post_dic[str(post["_id"])]=post
+
+    for post_id in post_id_array:
+        if post_dic.has_key(post_id):
+            post=post_dic[post_id]
+            post["mold"]=mold
+            post["liked"]=False
+            post["actor"]["follow"]=0
+            assembleAddress(post)
+            posts.append(post)
+            username_array.append(post["actor"]["username"])
+
+
+
+    user_map=assembleActor(username_array)
+
+
+    cursor=-1
+    if len(posts)==limit+1:
+        cursor =posts[-1].get("created_micros","") #begin+limit
+        del username_array[-1]
+        del posts[-1]
+        del post_id_array[-1]
+
+
+
+    activity_map={}
+    follow_map={}
+    ##获取帖子是否被用户点赞信息
+    if username is not None:
+        activity_map=get_user_like(username,post_id_array)
+        follow_map=assembleFollow(username,username_array)
+
+
+    post_dic = {}
+    for post in posts:
+        ###组装帖子的actor信息
+        if user_map is not None and user_map.has_key(post["actor"]["username"]):
+            ##合并新数据和原有actor数据
+            post["actor"]=dict(post["actor"],**user_map[post["actor"]["username"]])
+
+            gps_info = post["actor"].get("gps_info", {})
+            if gps_info:
+                if gps_info.has_key("location"):
+                    del gps_info["location"]
+
+        ###组装帖子是否点赞
+        if activity_map is not None and activity_map.has_key(str(post["_id"])):
+            post["liked"]=True
+
+        ###组装帖子的发帖人和当前用户之间的关注关系
+        if follow_map is not None and len(follow_map)>0:
+            folllow_post_actor_key=username+":"+post["actor"]["username"]       ###当前用户关注发帖用户
+            folllow_cur_user_key=post["actor"]["username"]+":"+username          ###发帖用户关注当前用户
+            if follow_map.has_key(folllow_post_actor_key) and follow_map.has_key(folllow_cur_user_key):
+                post["actor"]["follow"]=2
+
+            if follow_map.has_key(folllow_post_actor_key) and not follow_map.has_key(folllow_cur_user_key):
+                post["actor"]["follow"]=1
+
+            if not follow_map.has_key(folllow_post_actor_key) and follow_map.has_key(folllow_cur_user_key):
+                post["actor"]["follow"]=3
+
+            if not follow_map.has_key(folllow_post_actor_key) and not follow_map.has_key(folllow_cur_user_key):
+                post["actor"]["follow"]=0
+    #     post_id = str(post["_id"])
+    #     post_dic[post_id]=post
+    #
+    # post_back = []
+    # for post_id in post_id_array:
+    #     if post_id in post_dic:
+    #         post_back.append(post_dic[post_id])
+
+    return posts,str(cursor),post_id_array
+
+
+def assembleAddress(post):
+    """ 封装固定地址
+    """
+    if post.has_key("gps_info"):
+        gps_info = post.get("gps_info")
+        province = gps_info.get("province","")
+        city = gps_info.get("city","")
+        area = gps_info.get("area","")
+        country_code = gps_info.get("country_code","")
+        # if province!=city:
+        #     address = province+city+area
+        # else:
+        #     address = province+area
+        if country_code!="cn" and country_code!="":
+            address = city+area
+
+        address=gps_info.get("address","")
+        if address:
+            gps_info["address"]=address.replace(province,"")
+        else:
+            gps_info["address"]=""
+
+
+        if gps_info.has_key("location"):
+            del gps_info["location"]
+
+        post["gps_info"]=gps_info
+
+
+
+def set_display_count(post_id_ary):
+    pass
+#     post_id_ary = [ObjectId(x)  for x in post_id_ary]
+#     where = {"_id":{"$in":post_id_ary}}
+#     option = {"$inc":{"display_count":1}}
+#     MongoClient.update(where,option,"posts")
+
+
+def set_banners_new(response_dic,self_username,isNewVersion=False):
+    response_dic["banners"]=getBanner('new')
+
+
+def set_banners(response_dic,self_username,isNewVersion=False):
+    if not isNewVersion:
+        response_dic["banners"]=getBanner('boutique')
+
+def set_banners_near(response_dic,self_username,isNewVersion=False):
+    if not isNewVersion:
+        response_dic["banners"]=getBanner('near')
+
+def nothasGps(username):
+        where = {
+            "username":username,
+            "$or":[
+            {'gps_info':{'$exists': False}},
+            {'gps_info.country':""}
+        ]}
+        user = options.dbconn.User.find_one(where)
+        if user ==None:
+            return False
+        else:
+            return True
+
+
+def getNearPosts(center,username=None,min=0,limit=20,timestamp=0,video="0"):
+    posts,cursor,post_id_array = queryNearPosts(center,username,min,limit,timestamp)
+
+    cursor=""
+
+    if min<float(options.post_divide_radius):
+        if len(posts)>limit:
+             del posts[-1]
+             post = posts[-1]
+             created = str(post["created_micros"])
+             cursor="0,"+created
+        elif len(posts)==limit:
+            cursor=str(options.post_divide_radius)+",0"
+        elif len(posts)<limit:
+             min=options.post_divide_radius
+             lim = limit - len(posts)
+             posts_next,cursor,post_id_array = queryNearPosts(center,username,min,lim,timestamp=0)
+             posts.extend(posts_next)
+
+    if min>=float(options.post_divide_radius):
+         if len(posts)>limit:
+             del posts[-1]
+             post = posts[-1]
+             point = post["gps_info"]["location"]["coordinates"]
+             distance = getDistance(point,center)
+             cursor = str(distance)+",0"
+
+    return posts,cursor
+
+
+def queryNearPosts(center,username=None,min=0,limit=20,timestamp=0,video='0'):
+
+
+
+    where = {}
+    orderby=[]
+    maxDistance = float(options.post_radius)
+    if min<float(options.post_divide_radius):
+        maxDistance = float(options.post_divide_radius)
+        orderby = [("created_micros",-1)]
+        if timestamp!=0:
+            where["created_micros"] = {"$lt": timestamp}
+
+    where["location"]={
+                                "$near":{"$geometry":{
+                                                     "type" : "Point",
+                                                     "coordinates" : center
+                                                     },
+                                        "$minDistance":min,
+                                        "$maxDistance":maxDistance
+                                }}
+
+    return getPostSearchList(where,limit+1,orderby,username=username)
+
+'''
+    最近15天发布的渔获
+'''
+def user_latest_posts(username):
+    now = datetime.datetime.utcnow()
+    used_time = now - datetime.timedelta(days=15)
+
+    post_where = {
+        "actor.username": username,
+        "created": {"$gt": used_time},
+        "deleted": {"$ne": True},
+        "sold_out": {"$ne": "1"},
+        "yuhuo_type": 0
+    }
+    sort = [("created", -1)]
+    post_list = MongoClient.find_all_sorted_limited(post_where, "posts", sort, 3)
+    last_post_images = []
+    for post in post_list:
+        image_info = {}
+        page = post.get("page", [])
+        type = post.get("type", "")
+        created = post["created"]
+        post_id = str(post["_id"])
+        if page:
+            image_info = page[0]
+            count = len(page)
+            image_info["image_count"] = count
+        if type == "video":
+            image_info["is_video"] = 1
+        image_info["post_id"] = post_id
+        image_info["created"] = created
+        last_post_images.append(image_info)
+    return last_post_images
+
+
+def fishingSkill2Code(fishingSkill):
+        code = ""
+        if fishingSkill in ["船钓","海钓","拖钓"]:
+            code = u"100"
+            return code
+
+        if fishingSkill =="矶钓":
+            code = u"110"
+            return code
+        if fishingSkill in ["冰钓","竞技钓","路亚","竞技"]:
+            code = u"120"
+            return code
+
+        if fishingSkill in ["野钓","坑钓","传统钓","台钓","岸钓","拖钓","远投"]:
+            code = u"130"
+            return code
+
+        if fishingSkill in ["湖库钓","筏钓"]:
+            code = u"140"
+            return code
+
+        if fishingSkill in ["飞钓","飞蝇钓","飞蝇"]:
+            code = u"150"
+            return code
+
+
+
+
+def getDistance(point1,point2):
+        final = 6378137.0
+        flng = calcDegree(float(point1[0]))
+        flat = calcDegree(float(point1[1]))
+        tlng = calcDegree(float(point2[0]))
+        tlat = calcDegree(float(point2[1]))
+        result = math.sin(flat)*math.sin(tlat)
+        result += math.cos(flat)*math.cos(tlat)*math.cos(flng-tlng)
+        return final*math.acos(float(result))
+
+def calcDegree(d):
+        return d*math.pi/180.0
+
+
+def assemblatuserlist(post):
+    at_user_list = post.get("at_user_list", [])
+    if at_user_list:
+        user_list = []
+        for user in at_user_list:
+            user_list.append(user["username"])
+        filter = {"nick": 1, "username": 1, "_id": 0}
+        where = {
+            "username": {
+                "$in": user_list
+            }
+        }
+        user_result = list(MongoClient.find_all(where, "users", filter))
+        post["at_user_list"] = user_result
+    return post
+
+
+if __name__ == '__main__':
+    point = [120.561497,32.420527]
+    center = [116.299852,40.041613]
+    distance = getDistance(point,center)
+    print distance
+

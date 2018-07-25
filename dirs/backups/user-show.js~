@@ -1,0 +1,297 @@
+/**
+ * Created by jiangjianfeng on 15-6-1.
+ */
+
+
+var apple_model_set=new Map()
+var android_os_set=new Map()
+
+function init() {
+    apple_model_set.put("iPhone1,1", "iPhone 1G");
+    apple_model_set.put("iPhone1,2", "iPhone 3G");
+    apple_model_set.put("iPhone2,1", "iPhone 3GS");
+    apple_model_set.put("iPhone3,1", "iPhone 4");
+    apple_model_set.put("iPhone3,2", "Verizon iPhone 4");
+    apple_model_set.put("iPhone4,1", "iPhone 4S");
+    apple_model_set.put("iPhone5,1", "iPhone 5");
+    apple_model_set.put("iPhone5,2", "iPhone 5");
+    apple_model_set.put("iPhone5,3", "iPhone 5C");
+    apple_model_set.put("iPhone5,4", "iPhone 5C");
+    apple_model_set.put("iPhone6,1", "iPhone 5S");
+    apple_model_set.put("iPhone6,2", "iPhone 5S");
+    apple_model_set.put("iPhone7,1", "iPhone 6 Plus");
+    apple_model_set.put("iPhone7,2", "iPhone 6");
+    apple_model_set.put("iPhone8,1", "iPhone 6s");
+    apple_model_set.put("iPhone8,2", "iPhone 6s Plus");
+    apple_model_set.put("iPod1,1", "iPod Touch 1G");
+    apple_model_set.put("iPod2,1", "iPod Touch 2G");
+    apple_model_set.put("iPod3,1", "iPod Touch 3G");
+    apple_model_set.put("iPod4,1", "iPod Touch 4G");
+    apple_model_set.put("iPod5,1", "iPod Touch 5G");
+    apple_model_set.put("iPad1,1", "iPad");
+    apple_model_set.put("iPad2,1", "iPad 2 (WiFi)");
+    apple_model_set.put("iPad2,2", "iPad 2 (GSM)");
+    apple_model_set.put("iPad2,3", "iPad 2 (CDMA)");
+    apple_model_set.put("iPad2,4", "iPad 2 (32nm)");
+    apple_model_set.put("iPad2,5", "iPad mini (WiFi)");
+    apple_model_set.put("iPad2,6", "iPad mini (GSM)");
+    apple_model_set.put("iPad2,7", "iPad mini (CDMA)");
+    apple_model_set.put("iPad3,1", "iPad 3(WiFi)");
+    apple_model_set.put("iPad3,2", "iPad 3(CDMA)");
+    apple_model_set.put("iPad3,3", "iPad 3(4G)");
+    apple_model_set.put("iPad3,4", "iPad 4 (WiFi)");
+    apple_model_set.put("iPad3,5", "iPad 4 (4G)");
+    apple_model_set.put("iPad3,6", "iPad 4 (CDMA)");
+    apple_model_set.put("iPad4,1", "iPad Air");
+    apple_model_set.put("iPad4,2", "iPad Air");
+    apple_model_set.put("iPad4,3", "iPad Air");
+    apple_model_set.put("iPad5,3", "iPad Air 2");
+    apple_model_set.put("iPad5,4", "iPad Air 2");
+    apple_model_set.put("i386", "Simulator");
+    apple_model_set.put("x86_64", "Simulator");
+    apple_model_set.put("iPad4,4", "iPad mini 2");
+    apple_model_set.put("iPad4,5", "iPad mini 2");
+    apple_model_set.put("iPad4,6", "iPad mini 2");
+    apple_model_set.put("iPad4,7", "iPad mini 3");
+    apple_model_set.put("iPad4,8", "iPad mini 3");
+    apple_model_set.put("iPad4,9", "iPad mini 3");
+
+
+    android_os_set.put("14", "android 4.0.0");
+    android_os_set.put("15", "android 4.0.3");
+    android_os_set.put("16", "android 4.1");
+    android_os_set.put("17", "android 4.2");
+    android_os_set.put("18", "android 4.3");
+    android_os_set.put("19", "android 4.4");
+    android_os_set.put("20", "android 4.4w");
+    android_os_set.put("21", "android 5.0 (L)");
+    android_os_set.put("22", "android 5.1.1");
+    android_os_set.put("23", "android 6.0--6.0.1");
+    android_os_set.put("24", "android 7.0");
+    android_os_set.put("25", "android 7.1.1");
+    android_os_set.put("26", "android 8.0(0) ");
+}
+
+function apple_model(device){
+    var apple_model=""
+    if (device){
+        if (apple_model_set.containsKey(device)){
+            apple_model=apple_model_set.get(device)
+        }else{
+            apple_model=device
+        }
+
+    }
+    return apple_model;
+}
+
+function android_os(os_version){
+    var os_version_formate=""
+    if (os_version){
+        if (android_os_set.containsKey(os_version)){
+            os_version_formate=android_os_set.get(os_version)
+        }else{
+            os_version_formate=os_version
+        }
+
+    }
+    return os_version_formate;
+}
+
+function loadUserDetail(username){
+    var requestURL = fishing_admin_Url+'/user_detail?username='+username
+    $.ajax({
+        url:requestURL,
+        type:'GET',
+        dataType:'json',
+        error: function(jqXHR, textStatus, errorThrown) {
+            alert('访问服务器失败，请重试');
+            //alert("error:"+jqXHR.readyState+"  请求状态:"+jqXHR.status+" response:"+jqXHR.responseText)
+            //alert("textStatus:"+textStatus)
+        },
+        success: function(data, textStatus, jqXHR) {
+            var template='<tr class="text-c"><td>{display_model_name}</td>'
+                +'<td>{display_sub_model_name}</td><td class="admin-status">{sub_model_url}</td>'
+                +'<td class="f-14 admin-manage"><a style="text-decoration:none" onClick="admin_stop(this,\'10001\')" href="javascript:;" title="停用"><i class="icon-hand-down"></i></a> <a title="编辑" href="javascript:;" onclick="admin_edit(\'4\',\'400\',\'310\',\'角色编辑\',\'admin-edit.html\')" class="ml-5" style="text-decoration:none"><i class="icon-edit"></i></a> <a title="删除" href="javascript:;" onclick="admin_del(this,\'1\')" class="ml-5" style="text-decoration:none"><i class="icon-trash"></i></a></td>'
+                +'</tr>';
+
+            //alert("data:"+JSON.stringify(data))
+            var token=data.access_token;
+            var user_detail=data.entities[0]
+
+            $("#avatar_url").attr("src",user_detail.avatar_url)
+
+            $('#nick').html(user_detail.nick);
+
+            $('#fishAge').html(user_detail.fishAge?user_detail.fishAge:"0");
+
+            $('#score').html(user_detail.score?user_detail.score:"0");
+            $('#created').html(user_detail.created?new Date(user_detail.created).pattern("yyyy-MM-dd HH:mm:ss"):"");
+
+            if (user_detail.gps_info && user_detail.gps_info.address)
+                $('#address').html(user_detail.gps_info.address);
+
+
+            $('#invite_code').html(user_detail.invite_code)
+            var user_type="不确定"
+            switch(user_detail.user_type)
+            {
+                case "1":
+                    user_type='手机注册用户'
+                    break;
+                case "2":
+                    user_type="小号用户"
+                    break;
+                case "3":
+                    var user_type=""
+                    if (user_detail.platform){
+                        switch (user_detail.platform){
+                            case "qq":
+                                user_type='QQ注册用户'
+                                break;
+                            case "sina":
+                                user_type="新浪微博注册用户"
+                                break;
+                            case "weixin":
+                                user_type="微信注册用户"
+                                break;
+                        }
+                    }
+                    break;
+                case "6":
+                    user_type="第三方登录用户";
+                    break;
+
+            }
+            $('#user_type').html(user_type);
+
+            post_count=user_detail.post_count?user_detail.post_count:0
+            following_num=user_detail.following_num?user_detail.following_num:0
+            followed_num=user_detail.followed_num?user_detail.followed_num:0
+            tools_count=user_detail.tools_count?user_detail.tools_count:0
+
+            //<span id="followed_info">粉丝(0)</span><span id="following_info">关注(0)</span><span id="post_info">发布(0)</span><
+            setBoutiqueInfo(0)
+            setFollowedInfo(followed_num)
+            setFollowingInfo(following_num)
+            setPostInfo(post_count)
+            setToolsInfo(tools_count)
+
+
+
+
+            //$("input[name=sex][value='F']").attr("checked",true);
+            switch(user_detail.sex)
+            {
+                case "F":
+                    $('#sex').html('女');
+                    break;
+                case "M":
+                    $('#sex').html("男");
+                    break;
+                default:
+                    $('#sex').html('保密');
+
+            }
+            //user_list=data.entities;
+            //
+            //fill_user_list(user_list)
+
+            if (user_detail.client_info){
+                var client_info=user_detail.client_info;
+                var app_version=client_info.app_version?client_info.app_version:"";
+                var os_version="";
+                var mobile_model="";
+                if (client_info.os){
+                    if (client_info.os=="ios"){
+                        os_version=client_info.os_version?client_info.os_version:""
+                        mobile_model=apple_model(client_info.mobile_model?client_info.mobile_model:"")
+                    }
+                    if (client_info.os=="android"){
+                        os_version=android_os(client_info.os_version?client_info.os_version:"")
+                        mobile_model=client_info.mobile_model?client_info.mobile_model:"";
+                    }
+                }
+
+                $('#clinet_device').html("机型:"+mobile_model+"  手机操作系统版："+os_version+"  子牙钓鱼app 版本："+app_version);
+            }
+
+
+        }
+    });
+}
+
+
+function setBoutiqueInfo(count){
+    $('#boutique_info').html("热门渔获("+count+")")
+}
+function setFollowedInfo(count){
+    $('#followed_info').html("粉丝("+count+")")
+}
+
+function setFollowingInfo(count){
+    $('#following_info').html("关注("+count+")")
+}
+
+function setPostInfo(count){
+    $('#post_info').html("发布("+count+")")
+}
+
+function setToolsInfo(count){
+    $('#tools_info').html("装备("+count+")")
+}
+
+
+function setCollectInfo(count){
+    $('#collect_info').html("收藏("+count+")")
+}
+
+function setRelatedInfo(count){
+    $('#related_info').html("参与("+count+")")
+}
+
+function setCreateActivityInfo(count){
+    $('#created_activiy_info').html("创建的活动("+count+")")
+}
+
+function setJoinedActivityInfo(count){
+    $('#join_activiy_info').html("参加的活动("+count+")")
+}
+
+var is_loaded_map=new Map()
+
+function load_tab_data(index){
+    //alert("index:"+index)
+    var loaded_key=""+index
+    if (is_loaded_map.containsKey(loaded_key)) {
+        return
+    }
+    is_loaded_map.put(loaded_key,"")
+    if (index==1){
+        $('#myFollowed').attr("src","followed-list.html?username="+username+"&t="+new Date().getTime());
+    }
+
+    if (index==2){
+        $('#myFollowing').attr("src", "following-list.html?username=" + username + "&t=" + new Date().getTime());
+    }
+    if (index==3){
+        $('#myPost').attr("src","user-post-list.html?username="+username+"&yuhuo_type=0&t="+new Date().getTime());
+    }
+    if (index==4){
+        $('#myTools').attr("src","user-post-list.html?username="+username+"&yuhuo_type=1&t="+new Date().getTime());
+    }
+    if (index==5){
+        $('#myRelated').attr("src","related-post-list.html?username="+username+"&t="+new Date().getTime());
+    }
+    if (index==6){
+
+        $('#myCollect').attr("src","collection-post-list.html?username="+username+"&t="+new Date().getTime());
+    }
+    if (index==7){
+        $('#created_activiy').attr("src","user-created-activity.html?username="+username+"&t="+new Date().getTime());
+    }
+    if (index==8){
+        $('#joined_activiy').attr("src","user-joined-activity.html?username="+username+"&t="+new Date().getTime());
+    }
+
+}

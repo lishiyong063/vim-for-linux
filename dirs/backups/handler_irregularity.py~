@@ -1,0 +1,94 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# @Date    : 2015-05-18 17:41:52
+# @Author  : Your Name (you@example.org)
+# @Link    : http://example.org
+# @Version : $Id$
+from handler_baseHt import BaseHtHandler
+from log import get_logger
+import tornado.web
+from tornado.web import asynchronous
+from tornado.options import options
+import json
+import hashlib
+import datetime
+import hashlib
+import random
+import pymongo
+import time
+from log import get_logger
+from model.accounts_ht import Account_ht
+from model.users import Users
+import optionsSetting
+import datetime
+import time
+from utils.secret import *
+import traceback
+from utils.redis_client import RedisClient
+from mongo_field_encoder import MongoFieldEncoder
+from mongolog import MongoHandler
+from mongokit.helpers import totimestamp, fromtimestamp
+from utils.token_im import TokenService
+from tornado.httpclient import HTTPRequest
+from utils.mongo_client import MongoClient
+from utils.mongo_front import MongoFront
+from auth import requires_auth
+import re
+from services.service_user import *
+try:
+    from tornado.curl_httpclient import CurlAsyncHTTPClient as AsyncHTTPClient
+except ImportError:
+    from tornado.simple_httpclient import SimpleAsyncHTTPClient as AsyncHTTPClient
+log = get_logger()
+
+
+class IrregularityHandler(BaseHtHandler):
+    @asynchronous
+    @requires_auth
+    def get(self):
+        log.info("IrregularityHandler.get:" + self.request.body)
+        self.set_header("Access-Control-Allow-Origin", "*")
+        curr = self.get_argument('curr', "")
+        # irregular_search 1,渔获中包含敏感词 2,图片违规  3,发重复消息  4,评论中包含敏感词  5,频繁骚扰用户
+        irregular_search = self.get_argument('irregular_search', "0")
+        irregular_search = int(irregular_search)
+        limit = 10
+        where = {
+        }
+        if irregular_search:
+            if irregular_search ==1:
+                where["role_type"] = 1
+                where["type"] = {"$in":[1,2]}
+            elif irregular_search ==3:
+                where["role_type"] = {"$in":[3,4]}
+            elif irregular_search ==4:
+                where["role_type"] = 1
+                where["type"] = 3
+            else:
+                where["role_type"] = irregular_search
+        irregularity_cursor = MongoFront.find(where, "content_check", "created", 0, (int(curr) - 1) * limit, limit)
+        irregularity_list = self.assembleIrregularity(irregularity_cursor)
+        response = {}
+        response["count"] = irregularity_cursor.count()
+        response["entities"] = irregularity_list
+
+        self.write(json.dumps(response, ensure_ascii=False, cls=MongoFieldEncoder))
+        self.finish()
+
+    def assembleIrregularity(self,irregularity_cursor):
+        irregularity_list = []
+        username_array=[]
+        for irregularity in irregularity_cursor:
+            act_username = irregularity.get("actor_username", "")
+            username_array.append(act_username)
+            irregularity_list.append(irregularity)
+        user_map = assembleActor(username_array)
+        for irregularity in irregularity_list:
+            actor_username = irregularity["actor_username"]
+            if user_map is not None and user_map.has_key(actor_username):
+                actor_user = user_map[actor_username]
+                irregularity["nick"] =actor_user.get("nick", ""),
+                irregularity["advicer_avatar_url"] =actor_user.get("advicer_avatar_url", ""),
+                irregularity["invite_code"] =actor_user.get("invite_code", ""),
+
+        return irregularity_list

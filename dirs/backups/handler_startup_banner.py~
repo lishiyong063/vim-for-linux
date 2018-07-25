@@ -1,0 +1,122 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# @Date    : 2015-05-18 17:41:52
+# @Author  : Your Name (you@example.org)
+# @Link    : http://example.org
+# @Version : $Id$
+from handler_baseHt import BaseHtHandler
+from log import get_logger
+import tornado.web
+from tornado.web import asynchronous
+from tornado.options import options
+import json
+import hashlib
+import datetime
+from bson import ObjectId
+import hashlib
+import random
+import pymongo
+import time
+from log import get_logger
+import urllib
+from model.accounts_ht import Account_ht
+from model.users import Users
+import optionsSetting
+import datetime
+import  time
+from utils.secret import *
+import traceback
+from utils.redis_client import RedisClient
+from mongo_field_encoder import MongoFieldEncoder
+from mongolog import MongoHandler
+from mongokit.helpers import totimestamp, fromtimestamp
+from utils.token_im import TokenService
+from tornado.httpclient import HTTPRequest
+from utils.mongo_client import MongoClient
+from utils.mongo_front import MongoFront
+from auth import requires_auth
+import re
+try:
+    from tornado.curl_httpclient import CurlAsyncHTTPClient as AsyncHTTPClient
+except ImportError:
+    from tornado.simple_httpclient import SimpleAsyncHTTPClient as AsyncHTTPClient
+log = get_logger()
+class StartupBannerHandler(BaseHtHandler):
+
+
+    @asynchronous
+    @requires_auth
+    def post(self):
+        log.info("StartupBannerHandler.post")
+        body_dic = json.loads(self.request.body,encoding="utf-8")
+        try :
+            name = body_dic.get("name")
+            onclick_url = body_dic.get("onclick_url")
+            iphone_4s = body_dic.get("iphone_4s")
+            iphone_5s = body_dic.get("iphone_5s")
+            iphone_6 = body_dic.get("iphone_6")
+            iphone_6p = body_dic.get("iphone_6p")
+            created = datetime.datetime.utcnow()
+            link_resource = body_dic.get("link_resource", "normal")
+            canTap_input=body_dic.get("canTap","0")
+            canTap=False
+            if canTap_input=="1":
+                canTap=True
+
+            startup_banner = {
+                "created":created,
+                "name":name,
+                "onclick_url":onclick_url,
+                "iphone_4s":iphone_4s,
+                "iphone_5s":iphone_5s,
+                "iphone_6":iphone_6,
+                "iphone_6p":iphone_6p,
+                "canTap":canTap,
+                "ad_type": "3"
+            }
+            ziya_url = ""
+            if onclick_url and link_resource:
+                ziya_url = self.getZiyaUrl(onclick_url, link_resource)
+            if ziya_url:
+                startup_banner["ziya_url"] = ziya_url
+            startup_banner["valid"]=True
+            id,error = MongoFront.insert(startup_banner, "advs")
+            if error!=None:
+                status = 1  #name存在
+
+                response_dic = {"status":status}
+                response = json.dumps(response_dic,
+                                  indent=2,
+                                  ensure_ascii=False,
+                                  cls=MongoFieldEncoder)
+                self.write(response)
+                self.finish()
+            response={}
+            response["entities"]=startup_banner
+            self.write(json.dumps(response,indent=2, ensure_ascii=False,cls=MongoFieldEncoder))
+            self.finish()
+        except Exception as e:
+            log.info('StartupBannerHandler.post Exception:%s' % e.message)
+            self.fire_response_bad_request(key_required=e.message)
+            return
+
+    def getZiyaUrl(self,url,link_resource):
+        # weibsite=self.analyzeURL(url)
+        ziya_url=""
+        if link_resource!="normal":
+            if link_resource=="jd":
+                ziya_url = "ziya://exec/?action=jd&type=url_detail&url="+urllib.quote_plus(url)
+            if link_resource == "tb":
+                ziya_url = "ziya://exec/?action=taobao&type=url_detail&pid=mm_122665126_22644743_81432056&url="+urllib.quote_plus(url)
+        return ziya_url
+
+
+
+
+
+
+
+
+
+
+

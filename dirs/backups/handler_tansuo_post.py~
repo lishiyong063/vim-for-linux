@@ -1,0 +1,169 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# @Date    : 2014-12-05 15:45:20
+# @Author  : Your Name (you@example.org)
+# @Link    : http://example.org
+# @Version : $Id$
+
+from __future__ import division
+import tornado.web
+from tornado.web import asynchronous
+from tornado.options import options
+import copy
+from mongokit import *
+from mongokit.helpers import totimestamp, fromtimestamp
+import pymongo
+from mongo_field_encoder import MongoFieldEncoder
+from handler_base import BaseHandler
+from access_track import access_log
+from services.service_waterfall_list import *
+from services.service_activities import *
+from services.service_waterfall_flow_json import *
+from utils.banner import *
+from services.service_post_list_place_property import *
+import traceback
+import json
+import bson
+import datetime
+import time
+import random
+from log import get_logger
+from utils.redis_client import RedisClient
+from utils.mongo_client import MongoClient
+from utils.gps_info import *
+from services.service_geocoder import *
+from services.service_ip_address import *
+
+log = get_logger()
+
+class TanSuoPostHandler(BaseHandler):
+    """
+    探索渔获列表
+    """
+    def __init__(self, application, request, **kwargs):
+        super(TanSuoPostHandler, self).__init__(application, request, **kwargs)
+
+    @asynchronous
+    @access_log
+    @gen.coroutine
+    def get(self):
+        log.info("TanSuoPostHandler begin:" + str(self.request.arguments))
+
+        self.domestic_post_list_by_created()
+
+    def domestic_post_list_by_created(self):
+        request_cursor = self.get_argument('cursor', "")
+        request_cursor_array = request_cursor.split(",")
+        act = self.get_argument('act', '')
+        place_code = self.get_argument('type', '10')
+
+        now = datetime.datetime.utcnow()
+        lastest_up_time = self.get_argument('lastest_up_time', '')
+
+        new_post_array = []
+        post_array=[]
+        limit = 10
+        if lastest_up_time == '':
+            new_lastest_up_time = str(totimestamp(now))
+        else:
+            if act == "up":
+                new_lastest_up_time = str(totimestamp(now))
+            else:
+                new_lastest_up_time = lastest_up_time
+
+        action = self.getActionByRequest()
+        # log.info("action:"+action)
+        response = {
+            "entities": [],
+            "lastest_up_time": new_lastest_up_time
+        }
+
+        post_where = {
+            "deleted": {"$ne": True},
+            "sold_out": {"$ne": "1"},
+            "yuhuo_type": 0
+        }
+        show_type = 3
+        # place_code == 10 时会显示距离
+        if place_code!="10":
+            post_where["fishingSkill"] = place_code
+            show_type = 2
+
+        is_newest_post=False
+        if action=="up":
+            if lastest_up_time:
+                post_where["created"] ={
+                            '$gt': fromtimestamp(int(lastest_up_time))
+                }
+                order_by = [('created', pymongo.DESCENDING)]
+                new_post_array,cursor_return,post_id_array = getPostSearchList(post_where,limit,order_by, self.username)
+                ###是否显示双击图标
+                if not new_post_array:
+                    response["flag_show"] = True
+
+                # response["entities"] = getPostListJson(new_post_array)
+                response["entities"] = getPostListJson(new_post_array)
+            delete_tourist_mode(self.udid)
+        else:
+                if request_cursor:
+                    if cursor_return == "-1":
+                        response["cursor"] = request_cursor
+                    else:
+                        return_crusor = ",".join(["1", cursor_return, "1"])
+                        response["cursor"] = return_crusor
+                else:
+                    is_newest_post=True
+
+        else:
+            is_newest_post = True
+
+        if is_newest_post:
+            limit=10
+            if request_cursor:
+                created_cursor = request_cursor_array[1]
+                cursor_datetime = fromtimestamp(int(created_cursor))
+                post_where["created"]={
+                    "$lt": cursor_datetime
+                }
+
+            order_by = [('created', pymongo.DESCENDING)]
+            post_array, cursor_return, post_id_array = getPostSearchList(post_where, limit, order_by, self.username)
+
+            if request_cursor:
+                cursor_list = ["1", cursor_return, str(int(request_cursor_array[2])+1)]
+                response["cursor"] = ",".join(cursor_list)
+            else:
+                return_crusor = ",".join(["1", cursor_return, "1"])
+                response["cursor"] = return_crusor
+            response["entities"] = getPostListJson(assemble_new_post_ad(
+                    new_post_array+post_array, response["cursor"].split(",")[2], "2", username=self.username)
+                    )
+            if cursor_return == "-1":
+                response.pop("cursor", "")
+        response["show_type"] = show_type
+        response_str = json.dumps(response,
+                                  indent=2,
+                                  ensure_ascii=False,
+                                  cls=MongoFieldEncoder)
+
+        self.write(response_str)
+        self.finish()
+        return
+
+
+
+
+    ###根据传入参数判断当前用户的行为：
+    ############act == up and lastest_up_time!=''  动作：从上往下滑动屏幕，下拉
+    ############act == ''          动作：从下往上滑动屏幕，刷新
+    ##########注意：当第一次进入时失败，没有结果，此时前端下拉刷新时，当第一次进入处理
+    ##########此时传入act == up lastest_up_time＝＝'',也可以看作从下往上滑动屏幕，刷新
+    def getActionByRequest(self):
+        act = self.get_argument('act', '')
+        lastest_up_time = self.get_argument('lastest_up_time', '')
+        if act == 'up' and lastest_up_time != '':
+            action = "up"
+        else:
+            action = "down"
+
+        return action

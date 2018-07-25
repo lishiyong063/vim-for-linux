@@ -1,0 +1,186 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# @Date    : 2015-05-18 17:41:52
+# @Author  : Your Name (you@example.org)
+# @Link    : http://example.org
+# @Version : $Id$
+from handler_baseHt import BaseHtHandler
+from log import get_logger
+import tornado.web
+from tornado.web import asynchronous
+from tornado.options import options
+import json
+import hashlib
+import datetime
+import hashlib
+import random
+import pymongo
+import time
+from log import get_logger
+from model.accounts_ht import Account_ht
+from model.users import Users
+import optionsSetting
+import datetime
+import  time
+from utils.secret import *
+import traceback
+from utils.redis_client import RedisClient
+from mongo_field_encoder import MongoFieldEncoder
+from mongolog import MongoHandler
+from mongokit.helpers import totimestamp, fromtimestamp
+from utils.token_im import TokenService
+from tornado.httpclient import HTTPRequest
+from utils.mongo_client import MongoClient
+from utils.mongo_front import MongoFront
+from utils.mongo_slave_client import MongoSlaveClient
+from auth import requires_auth
+import re
+try:
+    from tornado.curl_httpclient import CurlAsyncHTTPClient as AsyncHTTPClient
+except ImportError:
+    from tornado.simple_httpclient import SimpleAsyncHTTPClient as AsyncHTTPClient
+log = get_logger()
+class UsersHandler(BaseHtHandler):
+    @asynchronous
+    @requires_auth
+    def get(self):
+        # log.info("UsersHandler.get:"+str(self.request.query_arguments))
+        log.info("UsersHandler.get:")
+        self.set_header("Access-Control-Allow-Origin", "*")
+        where={
+            'freeze_status': {'$ne': "2"}
+        }
+        sort_by = "created"
+        sort_val = pymongo.DESCENDING
+        condition = self.get_argument('condition',"")
+        log.info("condition:"+str(condition))
+
+        curr_username=self.username
+        condition_dic = json.loads(condition, encoding="utf-8")
+
+        ####非admin账号和fenglin账号,只能按昵称查询
+        if "freeze_status" not in condition and curr_username!="admin" and curr_username!="fenglin":
+            condition_dic = json.loads(condition,encoding="utf-8")
+            nick=condition_dic.get("nick","").strip()
+            log.info("nick"+nick)
+            if nick=="" or "." in nick or "*" in nick or "?" in nick or "\\" in nick:
+                self.write("{}")
+                self.finish()
+                return
+
+        response = {}
+        if condition_dic.has_key("freeze_status"):
+            where["freeze_status"]=condition_dic["freeze_status"]
+        else:
+            if condition !="":
+
+
+                created_condition={}
+                if curr_username=="admin" or curr_username=="fenglin" or curr_username=="ziya009" or curr_username=="ziya017"  or curr_username=="ziya031":
+                    if condition_dic.has_key("user_type"):
+                        if condition_dic["user_type"]=='1':
+                            where["user_type"]={
+                                "$in":['1','3']
+                            }
+                        if condition_dic["user_type"]=='2':
+                            where["user_type"]=condition_dic["user_type"]
+
+                        del condition_dic["user_type"]
+
+                    if condition_dic.has_key("begin"):
+                        begin=condition_dic["begin"]
+                        datemin = datetime.datetime.strptime(begin, "%Y-%m-%d")-datetime.timedelta(hours=8)
+                        created_condition["$gte"]=datemin
+                        del condition_dic["begin"]
+
+                    if condition_dic.has_key("end"):
+                        end = condition_dic["end"]
+                        # datemax = datetime.datetime.strptime(end+"-23-59-59", "%Y-%m-%d-%H-%M-%S")
+                        datemax = datetime.datetime.strptime(end, "%Y-%m-%d")-datetime.timedelta(hours=8)
+                        created_condition["$lte"]=datemax
+                        del condition_dic["end"]
+
+                    if len(created_condition)>0:
+                        where["created"]=created_condition
+
+                    if condition_dic.has_key("sort_by"):
+                       sort_by = condition_dic.get("sort_by")
+                       del condition_dic["sort_by"]
+                       if condition_dic.has_key("sort_value"):
+                           sort_value = condition_dic.get("sort_value")
+                           del condition_dic["sort_value"]
+                           if sort_value =="1":
+                               sort_val=pymongo.ASCENDING
+
+                    if condition_dic.has_key("nick"):
+                        condition_dic["$or"]=[
+                            {"nick":re.compile(condition_dic["nick"]+'.*')},
+                            # {"nick":condition_dic["nick"]},
+                            {"invite_code":condition_dic["nick"]}
+                        ]
+                        del condition_dic["nick"]
+
+                    if condition_dic.has_key("freeze_status") and condition_dic["freeze_status"]=="true":
+                        where["freeze_status"]={"$in":["1","2"]}
+                        del condition_dic["freeze_status"]
+                else:
+
+                    if condition_dic.has_key("nick"):
+                        # condition_dic = {"invite_code":condition_dic["nick"]}
+
+                        condition_dic={
+                            "$or":[
+                                {"nick":nick},
+                                {"invite_code":nick}
+                            ]
+                        }
+                    else:
+                        self.write("{}")
+                        self.finish()
+                        return
+
+        where = dict(where, **condition_dic)
+
+        filter={
+            'id':0
+        }
+        log.info("houtai_user_where"+str(where))
+
+        limit=10
+        curr = self.get_argument('curr',"")
+        # log.info("curr:"+curr)
+        if curr=="":
+            # user_cursor = options.dbconn.Users.find(where,filter).sort(sort_by, sort_val).limit(limit)
+            user_cursor = MongoSlaveClient.find(where,"users",sort_by,False,0,limit)
+        else:
+            # user_cursor = options.dbconn.Users.find(where,filter).sort(sort_by, sort_val).skip((int(curr)-1)*limit).limit(limit)
+            user_cursor = MongoSlaveClient.find(where,"users",sort_by,False,(int(curr)-1)*limit,limit)
+        # log.info("user_cursor:"+str(user_cursor.count()))
+        users=[]
+        for user in user_cursor:
+            users.append(user)
+
+        post_count_sum=0
+        # post_count_sum_db=MongoFront.aggregate_sum("post_count","users",where)
+        # if post_count_sum_db and len(post_count_sum_db)==1:
+        #     log.info("post_count_sum_db:"+str(post_count_sum_db))
+        #     post_count_sum=post_count_sum_db[0]["count"]
+
+
+        response["entities"]=users
+        response["post_count_sum"]=post_count_sum
+        response["count"]=str(user_cursor.count())
+
+        self.write(json.dumps(response,indent=2, ensure_ascii=False,cls=MongoFieldEncoder))
+        self.finish()
+    
+    def fire_response_bad_response(self):
+        """
+        返回登录请求错误响应
+        """
+        self.set_status(400)
+        response = {}
+        response["error"] = "invalid_grant"
+        response["error_description"] = "invalid username or password"
+        self.write(json.dumps(response, indent=2, ensure_ascii=False))
+        self.finish()

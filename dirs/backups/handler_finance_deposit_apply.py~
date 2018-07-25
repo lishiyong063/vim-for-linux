@@ -1,0 +1,172 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# @Date    : 2015-05-18 17:41:52
+# @Author  : Your Name (you@example.org)
+# @Link    : http://example.org
+# @Version : $Id$
+from handler_baseHt import BaseHtHandler
+from log import get_logger
+import tornado.web
+from tornado.web import asynchronous
+from tornado.options import options
+import json
+import hashlib
+import datetime
+from services.service_post import *
+import re
+import hashlib
+from bson import ObjectId
+import random
+import time
+from log import get_logger
+from model.ziya_income_deposit_apply import IncomeDepositApply
+from model.users import Users
+import optionsSetting
+from utils.secret import *
+import traceback
+from utils.redis_client import RedisClient
+from utils.mongo_front import MongoFront
+from mongo_field_encoder import MongoFieldEncoder
+from mongolog import MongoHandler
+from mongokit.helpers import totimestamp, fromtimestamp
+from utils.token_im import TokenService
+from tornado.httpclient import HTTPRequest
+from utils.mongo_client import MongoClient
+import pymongo
+from auth import requires_auth
+from services.service_admin_log import save_log
+try:
+    from tornado.curl_httpclient import CurlAsyncHTTPClient as AsyncHTTPClient
+except ImportError:
+    from tornado.simple_httpclient import SimpleAsyncHTTPClient as AsyncHTTPClient
+log = get_logger()
+class FinanceDepositApplyHandler(BaseHtHandler):
+    ###提现申请处理类
+
+    @asynchronous
+    @requires_auth
+    def get(self):
+        log.info("FinanceDepositApplyHandler.get is called:")
+
+        where={
+        }
+
+        limit=10
+        curr = self.get_argument('curr',"")
+        sort = [('created', pymongo.DESCENDING)]
+        # # log.info("curr:"+curr)
+        begin = self.get_argument('begin',None)
+        end = self.get_argument('end',None)
+        if begin!=None:
+           # log.info("datemin:"+datemin)
+           begin_date = datetime.datetime.strptime(begin, "%Y-%m-%d")-datetime.timedelta(hours=8)
+           where["created"]={"$gte":begin_date}
+
+        if end!=None:
+           # log.info("datemax:"+datemax)
+           end_date = datetime.datetime.strptime(end, "%Y-%m-%d")-datetime.timedelta(hours=8)
+           between={}
+           if where.has_key("created"):
+               between=where["created"]
+
+           between["$lte"]=end_date
+           where["created"]=between
+
+        ziya_code = self.get_argument('ziya_code',None)
+        if ziya_code:
+            lookup = {
+                'invite_code':ziya_code
+            }
+            user=options.dbconn.Users.find_one(lookup)
+            if user:
+                where['username']=user["username"]
+        status = self.get_argument('status',-1)
+        if status!=-1:
+            where['status']=int(status)
+
+
+
+        log.info("where:"+str(where))
+        # log.info("sort:"+str(sort))
+
+        if curr=="":
+            ziya_income_deposit_apply_cursor = options.dbconn.IncomeDepositApply.find(where).sort(sort).limit(limit)
+        else:
+            ziya_income_deposit_apply_cursor = options.dbconn.IncomeDepositApply.find(where).sort(sort).skip((int(curr)-1)*limit).limit(limit)
+
+        # log.info("post_cursor:"+str(post_cursor.count()))
+
+        username_array=[]
+        ziya_income_deposit_apply_arrary=[]
+        for ziya_income_deposit_apply in ziya_income_deposit_apply_cursor:
+
+            ziya_income_deposit_apply_arrary.append(ziya_income_deposit_apply)
+            username_array.append(ziya_income_deposit_apply["username"])
+
+        where={
+            "username":{"$in":username_array}
+        }
+        user_cursor=options.dbconn.Users.find(where)
+        user_info_dic={}
+        for user_info in user_cursor:
+            invite_code=user_info.get("invite_code","")
+            nick=user_info.get("nick","")
+            username=user_info.get("username","")
+            user_info_dic[username]={
+                "invite_code":invite_code,
+                "nick":nick
+            }
+
+
+        for income_deposit_apply in ziya_income_deposit_apply_arrary:
+            username=income_deposit_apply["username"]
+
+            user_info=user_info_dic.get(username,{})
+            if user_info:
+                income_deposit_apply["invite_code"]=user_info["invite_code"]
+                income_deposit_apply["nick"]=user_info["nick"]
+                biz_role = user_info.get("biz_role",None)
+                if biz_role is None:
+                    biz_role = "employee"
+                income_deposit_apply["nick"]=user_info["nick"]
+                income_deposit_apply["biz_role"]=biz_role
+
+        response={}
+        response["entities"]=ziya_income_deposit_apply_arrary
+        response["count"]=str(ziya_income_deposit_apply_cursor.count())
+        self.write(json.dumps(response,indent=2, ensure_ascii=False,cls=MongoFieldEncoder))
+        self.finish()
+
+
+    @asynchronous
+    @requires_auth
+    def put(self):
+        log.info("FinanceDepositApplyHandler.put is called"+self.request.body)
+        body_dic = json.loads(self.request.body,encoding="utf-8")
+        apply_id = body_dic.get("apply_id",None)
+        act=body_dic.get("act","")
+
+        if apply_id and act=="pass":
+            where={
+                "_id":ObjectId(apply_id)
+            }
+            incomeDepositApply=options.dbconn.IncomeDepositApply.find_one(where)
+            if incomeDepositApply:
+
+                    ####将订单设为取消成功
+                    where={
+                        "_id":ObjectId(apply_id)
+                    }
+                    update_set_value={
+                        "status":1
+                    }
+
+                    options.dbconn.IncomeDepositApply.find_and_modify(where,{
+                        "$set":update_set_value
+                    })
+                    response={
+                        "result":"ok"
+                    }
+
+                    self.write(json.dumps(response,indent=2, ensure_ascii=False,cls=MongoFieldEncoder))
+                    self.finish()

@@ -1,0 +1,297 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# @Date    : 2015-05-18 17:41:52
+# @Author  : Your Name (you@example.org)
+# @Link    : http://example.org
+# @Version : $Id$
+from handler_baseHt import BaseHtHandler
+from log import get_logger
+import tornado.web
+from tornado.web import asynchronous
+from tornado.options import options
+import json
+import hashlib
+import datetime
+import hashlib
+from bson import ObjectId
+import random
+import time
+from log import get_logger
+from model.advices import Advice
+from model.permissions_ht import Permissions_ht
+ 
+from utils.secret import *
+import traceback
+from utils.redis_client import RedisClient
+from utils.mongo_front import MongoFront
+from mongo_field_encoder import MongoFieldEncoder
+from services.service_activity import *
+from mongolog import MongoHandler
+from mongokit.helpers import totimestamp, fromtimestamp
+from utils.token_im import TokenService
+from tornado.httpclient import HTTPRequest
+from utils.mongo_client import MongoClient
+import pymongo
+from auth import requires_auth
+from services.service_admin_log import save_log
+from services.service_fishing_place import *
+from tornado import gen
+try:
+    from tornado.curl_httpclient import CurlAsyncHTTPClient as AsyncHTTPClient
+except ImportError:
+    from tornado.simple_httpclient import SimpleAsyncHTTPClient as AsyncHTTPClient
+log = get_logger()
+
+
+class FishingLocationHandler(BaseHtHandler):
+    @requires_auth
+    @asynchronous
+    def get(self,id):
+        log.info("FishingLocationHandler.get:" +str(self.request.arguments))
+        try:
+            limit = int(self.get_argument('limit', '10'))
+            name = self.get_argument('name', '')
+            tel = self.get_argument('tel', '')
+            province = self.get_argument('province', '')
+            city = self.get_argument('city', '')
+            fishing_id = self.get_argument('fishing_id', '')
+            status = self.get_argument('status', '')
+            curr = self.get_argument('curr', '1')
+            where={}
+            sort = [("place_num",-1)]
+
+            if id:
+                where["_id"] = ObjectId(id[1:])
+            if name:
+               where["name"]={"$regex":name,"$options":"i"}
+            if fishing_id:
+               where["fishing_id"]=fishing_id
+
+            if status:
+               where["status"]=int(status)
+
+            if province:
+               where["gps_info.province"]=province
+            if city:
+               where["gps_info.city"]=city
+            if tel:
+               where["contact_tel"]={"$in":[tel]}
+
+            locations = MongoFront.find_by_page(where,"fishing_place",sort,(int(curr)-1)*limit,limit)
+            fishing_locations=[]
+            for location in locations:
+                fishing_locations.append(location)
+
+            response={}
+            response["entities"] = fishing_locations
+            response["count"] = str(locations.count())
+            self.write(json.dumps(response, indent=2, ensure_ascii=False, cls=MongoFieldEncoder))
+            self.finish()
+
+        except Exception as e:
+            log.info('FishingLocationHandler.get Exception:%s' % e.message)
+            log.error(traceback.format_exc())
+            self.fire_response_bad_request(key_required=e.message)
+            return
+
+    @requires_auth
+    @asynchronous
+    @gen.coroutine
+    def post(self,id):
+        log.info("FishingLocationHandler.post:")
+        try:
+            body = json.loads(self.request.body, encoding="utf-8")
+            flag = input_check(body)
+            if flag == 1:
+                self.fire_response_bad_content("common_error", "keyword", "关键信息没填")
+                return
+            elif flag == 2:
+                self.fire_response_bad_content("common_error", "tel error", "电话号异常")
+                return
+            name = body.get("name","")
+            address = body.get("address","")
+            cover_img = body.get("cover_img","")
+            contact_tel = body.get("tel","")
+            page_array = body.get("page_array",[])
+            wechat = body.get("wechat", "")
+            desc = body.get("desc","")
+            price = body.get("price","")
+            unit = body.get("unit","")
+            contact_name = body.get("contact_name","")
+            Lng_Lat = body.get("Lng_Lat","")
+            Lng_Lat = Lng_Lat.split(",")
+            # gps_info = get_loc_by_add(address)
+
+            gps_info = get_gps_info(Lng_Lat[0],Lng_Lat[1])
+            gps_info["address"] = address
+
+            created = datetime.datetime.utcnow()
+            contact_tel = contact_tel.replace(u"，", ",")
+            contact_tel = contact_tel.split(u",")
+            tel_count = random.randrange(100,500)
+            display_count = random.randrange(500,1000)
+            cover,flag = get_image_info(cover_img)
+            if not flag:
+                self.fire_response_bad_content("common_error","cover image error","封面图片有误")
+                return
+
+            pages=[]
+            for page in page_array:
+                page_dic, flag = get_image_info(page)
+                if flag:
+                    pages.append(page_dic)
+                else:
+                    self.fire_response_bad_content("common_error", "pages image error", "其他图片有误")
+                    return
+
+            where = {
+                "name":name,
+                "contact_tel": contact_tel,
+            }
+
+            update_val = {
+                # "name":name,
+                "cover": cover,
+                "gps_info":gps_info,
+                "created":created,
+                "status":1,
+                "from":1,
+                # "contact_tel":contact_tel,
+                "pages":pages,
+                "wechat_number": wechat,
+                "desc":desc,
+                "tel_count":tel_count,
+                "display_count":display_count,
+                "price":price,
+                "unit":unit
+            }
+
+            # aa,error = MongoFront.insert(update_val,"fishing_place")
+            # print error
+            # count = MongoFront.count({},"fishing_place")
+            count_key = {"key":"fishing_place"}
+            counter_update_val = {"$inc":{"value":1}}
+            counter_cursor = MongoFront.find_and_modify(count_key,counter_update_val,"ziya_counter")
+            count = counter_cursor["value"]
+            update_val["place_num"]= count
+            update = {"$set":update_val}
+            MongoFront.upsert(where,update,"fishing_place")
+            response = {}
+            response["entities"] = "ok"
+            self.write(json.dumps(response, indent=2, ensure_ascii=False, cls=MongoFieldEncoder))
+            self.finish()
+
+        except Exception as e:
+            log.info('FishingLocationHandler.get Exception:%s' % e.message)
+            log.error(traceback.format_exc())
+            self.fire_response_bad_request(key_required=e.message)
+            return
+
+    @requires_auth
+    @asynchronous
+    @gen.coroutine
+    def put(self, id):
+        log.info("FishingLocationHandler.put:")
+        try:
+            body = json.loads(self.request.body, encoding="utf-8")
+            # flag = input_check(body)
+            # if flag==1:
+            #     self.fire_response_bad_content("common_error","keyword","关键信息没填")
+            #     return
+            # elif flag==2:
+            #     self.fire_response_bad_content("common_error","tel error","电话号异常")
+            #     return
+            name = body.get("name", "")
+            address = body.get("address", "")
+            cover_img = body.get("cover_img", "")
+            contact_tel = body.get("tel", "")
+            page_array = body.get("page_array", [])
+            desc = body.get("desc", "")
+            wechat_number = body.get("wechat", "")
+            price = body.get("price", "")
+            unit = body.get("unit", "")
+            Lng_Lat = body.get("Lng_Lat", "")
+            Lng_Lat = Lng_Lat.split(",")
+            # gps_info = get_loc_by_add(address)
+            gps_info = get_gps_info(Lng_Lat[0], Lng_Lat[1])
+            gps_info["address"] = address
+            created = datetime.datetime.utcnow()
+            contact_tel = contact_tel.replace(u"，",",")
+            contact_tel = contact_tel.split(u",")
+            cover, flag = get_image_info(cover_img)
+            if not flag:
+                self.fire_response_bad_content("common_error", "cover image error", "封面图片有误")
+                return
+
+            pages = []
+            for page_url in page_array:
+                page_dic, flag = get_image_info(page_url)
+                if flag:
+                    pages.append(page_dic)
+                else:
+                    self.fire_response_bad_content("common_error", "pages image error", "其他图片有误")
+                    return
+
+            if not id:
+                self.fire_response_sys_error()
+            where = {"_id":ObjectId(id[1:])}
+
+            update_val = {
+                "name": name,
+                "cover": cover,
+                "gps_info": gps_info,
+                "created": created,
+                "contact_tel": contact_tel,
+                "pages": pages,
+                "wechat_number": wechat_number,
+                "desc": desc,
+                "price": price,
+                "unit": unit
+            }
+
+            update = {"$set": update_val}
+            MongoFront.update(where,update,"fishing_place")
+            response = {}
+            response["entities"] = "ok"
+            self.write(json.dumps(response, indent=2, ensure_ascii=False, cls=MongoFieldEncoder))
+            self.finish()
+
+        except Exception as e:
+            log.info('FishingLocationHandler.get Exception:%s' % e.message)
+            log.error(traceback.format_exc())
+            self.fire_response_bad_request(key_required=e.message)
+            return
+
+    @requires_auth
+    @asynchronous
+    def delete(self,id):
+        log.info("FishingLocationHandler.delete:")
+        try:
+            if not id:
+                self.fire_response_sys_error()
+            body = json.loads(self.request.body, encoding="utf-8")
+            # place_id = body["place_id"]
+            place_id = id[1:]
+            where = {
+                "_id":ObjectId(place_id)
+            }
+
+            update = {
+                "status":2
+            }
+            status = body.get("status","")
+            if status:
+                update["status"] = status
+
+            update_val = {"$set":update}
+            MongoFront.update(where,update_val,"fishing_place")
+            response = {}
+            response["entities"] = "ok"
+            self.write(json.dumps(response, indent=2, ensure_ascii=False, cls=MongoFieldEncoder))
+            self.finish()
+
+        except Exception as e:
+            log.info('FishingLocationHandler.get Exception:%s' % e.message)
+            log.error(traceback.format_exc())
+            self.fire_response_bad_request(key_required=e.message)
+            return

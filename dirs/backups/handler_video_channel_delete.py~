@@ -1,0 +1,175 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# @Date    : 2015-05-18 17:41:52
+# @Author  : Your Name (you@example.org)
+# @Link    : http://example.org
+# @Version : $Id$
+from handler_baseHt import BaseHtHandler
+from log import get_logger
+import tornado.web
+from tornado.web import asynchronous
+from tornado.options import options
+import json
+import hashlib
+import datetime
+from bson import ObjectId
+import hashlib
+import random
+import pymongo
+import time
+from log import get_logger
+from model.accounts_ht import Account_ht
+from model.users import Users
+import optionsSetting
+import datetime
+import  time
+from utils.secret import *
+import traceback
+from utils.redis_client import RedisClient
+from mongo_field_encoder import MongoFieldEncoder
+from mongolog import MongoHandler
+from mongokit.helpers import totimestamp, fromtimestamp
+from utils.token_im import TokenService
+from tornado.httpclient import HTTPRequest
+from utils.mongo_client import MongoClient
+from utils.mongo_front import MongoFront
+from auth import requires_auth
+import re
+import urlparse
+import urllib
+try:
+    from tornado.curl_httpclient import CurlAsyncHTTPClient as AsyncHTTPClient
+except ImportError:
+    from tornado.simple_httpclient import SimpleAsyncHTTPClient as AsyncHTTPClient
+log = get_logger()
+
+
+class VideoChannelDeleteHandler(BaseHtHandler):
+    @asynchronous
+    @requires_auth
+    def put(self):
+        log.info("VideoChannelDeleteHandler.put")
+        body = json.loads(self.request.body, encoding="utf-8")
+        id = body.get("id", "")
+        is_hot = body.get("is_hot", "")
+        status = body.get("status", "")
+        body.pop("is_hot", "")
+        body.pop("status", "")
+
+        if is_hot == "delete":
+
+            where = {
+                "_id": ObjectId(id)
+            }
+            update = {
+                "$set": {
+                    "status": 0
+                }
+            }
+            result = MongoFront.find_and_modify(where, update, "video_channels")
+            if status == 3:
+                pass
+                # where = {
+                #     "channel_id": id
+                # }
+                # update = {
+                #     "status": 0
+                # }
+                # MongoFront.update(where, update, "video_programs")
+                # MongoFront.update(where, update, "user_video_programs_check")
+                # where = {
+                #     "belong_channel_id": id
+                # }
+                # MongoFront.update(where, update, "user_video_channels_check")
+
+            else:
+                rank = result["rank"]
+                # MongoFront.update(where, update, "video_channels")
+                where = {
+                    "status": 1,
+                    "rank": {"$gt": rank}
+                }
+                update = {
+                    "$inc": {"rank": -1}
+                }
+                MongoFront.update(where, update, "video_channels")
+
+
+                where = {
+                    "channel_id": id
+                }
+                update = {
+                    "$set": {
+                    "status": 0
+                    },
+                    "$unset": {
+                        "rank": ""
+                    }
+                }
+                programs_result = MongoFront.find_all(where, "video_programs")
+                for programs in programs_result:
+                    rank = programs.get("rank",  0)
+                    if rank:
+                        rank_where = {
+                            "status": 1,
+                            "rank": {"$gt": rank}
+                        }
+                        rank_update = {
+                            "$inc": {"rank": -1}
+                        }
+                        MongoFront.update(rank_where, rank_update, "video_programs")
+                        where = {
+                            "_id": programs["_id"]
+                        }
+                        MongoFront.update(where, update, "video_programs")
+                MongoFront.update(where, update, "video_programs")
+        elif is_hot == "hot":
+            where = {
+                "status": 1
+            }
+            num = MongoFront.count(where, "video_channels")
+            update = {
+                "$set": {
+                    "status": 1,
+                    "rank": int(num)+1
+                }
+            }
+            where = {
+                "_id": ObjectId(id)
+            }
+            MongoFront.update(where, update, "video_channels")
+
+        elif is_hot == "delete_hot":
+
+            where = {
+                "_id": ObjectId(id),
+                "status": 1
+            }
+
+            result_rank = MongoFront.find_one(where, "video_channels")
+
+            update = {
+                "$set": {
+                    "status": 3,
+                    "rank": 9999
+                }
+            }
+            MongoFront.update(where, update, "video_channels")
+
+            rank = result_rank["rank"]
+            where = {
+                "status": 1,
+                "rank": {"$gt": rank}
+            }
+            update = {
+                "$inc": {"rank": -1}
+            }
+            MongoFront.update(where, update, "video_channels")
+
+        response = json.dumps({"result": "ok"},
+                                  indent=2,
+                                  ensure_ascii=False,
+                                  cls=MongoFieldEncoder)
+        self.write(response)
+        self.finish()
+

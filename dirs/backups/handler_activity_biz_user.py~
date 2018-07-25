@@ -1,0 +1,499 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# @Date    : 2015-05-18 17:41:52
+# @Author  : Your Name (you@example.org)
+# @Link    : http://example.org
+# @Version : $Id$
+from handler_baseHt import BaseHtHandler
+from log import get_logger
+from tornado import gen
+import tornado.web
+from tornado.web import asynchronous
+from tornado.options import options
+import json
+import hashlib
+import datetime
+from services.service_post import *
+import re
+import hashlib
+from bson import ObjectId
+import random
+import time
+from log import get_logger
+from model.biz_user import Biz_User
+from model.permissions_ht import Permissions_ht
+import optionsSetting
+from utils.secret import *
+import traceback
+from utils.redis_client import RedisClient
+from utils.mongo_front import MongoFront
+from mongo_field_encoder import MongoFieldEncoder
+from services.service_activity import *
+from mongolog import MongoHandler
+from mongokit.helpers import totimestamp, fromtimestamp
+from utils.token_im import TokenService
+from tornado.httpclient import HTTPRequest
+from utils.mongo_client import MongoClient
+from services.service_image_cloud import *
+import pymongo
+from auth import requires_auth
+from services.service_admin_log import save_log
+try:
+    from tornado.curl_httpclient import CurlAsyncHTTPClient as AsyncHTTPClient
+except ImportError:
+    from tornado.simple_httpclient import SimpleAsyncHTTPClient as AsyncHTTPClient
+log = get_logger()
+class ActivityBizUserHandler(BaseHtHandler):
+    '''
+     商家信息修改
+    '''
+    @requires_auth
+    @asynchronous
+    def put(self,partner_id_url):
+        log.info("ActivityBizUserHandler.put:"+self.request.body)
+        try:
+            body_dic = json.loads(self.request.body,encoding="utf-8")
+            biz_user_id=partner_id_url[1:]
+
+            if not biz_user_id:
+                self.fire_response_bad_request("id")
+                return
+            log.info("biz_user_id:"+str(biz_user_id))
+            lookup = {
+                '_id':ObjectId(biz_user_id)
+            }
+            updated_value={
+            }
+
+
+            province=body_dic.get("province",None)
+            city=body_dic.get("city",None)
+            if province and city:
+                updated_value["province"]=province
+                updated_value["city"]=city
+
+
+            qq = body_dic.get("qq",None)
+            if qq:
+                updated_value["qq"]=qq
+
+            real_name=body_dic.get("real_name",None)
+            if real_name:
+                updated_value["real_name"]=real_name
+
+            partner_real_name=body_dic.get("partner_real_name",None)
+            if partner_real_name:
+                updated_value["partner_real_name"]=partner_real_name
+
+            partner_mobile=body_dic.get("partner_mobile",None)
+            if partner_mobile:
+                updated_value["partner_mobile"]=partner_mobile
+
+            club_name=body_dic.get("club_name",None)
+            if club_name:
+                updated_value["club_name"]=club_name
+
+            address=body_dic.get("address",None)
+            if address:
+                updated_value["address"]=address
+
+
+            biz_range=body_dic.get("biz_range",None)
+            if biz_range:
+                updated_value["biz_range"]=biz_range
+
+
+            mobile=body_dic.get("mobile",None)
+            if mobile:
+                updated_value["mobile"]=mobile
+
+            urgent_name=body_dic.get("urgent_name",None)
+            if urgent_name:
+                updated_value["urgent_name"]=urgent_name
+
+            urgent_mobile=body_dic.get("urgent_mobile",None)
+            if urgent_mobile:
+                updated_value["urgent_mobile"]=urgent_mobile
+
+            weixin=body_dic.get("weixin",None)
+            if urgent_name:
+                updated_value["weixin"]=weixin
+
+            ID_Card=body_dic.get("ID_Card",None)
+            if ID_Card:
+                updated_value["ID_Card"]=ID_Card
+
+
+
+
+            status=body_dic.get("status",None)
+            if status is not None:
+                updated_value["status"]=status
+
+            check_failed_reason=body_dic.get("check_failed_reason",'')
+            if status==2:
+                updated_value["check_failed_reason"]=check_failed_reason
+
+
+
+            log.info(json.dumps(updated_value,
+                                  indent=2,
+                                  ensure_ascii=False,
+                                  cls=MongoFieldEncoder))
+
+            response = {"entities":[]}
+            if updated_value:
+                where={
+                    "_id":ObjectId(biz_user_id)
+                }
+                curr_biz_user = MongoFront.find_one(where,"biz_user")
+                club_name_old = curr_biz_user["club_name"]
+                mobile_old = curr_biz_user["mobile"]
+                urgent_mobile_old = curr_biz_user["urgent_mobile"]
+
+                club_where = {
+                   "$and":[{"club_name":club_name},{"club_name":{"$ne":club_name_old}}]
+                }
+                biz_user_exit = MongoFront.find_one(club_where,"biz_user")
+                if biz_user_exit:
+                    self.set_status(400)
+                    self.write('{"error":"name_exist"}')
+                    self.finish()
+                    return
+
+                biz_user=options.dbconn.Biz_User.find_and_modify(lookup,{"$set":updated_value},new=True)
+                response["entities"]=[biz_user]
+                biz_status = biz_user["status"]
+                club_name = biz_user["club_name"]
+
+                log.info("biz_status"+str(biz_status))
+                log.info("club_name"+str(club_name))
+
+                if biz_status and biz_status==1:
+                    # 修改审核通过的商家名称
+                    update_where={
+                        "username":biz_user["username"]
+                    }
+                    update_value={
+                        "$set":{
+                            "nick":biz_user["club_name"]
+                        }
+                    }
+                    MongoFront.update(update_where,update_value,"users")
+
+                if status and (status==1 or status==2):
+                    ###审核通过时,讲用户表的"biz_role"设定为"biz_manager"(商家管理员—总账号)
+                    where={
+                        "username":biz_user["username"]
+                    }
+                    if status==1:
+                        updated_value={
+                            "$set":{
+                                "biz_role":"biz_manager",
+                                "nick":biz_user["club_name"]
+                            }
+                        }
+                    if status==2:
+                        updated_value={
+                            "$unset":{
+                                "biz_role":""
+                            }
+                        }
+                    MongoFront.update(where,updated_value,"users")
+
+                    # 清空该用户的子账号表
+                    consume_where = {
+                        "sub_username":biz_user["username"],
+                        "status":1
+                    }
+                    consume_update = {
+                        "$set":{
+                            "status":0
+                        }
+                    }
+                    MongoFront.update(consume_where,consume_update,"biz_employee_architecture")
+
+            self.write(json.dumps(response,
+                                  indent=2,
+                                  ensure_ascii=False,
+                                  cls=MongoFieldEncoder))
+            self.finish()
+
+
+            # 通过与否，给商家发消息
+            # if status not in[1,2]:
+            #     return
+            push_content=""
+            if status==1:
+                push_content = "你的入驻申请已通过审核"
+            if status==2:
+                push_content="你的入驻申请未通过审核。"
+                if check_failed_reason!=None and check_failed_reason!="":
+                    push_content+="原因是：" +check_failed_reason
+
+            lookup = {
+                '_id':ObjectId(biz_user_id)
+            }
+            biz_user=options.dbconn.Biz_User.find_one(lookup)
+            username=biz_user["username"]
+            to_usernames = [biz_user["username"]]
+            message_event = {}
+            #####给发布者发的通知:在消息监控中,为了将活动审核和精品审核分开,此处由"check"改为"activity_check"
+            #####为兼容以前的程序,发消息时,会把"message_type"改回"check"
+            message_event["message_type"] = "biz_join_remind"
+            message_event["target"] = "apoint"
+            message_event["content"] = push_content
+            message_event["to_usernames"] = to_usernames
+            if push_content:
+                self.sendHuanxinMessages(message_event)
+                mobile = biz_user["mobile"]
+                self.sendSMSMessages(mobile,push_content)
+
+            #环信修改商家昵称
+            biz_user_id=partner_id_url[1:]
+            log.info("biz_user_id",biz_user_id)
+            lookup = {
+                '_id':ObjectId(biz_user_id)
+            }
+            biz_user=options.dbconn.Biz_User.find_one(lookup)
+            log.info("biz_user",biz_user)
+            self.update_time=0
+            if biz_user and biz_user["status"]==1:
+                club_name = biz_user["club_name"]
+                biz_username = biz_user["username"]
+                log.info("club_name"+club_name)
+                log.info("username"+username)
+                self.updateNicknameToIM(club_name,biz_username)
+
+            # 修改商家发布活动的电话号码
+            if mobile!=mobile_old or urgent_mobile!=urgent_mobile_old:
+                update_val = {
+                    "$set":{
+                        "tel":mobile,
+                        "activity_desc.team.team_mobile":mobile,
+                        "activity_desc.team.emergent_mobile":urgent_mobile
+                    }
+                }
+                where = {
+                    "actor.username":biz_user["username"]
+                }
+                MongoFront.update(where,update_val,"activities")
+        except Exception as e:
+            log.error('ActivityBizUserHandler.put Exception:%s' % e.message)
+            log.error(traceback.format_exc())
+            self.fire_response_bad_request(key_required=e.message)
+            return
+
+
+
+    @tornado.gen.engine
+    def updateNicknameToIM(self,nickname=None,biz_username=None):
+        log.info("biz_username,nickname",biz_username,nickname)
+        url="https://a1.easemob.com/nbchat/ziyadiaoyu/users/%s"%biz_username
+        body='{"nickname":"%s"}' %(nickname)
+        log.info(url)
+        self.update_time =self.update_time+1
+        headers = {}
+        headers["Host"]=options.api_host
+        headers["Authorization"]=" Bearer %s"%(TokenService.getIMToken())
+        request = HTTPRequest(url=url,\
+                              method="PUT", \
+                              headers=headers, \
+                              body=body, \
+                              follow_redirects=False)
+        begin=int(time.time()*1000)
+        response=yield gen.Task(AsyncHTTPClient().fetch,request)
+        ##发监控消息
+
+        log.info("im response.code:"+str(response.code)+" username:"+biz_username)
+
+        if response.body:
+            log.info("response.body:"+response.body+"  username:"+biz_username)
+
+        if response.error:
+            log.info("response.error:"+str(response.error)+"  username:"+biz_username)
+
+
+    @asynchronous
+    @requires_auth
+    def get(self,biz_user_id_flag):
+        log.info("ActivityBizUserHandler.get is called:")
+
+        if biz_user_id_flag is not None:
+            biz_user_id = biz_user_id_flag[1:]
+            self.fetch_activity_biz_user(biz_user_id)
+        else:
+            self.fetch_activity_biz_user_list()
+
+    def fetch_activity_biz_user_list(self):
+        where = {
+            "status":1
+        }
+        biz_username = self.username
+        biz_where={
+            "username":biz_username
+        }
+        account=options.dbconn_ht.Account_ht.find(biz_where)
+        level = account[0]["level"]
+        if level=="staff":
+            where["admin_area"]={"$in":account[0]["activity_area"]}
+
+        # limit=10
+        curr = self.get_argument('curr',"")
+        sort = [('created', pymongo.DESCENDING)]
+        # # log.info("curr:"+curr)
+        begin = self.get_argument('begin',None)
+        end = self.get_argument('end',None)
+        if begin!=None:
+           # log.info("datemin:"+datemin)
+           begin_date = datetime.datetime.strptime(begin, "%Y-%m-%d")-datetime.timedelta(hours=8)
+           where["created"]={"$gte":begin_date}
+
+        if end!=None:
+           # log.info("datemax:"+datemax)
+           end_date = datetime.datetime.strptime(end, "%Y-%m-%d")-datetime.timedelta(hours=8)
+           between={}
+           if where.has_key("created"):
+               between=where["created"]
+
+           between["$lte"]=end_date
+           where["created"]=between
+
+        ziya_code = self.get_argument('ziya_code',None)
+        if ziya_code:
+            where_user={
+                'invite_code':ziya_code
+            }
+            user_cursor=MongoFront.find_one(where_user,"users")
+            if user_cursor:
+                username=user_cursor["username"]
+                where['username']=username
+
+        status = self.get_argument('status',None)
+        if status is not None:
+            where['status']=int(status)
+
+        user_status = self.get_argument('user_status', None)
+        if user_status:
+            try:
+                user_status = int(user_status)
+            except:
+                self.fire_response_error_info("user_status error","user_status error")
+            if user_status==3:
+                where['status']=user_status
+            else:
+                where["user_type"]=user_status
+
+        province=self.get_argument('province',None)
+        if province:
+            where["province"]=province
+
+        city=self.get_argument('city',None)
+        if city:
+            where["city"]={
+                "$in":city.split(",")
+            }
+
+        log.info("where:"+str(where))
+        # log.info("sort:"+str(sort))
+
+        # biz_user_cursor = options.dbconn.Biz_User.find(where).sort(sort)
+        limit=10
+        if curr=="":
+            biz_user_cursor = options.dbconn.Biz_User.find(where).sort(sort).limit(limit)
+        else:
+            biz_user_cursor = options.dbconn.Biz_User.find(where).sort(sort).skip((int(curr)-1)*limit).limit(limit)
+
+        log.info("post_cursor:"+str(biz_user_cursor.count()))
+
+        biz_user_array=[]
+        username_array=[]
+        for biz_user in biz_user_cursor:
+            biz_username = biz_user["username"]
+            username_array.append(biz_username)
+            biz_user_array.append(biz_user)
+
+        # 获取商家发活动情况（认证活动多少条，未认证活动多少条）
+        if username_array:
+            activity_info =self.fetch_activity_info(username_array)
+            for biz_user in biz_user_array:
+                if activity_info is not None and activity_info.has_key(biz_user["username"]):
+                    biz_user["activity_info"] = activity_info[biz_user["username"]]
+
+        response={}
+        response["entities"]=biz_user_array
+        response["count"]=str(biz_user_cursor.count())
+        self.write(json.dumps(response,indent=2, ensure_ascii=False,cls=MongoFieldEncoder))
+        self.finish()
+
+    def fetch_activity_info(self,username_array):
+        if len(username_array)==0:
+            self.fire_response_bad_response()
+        authorized_where = {
+            "actor.username":{"$in":username_array},
+            "status":1,
+            "activity_type":0
+        }
+        unauthorized_where = {
+            "actor.username": {"$in": username_array},
+            "status": 1,
+            "activity_type": 1
+        }
+        filter = {"_id":0,"actor":1}
+        authorized_cursor = list(MongoFront.find_all(authorized_where,"activities",filter=filter))or []
+        unauthorized_cursor = list(MongoFront.find_all(unauthorized_where,"activities",filter=filter))or []
+        activity_info = {}
+        for username in username_array:
+            identity_count = 0
+            unauthorized_count = 0
+            user_info = {}
+            for authorized in authorized_cursor:
+                actor = authorized.get("actor","")
+                if actor:
+                    actor_username = actor.get("username","")
+                    if actor_username==username:
+                        identity_count+=1
+
+            for unauthorized in unauthorized_cursor:
+                actor = unauthorized.get("actor", "")
+                if actor:
+                    actor_username = actor.get("username", "")
+                    if actor_username == username:
+                        unauthorized_count += 1
+
+            user_info["identity_count"] = identity_count
+            user_info["unauthorized_count"] = unauthorized_count
+            activity_info[username] = user_info
+
+        return activity_info
+
+
+
+
+
+
+
+
+    def fetch_activity_biz_user(self,partner_id):
+        lookup = {
+            '_id':ObjectId(partner_id),
+            # "status":1
+        }
+        biz_username = self.username
+        biz_where={
+            "username":biz_username
+        }
+        account=options.dbconn_ht.Account_ht.find(biz_where)
+        level = account[0]["level"]
+        if level=="staff":
+            lookup["admin_area"]={"$in":account[0]["activity_area"]}
+        biz_user=options.dbconn.Biz_User.find_one(lookup)
+        response={}
+        if biz_user:
+            response["entities"]=[biz_user]
+
+        self.write(json.dumps(response,indent=2, ensure_ascii=False,cls=MongoFieldEncoder))
+        self.finish()
+
+
+

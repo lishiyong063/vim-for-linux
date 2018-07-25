@@ -1,0 +1,74 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# @Date    : 2015-05-18 17:41:52
+# @Author  : Your Name (you@example.org)
+# @Link    : http://example.org
+# @Version : $Id$
+from handler_baseHt import BaseHtHandler
+from log import get_logger
+import tornado.web
+from tornado.web import asynchronous
+from tornado.options import options
+import json
+import hashlib
+import datetime
+import hashlib
+from bson import ObjectId
+import random
+import time
+from log import get_logger
+from model.comment import Comment
+from model.activities import Activities
+import optionsSetting
+from utils.secret import *
+import traceback
+from utils.redis_client import RedisClient
+from utils.mongo_front import MongoFront
+from mongo_field_encoder import MongoFieldEncoder
+from model.posts import Post
+from mongolog import MongoHandler
+from mongokit.helpers import totimestamp, fromtimestamp
+from utils.token_im import TokenService
+from tornado.httpclient import HTTPRequest
+from utils.mongo_client import MongoClient
+import pymongo
+from auth import requires_auth
+try:
+    from tornado.curl_httpclient import CurlAsyncHTTPClient as AsyncHTTPClient
+except ImportError:
+    from tornado.simple_httpclient import SimpleAsyncHTTPClient as AsyncHTTPClient
+log = get_logger()
+class UsersLikeHandler(BaseHtHandler):
+    @requires_auth
+    @asynchronous
+    def post(self):
+        log.info("UsersLikeHandler.post is called")
+        body = json.loads(self.request.body, encoding='utf-8')
+
+        post_id = body.get('post_id',None)
+        usernames = body.get('usernames',None)
+        username_array=usernames.split(",")
+
+        lookup = {
+            "post_id":post_id,
+            "username": {"$in":username_array}
+        }
+        # log.info("lookup:"+json.dumps(lookup,
+        #                   indent=2,
+        #                   ensure_ascii=False,
+        #                   cls=MongoFieldEncoder))
+        user_like_cursor=options.dbconn.User_Like_post.find(lookup)
+        user_like_array=[]
+        if user_like_cursor is not None:
+            for user_like in user_like_cursor:
+                user_like_array.append(user_like)
+
+        reponse_json={}
+        reponse_json["entities"]=user_like_array
+        response = json.dumps(reponse_json,
+                          indent=2,
+                          ensure_ascii=False,
+                          cls=MongoFieldEncoder)
+        log.info("response:"+response)
+        self.write(response)
+        self.finish()

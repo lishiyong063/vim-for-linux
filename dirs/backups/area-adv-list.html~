@@ -1,0 +1,196 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="renderer" content="webkit|ie-comp|ie-stand">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta name="viewport" content="width=device-width,initial-scale=1,minimum-scale=1.0,maximum-scale=1.0,user-scalable=no" />
+<meta http-equiv="Cache-Control" content="no-siteapp" />
+<!--[if lt IE 9]>
+<script type="text/javascript" src="lib/html5.js"></script>
+<script type="text/javascript" src="lib/respond.min.js"></script>
+<script type="text/javascript" src="lib/PIE_IE678.js"></script>
+<![endif]-->
+<link href="css/H-ui.min.css" rel="stylesheet" type="text/css" />
+<link href="css/H-ui.admin.css" rel="stylesheet" type="text/css" />
+<link href="lib/font-awesome/font-awesome.min.css" rel="stylesheet" type="text/css" />
+<!--[if IE 7]>
+<link href="lib/font-awesome/font-awesome-ie7.min.css" rel="stylesheet" type="text/css" />
+<![endif]-->
+<link href="lib/iconfont/iconfont.css" rel="stylesheet" type="text/css" />
+<!--[if IE 6]>
+<script type="text/javascript" src="lib/DD_belatedPNG_0.0.8a-min.js" ></script>
+<script>DD_belatedPNG.fix('*');</script>
+<![endif]--><title>位置广告列表</title>
+</head>
+<style>
+.tabBar {border-bottom: 2px solid #222}
+.tabBar span {background-color: #e8e8e8;cursor: pointer;display: inline-block;float: left;font-weight: bold;height: 30px;line-height: 30px;padding: 0 15px}
+.tabBar span.current{background-color: #222;color: #fff;}
+.tabCon {display: none;}
+</style>
+<body>
+<nav class="breadcrumb"><i class="iconfont">&#xf012b;</i> 首页 <span class="c-gray en">&gt;</span> 广告管理 <span
+        class="c-gray en">&gt;</span> 位置广告列表
+</nav>
+<div id="tab_demo" class="HuiTab">
+  <div class="cl bk-gray mt-20">
+    <span class="l">
+        &nbsp;&nbsp;&nbsp;<a href="javascript:;" id="batch_pass" class="btn btn-primary radius" onclick="refresh_banner()">广告刷新</a>
+        &nbsp;&nbsp;&nbsp;<a href="javascript:;" id="new_adv_add" style="display:none" class="btn btn-primary radius" onclick="layer_show('450','350','新增广告','area_adv_add.html?area='+area)">新版新增广告</a>
+    </span>
+  </div>
+  <div class="tabBar cl" id="tab_div">
+  </div>
+  <table class="table table-border table-bordered table-hover table-bg">
+    <thead>
+    <tr class="text-c">
+      <input id="area" style="display: none"/>
+      <th width="30">位置排序</th>
+      <th width="30">广告名称</th>
+      <th width="10">图片</th>
+      <th width="20">链接地址</th>
+      <th width="30">操作</th>
+    </tr>
+    </thead>
+    <tbody id="area_list">
+
+
+    </tbody>
+
+  </table>
+  <div id="pageComponent" ></div>
+
+  <input id="add_index" style="display: none" value="1">
+  <input id="exchange_index" style="display: none" value="">
+  <input id="exchange_name" style="display: none" value="">
+
+  <div id="advDialog" class="modal hide fade" tabindex="-1" role="dialog" aria-labelledby="myModalLabel" aria-hidden="true">
+    <div class="modal-header">
+      <h4 >选择可以的广告</h4><a class="close" data-dismiss="modal" aria-hidden="true" href="javascript:void();">×</a>
+    </div>
+    <div class="modal-body" id="adv_list">
+      <select id="adv">
+      </select>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-primary" onclick="add_adv()">提交</button> <button class="btn" data-dismiss="modal" aria-hidden="true" id="close">关闭</button>
+    </div>
+  </div>
+
+  <div id="exchangeDialog" class="modal hide fade" tabindex="-1" role="dialog" aria-labelledby="myModalLabel" aria-hidden="true">
+    <div class="modal-header">
+      <h4 >选择与哪个位置交换</h4><a class="close" data-dismiss="modal" aria-hidden="true" href="javascript:void();">×</a>
+    </div>
+    <div class="modal-body" id="index_list">
+      <select id="index">
+      </select>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-primary" onclick="exchange_adv()">提交</button> <button class="btn" data-dismiss="modal" aria-hidden="true" id="close2">关闭</button>
+    </div>
+  </div>
+
+
+</div>
+<script type="text/javascript" src="lib/jquery.min.js"></script>
+<script type="text/javascript" src="lib/layer1.8/layer.min.js"></script>
+<script type="text/javascript" src="lib/laypage/laypage.js"></script>
+<script type="text/javascript" src="lib/My97DatePicker/WdatePicker.js"></script>
+<script type="text/javascript" src="lib/jquery.dataTables.min.js"></script>
+<script type="text/javascript" src="lib/jquery.lazyload.min.js"></script>
+<script type="text/javascript" src="js/H-ui.js"></script>
+<script type="text/javascript" src="js/H-ui.admin.js"></script>
+<script type="text/javascript" src="js/H-ui.admin.doc.js"></script>
+<script type="text/javascript" src="lib/laypage/laypage.js"></script>
+<script type="text/javascript" src="lib/jquery.provincesCity.js"></script>
+<script type="text/javascript" src="lib/provincesData.js"></script>
+<script type="text/javascript" src="lib/bootstrap-modalmanager.js"></script>
+<script type="text/javascript" src="lib/bootstrap-modal.js"></script>
+<script type="text/javascript" src="bizjs/map.js"></script>
+<script type="text/javascript" src="bizjs/base.js"></script>
+<script type="text/javascript" src="bizjs/area-list.js"></script>
+
+<script>
+  var tab_text_array=[
+    {
+      "id":"new",
+      "content":"渔获"
+    },
+    {
+      "id":"activity",
+      "content":"活动"
+    },
+    {
+      "id":"recommend",
+      "content":"攻略"
+    },
+    {
+      "id":"tool",
+      "content":"集市"
+    },
+    {
+      "id":"user",
+      "content":"钓友"
+    },
+    {
+      "id":"buffer",
+      "content":"缓冲广告"
+    },
+    {
+      "id":"new_post",
+      "content":"发布栏广告"
+    },
+    {
+      "id":"article_info",
+      "content":"攻略详情广告"
+    },
+    {
+      "id":"start_up",
+      "content":"启动页广告"
+    },
+    {
+     "id":"post_list",
+      "content":"渔获列表广告"
+    },
+    {
+      "id":"article_list",
+      "content":"攻略列表广告"
+    },
+    {
+      "id":"tool_list",
+      "content":"装备列表广告"
+    },
+    {
+      "id":"activity_province",
+      "content":"国内活动广告"
+    },
+    {
+      "id":"activity_country",
+      "content":"国外活动广告"
+    },
+    {
+      "id":"activity_citys",
+      "content":"城市活动广告"
+    }
+  ];
+
+  $(function(){
+    var tab_info_html=""
+    for(i in tab_text_array){
+      var tab_info=tab_text_array[i]
+      tab_info_html+='<span id="'+tab_info.id+'">'+tab_info.content+'</span>'
+    }
+    $('#tab_div').html(tab_info_html);
+    $.Huitab("#tab_demo .tabBar span","#tab_demo .tabCon","current","click","0");
+
+
+    loadAreaList("new")
+    adv_init()
+
+  })
+
+
+</script>
+</body>
+</html>

@@ -1,0 +1,161 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# @Date    : 2015-05-18 17:41:52
+# @Author  : Your Name (you@example.org)
+# @Link    : http://example.org
+# @Version : $Id$
+from handler_baseHt import BaseHtHandler
+from log import get_logger
+from tornado import gen
+import tornado.web
+from tornado.web import asynchronous
+from tornado.options import options
+import json
+import hashlib
+import datetime
+from services.service_post import *
+import re
+import hashlib
+from bson import ObjectId
+import random
+import time
+from log import get_logger
+from model.biz_user import Biz_User
+from model.permissions_ht import Permissions_ht
+import optionsSetting
+from utils.secret import *
+import traceback
+from utils.redis_client import RedisClient
+from utils.mongo_front import MongoFront
+from mongo_field_encoder import MongoFieldEncoder
+from services.service_activity import *
+from mongolog import MongoHandler
+from mongokit.helpers import totimestamp, fromtimestamp
+from utils.token_im import TokenService
+from tornado.httpclient import HTTPRequest
+from utils.mongo_client import MongoClient
+from services.service_image_cloud import *
+import pymongo
+from auth import requires_auth
+from services.service_admin_log import save_log
+from services.service_fishing_place import get_image_info
+try:
+    from tornado.curl_httpclient import CurlAsyncHTTPClient as AsyncHTTPClient
+except ImportError:
+    from tornado.simple_httpclient import SimpleAsyncHTTPClient as AsyncHTTPClient
+log = get_logger()
+
+
+class GetDataDetailHandler(BaseHtHandler):
+    @gen.coroutine
+    @asynchronous
+    @requires_auth
+    def get(self):
+        log.info("GetDataDetailHandler.get is called:")
+        response = {}
+        username = ""
+        search_id = self.get_argument('search_id', '')
+        model = self.get_argument('type', '')
+        if model:
+            if model == "post":
+                where = {
+                    "_id": ObjectId(search_id)
+                }
+                result = MongoFront.find_one(where, "posts")
+                if result:
+                    username = result["actor"]["username"]
+                    response["entities"] = result
+            elif model == "article":
+                where = {
+                    '_id': ObjectId(search_id)
+                }
+                result = MongoFront.find_one(where, "article")
+                if result:
+                    username = result["actor"]["username"]
+                    image_url = ""
+                    image_body = result.get("images", [])
+                    if image_body:
+                        image_url = image_body[0].get("image_url", "")
+                    if image_url:
+                        image_url1 = re.sub("[?].+", "", image_url)
+                        cover, flag = get_image_info(image_url1)
+                        if flag:
+                            cover["image_url"] = image_url
+                            result["page"] = [cover]
+                    result["content"] = result["title"]
+                    response["entities"] = result
+            elif model == "activity":
+                where = {
+                    'activity_code': search_id
+                }
+                result = MongoFront.find_one(where, "activities")
+                if result:
+                    username = result["actor"]["username"]
+                    result["content"] = result["title"]
+                    response["entities"] = result
+            elif model == "program":
+                where = {
+                    '_id': ObjectId(search_id)
+                }
+                result = MongoFront.find_one(where, "video_programs")
+                if result:
+                    username = result.get("username", "")
+                    image_url = result.get("image_url", "")
+                    if image_url:
+                        cover, flag = get_image_info(image_url)
+                        if flag:
+                            result["page"] = [cover]
+                    # if username:
+                    # username = result["actor"]["username"]
+                    result["content"] = result["name"]
+                    response["entities"] = result
+            elif model == "shop":
+                request_url = 'http://shop.ziyadiaoyu.com/goods_info.php'
+                data = {
+                    "url": search_id
+                }
+                request = HTTPRequest(url=request_url, \
+                                      method="POST", \
+                                      body=json.dumps(data, \
+                                                      indent=2, \
+                                                      ensure_ascii=False), \
+                                      follow_redirects=False, \
+                                      request_timeout=3000)
+
+                # result = {}
+                shop_response = yield gen.Task(AsyncHTTPClient().fetch, request)
+                if shop_response.code == 200:
+                    # log.info("######response.body:"+response.body)
+                    result = json.loads(shop_response.body, encoding="utf-8")
+                    if result:
+                        return_content = result.get("goods_name", "")
+                        return_image_url = result.get("goods_thumb", "")
+                        return_nick = result.get("suppliers_name", "")
+                        return_logo = result.get("suppliers_logo", "")
+                        if return_content:
+                            result["content"] = return_content
+                        if return_image_url:
+                            return_image_url = re.sub("[?].+", "", return_image_url)
+                            cover, flag = get_image_info(return_image_url)
+                            if flag:
+                                result["page"] = [cover]
+                        user_result = {
+                            "nick": return_nick,
+                            "avatar_url": return_logo
+                        }
+                        response["user"] = user_result
+                        response["entities"] = result
+        if username:
+            where = {
+                "username": username
+            }
+            filter = {
+                "nick": 1,
+                "avatar_url": 1,
+                "_id": 0
+            }
+            user_result = MongoFront.find_one(where, "users", filter)
+            if user_result:
+                response["user"] = user_result
+        self.write(json.dumps(response, indent=2, ensure_ascii=False, cls=MongoFieldEncoder))
+        self.finish()

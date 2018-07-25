@@ -1,0 +1,62 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# @Date    : 2015-05-18 17:41:52
+# @Author  : Your Name (you@example.org)
+# @Link    : http://example.org
+# @Version : $Id$
+from handler_baseHt import BaseHtHandler
+from log import get_logger
+import tornado.web
+from tornado.web import asynchronous
+from tornado.options import options
+import json
+import hashlib
+import datetime
+import hashlib
+from bson import ObjectId
+import random
+import time
+from log import get_logger
+from auth import requires_auth
+from model.advices import Advice
+from model.permissions_ht import Permissions_ht
+import optionsSetting
+from utils.secret import *
+import traceback
+from utils.redis_client import RedisClient
+from utils.mongo_front import MongoFront
+from mongo_field_encoder import MongoFieldEncoder
+from mongolog import MongoHandler
+from mongokit.helpers import totimestamp, fromtimestamp
+from utils.token_im import TokenService
+from tornado.httpclient import HTTPRequest
+from utils.mongo_client import MongoClient
+import pymongo
+from utils.redis_client import RedisClient
+try:
+    from tornado.curl_httpclient import CurlAsyncHTTPClient as AsyncHTTPClient
+except ImportError:
+    from tornado.simple_httpclient import SimpleAsyncHTTPClient as AsyncHTTPClient
+log = get_logger()
+class InviteCodeHandler(BaseHtHandler):
+    @asynchronous
+    def get(self):
+        # log.info("InviteCodeHandler.get:"+str(self.request.query_arguments))
+
+        mobile = self.get_argument('mobile',"")
+        response={}
+        if mobile:
+
+            lookup = {
+                "mobile":mobile
+            }
+            filter = {
+                "invite_code":1,"_id":0
+            }
+            user_cursor = MongoFront.find_one(lookup,"users",filter=filter)
+            if user_cursor:
+                invite_code = user_cursor.get("invite_code","")
+                response["invite_code"]=invite_code
+
+        self.write(json.dumps(response,indent=2, ensure_ascii=False,cls=MongoFieldEncoder))
+        self.finish()

@@ -1,0 +1,87 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# @Date    : 2015-05-18 17:41:52
+# @Author  : Your Name (you@example.org)
+# @Link    : http://example.org
+# @Version : $Id$
+from handler_baseHt import BaseHtHandler
+from log import get_logger
+import tornado.web
+from tornado.web import asynchronous
+from tornado.options import options
+import json
+import hashlib
+import datetime
+from services.service_post import *
+import re
+import hashlib
+from bson import ObjectId
+import random
+import time
+from log import get_logger
+from model.ziya_income_deposit_apply import IncomeDepositApply
+from model.ziya_income_history import ZiyaIncomeHistory
+import optionsSetting
+from utils.secret import *
+import traceback
+from utils.redis_client import RedisClient
+from utils.mongo_front import MongoFront
+from mongo_field_encoder import MongoFieldEncoder
+from mongolog import MongoHandler
+from mongokit.helpers import totimestamp, fromtimestamp
+from utils.token_im import TokenService
+from tornado.httpclient import HTTPRequest
+from utils.mongo_client import MongoClient
+import pymongo
+from auth import requires_auth
+from services.service_admin_log import save_log
+try:
+    from tornado.curl_httpclient import CurlAsyncHTTPClient as AsyncHTTPClient
+except ImportError:
+    from tornado.simple_httpclient import SimpleAsyncHTTPClient as AsyncHTTPClient
+log = get_logger()
+class FinanceIncomeHistoryHandler(BaseHtHandler):
+    ###收入历史
+
+    @asynchronous
+    @requires_auth
+    def get(self):
+        log.info("FinanceIncomeHistoryHandler.get is called:")
+
+        username = self.get_argument('username',"")
+        if username:
+            where={
+                "username":username
+            }
+            log.info("where:"+str(where))
+
+            limit=10
+            curr = self.get_argument('curr',"")
+            sort = [('created', pymongo.DESCENDING)]
+            # # log.info("curr:"+curr)
+            begin = self.get_argument('begin',None)
+            end = self.get_argument('end',None)
+
+
+            log.info("where:"+str(where))
+            # log.info("sort:"+str(sort))
+
+            if curr=="":
+                income_history_cursor = options.dbconn.ZiyaIncomeHistory.find(where).sort(sort).limit(limit)
+            else:
+                income_history_cursor = options.dbconn.ZiyaIncomeHistory.find(where).sort(sort).skip((int(curr)-1)*limit).limit(limit)
+
+            # log.info("post_cursor:"+str(post_cursor.count()))
+
+            username_array=[]
+            income_history_arrary=[]
+            for income_object in income_history_cursor:
+                income_history_arrary.append(income_object)
+
+
+
+            response={}
+            response["entities"]=income_history_arrary
+            response["count"]=str(income_history_cursor.count())
+            self.write(json.dumps(response,indent=2, ensure_ascii=False,cls=MongoFieldEncoder))
+            self.finish()

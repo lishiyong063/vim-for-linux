@@ -1,0 +1,115 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# @Date    : 2015-05-18 17:41:52
+# @Author  : Your Name (you@example.org)
+# @Link    : http://example.org
+# @Version : $Id$
+
+
+
+
+from bson import ObjectId
+from handler_baseHt import BaseHtHandler
+from log import get_logger, get_logger
+from model.informs import Inform
+from model.permissions_ht import Permissions_ht
+from mongo_field_encoder import MongoFieldEncoder
+from mongokit.helpers import totimestamp, fromtimestamp
+from mongolog import MongoHandler
+from tornado.httpclient import HTTPRequest
+from tornado.options import options
+from tornado.web import asynchronous
+from utils.mongo_client import MongoClient
+from utils.mongo_front import MongoFront
+from utils.redis_client import RedisClient
+from utils.secret import *
+from utils.token_im import TokenService
+import datetime
+import hashlib
+import hashlib
+import json
+import optionsSetting
+import pymongo
+import random
+import time
+import tornado.web
+import traceback
+from auth import requires_auth
+
+try:
+    from tornado.curl_httpclient import CurlAsyncHTTPClient as AsyncHTTPClient
+except ImportError:
+    from tornado.simple_httpclient import SimpleAsyncHTTPClient as AsyncHTTPClient
+log = get_logger()
+class PushHandler(BaseHtHandler):
+    @asynchronous
+    @requires_auth
+    def post(self):
+        log.info("PushHandler.get:"+self.request.body)
+        body = json.loads(self.request.body, encoding='utf-8')
+        target = body.get("target",None)
+        content = body.get("content",None)
+        if target ==None or content ==None or content=="":
+            return self.fire_response_bad_response()
+        
+        to_usernames = []
+        cities = ""
+        if target=="appoint":
+             to_usernames = body.get("to_usernames",None)
+             if to_usernames ==None:
+                 return self.fire_response_bad_response()
+        elif target=="city":
+             cities = body.get("cities",None)
+             if cities ==None:
+                 return self.fire_response_bad_response()
+        elif target=="login":
+            days = body.get("login_days",None)
+            if days==None or type(days)!=int:
+                 return self.fire_response_bad_response()
+           
+            
+        message_event = {}
+        message_event["message_type"]="push" 
+        message_event["target"]=target
+        message_event["content"]=content
+        message_event["to_usernames"]=to_usernames
+        message_event["cities"]=cities
+        if target=="login":
+            message_event["login_days"]=days
+
+        #### 保存消息监控表
+        message_monitor_entity={
+            "created":datetime.datetime.utcnow(),
+            "begin_milli":int(round(time.time() * 1000)),
+            "message_event":message_event
+        }
+        id,db_error=MongoFront.insert(message_monitor_entity,"message_monitor")
+
+        message_event["message_monitor_id"]=id
+
+        message_event = json.dumps(message_event,
+                          indent=2,
+                          ensure_ascii=False,
+                          cls=MongoFieldEncoder)
+        queue_name=options.redis_queue_message_event_im
+        log.info("insert queue:%s"%queue_name)
+        log.info("insert message_event:%s"%message_event)
+        result =RedisClient.rpush(queue_name,message_event)
+        log.info("result:%s" % str(result))
+        response = {}
+        self.write(json.dumps(response,indent=2, ensure_ascii=False,cls=MongoFieldEncoder))
+        self.finish()
+        
+        
+    def fire_response_bad_response(self):
+        """
+        返回登录请求错误响应
+        """
+        self.set_status(400)
+        response = {}
+        response["error"] = "invalid_grant"
+        response["error_description"] = "invalid data"
+        self.write(json.dumps(response, indent=2, ensure_ascii=False))
+        self.finish()
+    
+   

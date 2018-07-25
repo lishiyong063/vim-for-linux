@@ -1,0 +1,162 @@
+ #!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# @Date    : 2014-10-10 10:19:40
+# @Author  : Your Name (you@example.org)
+# @Link    : http://example.org
+# @Version : $Id$
+from log import get_logger
+import traceback
+import json
+from tornado.options import options
+from tornado import gen
+from tornado.httpclient import HTTPRequest
+
+from utils.monitor import *
+from tornado.httpclient import HTTPError
+import random
+from utils.redis_client import RedisClient
+
+
+try:
+    from tornado.curl_httpclient import CurlAsyncHTTPClient as AsyncHTTPClient
+except ImportError:
+    from tornado.simple_httpclient import SimpleAsyncHTTPClient as AsyncHTTPClient
+
+import time
+log = get_logger()
+'''
+根据ip地址获取归属信息
+'''
+
+@gen.coroutine
+def ipAddaressBelonge(ip_address):
+    ip_belonge = {}
+
+    try:
+
+        key="loc_ip_"+ip_address
+
+        ip_belonge_str=RedisClient.get(key)
+        if ip_belonge_str is not None:
+            # log.info("loc redis hit:"+key+"  value:"+ip_belonge_str)
+
+            ip_belonge = json.loads(ip_belonge_str,encoding="utf-8")
+        else:
+            # log.info("loc redis not hit:" + key)
+            ###从腾讯获取地址信息
+            ip_belonge=yield getLocationByIPAddress(ip_address)
+
+            if ip_belonge:
+                RedisClient.setex(key,60*60*24,json.dumps(ip_belonge,indent=2, ensure_ascii=False))
+
+
+
+    except Exception as e:
+        log.error('geocoder Exception:%s' % e.message)
+        log.error('traceback:'+str(traceback.format_exc()))
+        ip_belonge={}
+
+    raise gen.Return(ip_belonge)
+
+
+
+@gen.coroutine
+def getLocationByIPAddress(ip_address):
+    location={}
+
+    try:
+        tx_key=getKey()
+        begin=int(time.time()*1000)
+        url='http://apis.map.qq.com/ws/location/v1/ip?ip=%s&key=%s&get_poi=0'%(ip_address,tx_key)
+        # log.info("url:"+url)
+        response = yield AsyncHTTPClient().fetch(url)
+        # response = yield gen.Task(AsyncHTTPClient().fetch, HTTPRequest(url=url, method='GET',connect_timeout=30,request_timeout=30))
+        # cost=int(time.time()*1000)-begin
+        # log.info("cost_tengxun:"+str(cost)+"  code:"+str(response.code)+" result:"+str(response.error)+" response:"+str(response.body))
+        result=response.body
+        print(result)
+
+        if response.code==200:
+
+            result_dic = json.loads(result,encoding="utf-8")
+            status=result_dic.get("status",-1)
+            if status==0:
+                result=result_dic.get("result",{})
+                if result:
+                    location=result
+        else:
+            log.info("error_code:"+str(response.code)+" result:"+str(response.error)+" response:"+str(response.body))
+    except Exception as e:
+        log.error('Exception:%s' % e.message)
+        log.error('traceback:'+str(traceback.format_exc()))
+        location={}
+    raise gen.Return(location)
+
+
+def getMapRequestKey():
+    key_array=[
+        'LUofNmvI2htby8VBcvn7SseMlTr2k9QU',
+        'UyFZx5c4CTtQOFKP6VWPG8fGNhZYgoCG',
+        'OfNdj81d89iHqRT5ZJYZvpW1R0awjfhe',
+        'GHnvdOQfY7Y1vGW34NcsgUgPeS2supME',
+        'LUofNmvI2htby8VBcvn7SseMlTr2k9QU',
+        'R1WI8CWWj0ZyggWkRdGowd9B4awahp4f',
+        '0LqxViqr01GpysAzEctVYAMaAWtYcPIY',
+        'wfCWdIZkVL0XrePxhH9iWaKKYbTkyrGq'
+    ]
+    randint=random.randint(0, len(key_array)-1)
+    key = key_array[randint]
+    return key
+
+
+
+
+
+def  getKey():
+
+        keys={1:"4KHBZ-MCUAD-A2245-PIVQB-PDILJ-3RFK3",
+             2:"SKRBZ-BRW3J-GRQFW-FGXA2-5MLN3-BEB6Y",
+             3:"TTUBZ-HHRRR-34LWT-WHHKZ-X6CR5-CSBGU",
+             4:"IGYBZ-D2SHD-RN74X-PNIRE-IA4VH-ILBXL",
+             5:"LC6BZ-UPARR-E4WWJ-WCMDD-Z22RQ-QHFCQ",
+             6:"XYHBZ-KB3HD-YNI45-PD7CC-ZPXVE-45BCY",
+             7:"MBWBZ-HFRA3-47T3B-3IAVD-6WIYE-PMFPO",
+             8:"SGYBZ-YQEWD-RIW4W-PIMPD-VLLLO-PDFOW",
+             9:"CKQBZ-H4EW3-W7W3I-3GUPY-2YQYQ-BYFGA",
+             10:"XXXBZ-J3HHU-BHLV5-2XDAU-NRHCF-SPFTR",
+             11:"I7RBZ-WAMRR-Z2DW2-WIV3T-DJYR6-NGF7J",
+             12:"63QBZ-TTKHD-WI64C-PVNSQ-TLBLF-DOFRC",
+             13:"PWFBZ-IUDK4-QGBUE-DKMJS-MVLH2-3PBJS",
+             14:"OU2BZ-JJH3S-ALHOJ-6M6LF-XQNM2-TYFMJ",
+             15:"5SDBZ-GMNWR-TBWWX-WRRXT-2UMRQ-TMBTZ",
+             16:"P6EBZ-FS63R-P4KWR-WE7O4-T7ER6-5MBBQ",
+             17:"ELJBZ-MI43S-LVUOW-6UUBQ-LELM5-2GFQN",
+             18:"C36BZ-PVLRG-VEQQX-I4U4D-SJB5T-BGBOO",
+             19:"U7VBZ-FXOWJ-IOSFI-FDIFQ-WD2NS-IRB7G",
+             20:"GF7BZ-DZB33-FSL3S-3K5MK-ZZA3T-IUBJW",
+             21:"DQTBZ-XGW3J-FDKFM-KFN6N-465AO-ACBRB",
+             22:"LCMBZ-S5QRV-456PV-UYGJT-DMXBE-PRFZM",
+             23:"C6DBZ-OD43J-3ODF7-FYDJR-QVTNT-3PFCZ",
+             24:"MBCBZ-B7TR3-4SM3R-3TFJG-ESZ32-T4BRL",
+             25:"VRTBZ-PN4RS-7LNOJ-67JJF-JTMMJ-YYF6M",
+             26:"CY4BZ-HODHR-S2ZWT-W73NG-YKMRJ-6OBHN",
+             27:"NUEBZ-AY4W4-VAWUP-X65O3-HUH72-TWBVS",
+             28:"RGDBZ-QEY3R-VBHWS-WC7UA-PUGRV-JWFAX",
+             29:"A54BZ-5L33G-IEMQZ-IXF7O-7L65S-RVBMB",
+             30:"47GBZ-FQSWS-FX3O7-6NSNB-QCSE2-VHFJY",
+             31:"KHPBZ-FXIWJ-SDEFT-KA6YA-QEHA3-7JB6A",
+              32:"K3RBZ-JZS3D-ZIM4O-PBJSX-5XQLT-GJBGS",
+              33:"TYDBZ-YGG3J-TOLFE-F5R54-7SINJ-OUFHX",
+              34:"YZFBZ-O57RJ-JXTFB-KDMFI-ZZPAV-P2BGC",
+              35:"IIOBZ-ADX3J-XDJFB-KMUDQ-Q7LAT-OZFKJ",
+              36:"WLLBZ-473RD-HIU46-PTRDX-TFJLK-DTFRZ",
+              37:"SF6BZ-INTRG-4ELQV-I5HUB-2KR5J-7QBUZ",
+              38:"7ZLBZ-6OEHJ-XRUFX-FMG2A-QCTNH-NLB6X",
+              39:"PIRBZ-MYBWU-3HSVC-2H7X5-GXJCE-ZQFXU",
+              40:"JS7BZ-DL33S-GLWOR-6K5VS-X5ZMQ-IXFJ5"
+        }
+
+        randint=random.randint(1, 40)
+        key = keys[randint]
+        return key
+

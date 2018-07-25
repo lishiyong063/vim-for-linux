@@ -1,0 +1,338 @@
+var current_tab="new"
+area = ""
+function loadAreaList(area) {
+    $("#area").val(area)
+    var requestURL = fishing_admin_Url + '/area_adv?area='+area
+
+    if (area == "tool_list"||area == "post_list"||area == "article_list"){
+        $("#new_adv_add").show()
+        noData = '<tr class="odd"><td valign="top" colspan="11" class="dataTables_empty">没有符合条件的数据&nbsp;&nbsp;&nbsp;&nbsp;<div class="row cl">'+
+                        '<div class="col-9 col-offset-3">'
+    }else{
+        $("#new_adv_add").hide()
+        noData = '<tr class="odd"><td valign="top" colspan="11" class="dataTables_empty">没有符合条件的数据&nbsp;&nbsp;&nbsp;&nbsp;<div class="row cl">'+
+                        '<div class="col-9 col-offset-3">'+
+                        '<a class="ml-5" data-toggle="modal" href="#advDialog"><input class="btn btn-primary radius" type="button"  value="&nbsp;&nbsp;新增广告&nbsp;&nbsp;"></a>'+
+                        '</div>'
+                        '</div></td>'
+                       + '</tr>'
+    }
+
+    $.getJSON(requestURL, {curr: 1}, function (res) {
+        //alert(JSON.stringify(res))
+        $("#area_list").html("")
+        $("#index").html("")
+
+        //page_count=20
+        laypage({
+            cont: 'pageComponent', //容器。值支持id名、原生dom对象，jquery对象。【如该容器为】：&lt;div id="page1">&lt;/div>
+            pages: 1, //通过后台拿到的总页数
+            curr: 1, //初始化当前页
+            jump: function (e) { //触发分页后的回调
+
+                var area_list_html = ""
+                var area_list = res.entities;
+
+                len = area_list.length
+                for (i in area_list) {
+                    var area_obj = area_list[i]
+                    area_list_html = area_list_html + loadArea(area_obj,parseInt(i)+1,len);
+                }
+                if (area_list_html != "") {
+                    $('#area_list').html(area_list_html);
+                } else {
+
+                    //noData = '<tr class="odd"><td valign="top" colspan="11" class="dataTables_empty">没有符合条件的数据&nbsp;&nbsp;&nbsp;&nbsp;<div class="row cl">'+
+                    //    '<div class="col-9 col-offset-3">'+
+                    //    '<a class="ml-5" data-toggle="modal" href="#advDialog"><input class="btn btn-primary radius" type="button"  value="&nbsp;&nbsp;新增广告&nbsp;&nbsp;"></a>'+
+                    //    '</div>'
+                    //    '</div></td>'
+                    //   + '</tr>'
+                    $('#area_list').html(noData);
+                }
+
+                current_tab=area
+                if (area=="buffer"){
+                    fill_adv_list(ad_buffer_array)
+                }else if(area=="start_up"){
+                    fill_adv_list(ad_startup_array)
+                }
+                else{
+                    fill_adv_list(ad_banner_array)
+                }
+
+                //});
+            }
+        });
+    });
+
+}
+
+function loadArea(area,index,len){
+    adv_html_template='<tr class="text-c" id="tr_{id}">'
+        +'<td>{index}</td>'
+        +'<td>{name}</td>'
+        +'<td style="height: 80px">{image_div}</td>'
+        +'<td>{link}</td>'
+        +'<td>'
+        +'<a  class="ml-5" data-toggle="modal" href="#advDialog" {new_adv_show} onclick="add_index(\'{last_index}\')" title="前面加广告" ><i class="icon-circle-arrow-up"></i></a>&nbsp;&nbsp;'
+        +'<a  class="ml-5" data-toggle="modal" href="#advDialog" {new_adv_show} title="后面加广告"  onclick="add_index(\'{behind_index}\')"><i class="icon-circle-arrow-down"></i></a>&nbsp;&nbsp;'
+        +'<a  class="ml-5" data-toggle="modal" href="#exchangeDialog" {new_adv_show} title="交换位置"  onclick="exchange_init(\'{t_index}\',\'{id}\')"><i class="icon-exchange"></i></a>&nbsp;&nbsp;'
+        +'<a  href="javascript:;" title="下移一位" {to_next_display}{new_adv_show} onclick="next_adv(\'{t_index}\',\'{to}\',\'{id}\')"><i class="icon-chevron-down"></i></a>&nbsp;&nbsp;'
+        +'<a href="javascript:;" title="删除"  onclick="delete_adv(\'{name}\',\'{id}\',\'{area_id}\')"><i class="icon-trash"></i></a>'
+        +'</td>'
+        +'</tr>'
+    to_next_display = ""
+    if(index==len){
+        to_next_display='style="display:none"'
+    }
+    $("#index").append('<option value="'+area.index+'">'+index+'</option>')
+
+    area_id = area._id
+    adv = area.adv
+    id = adv._id
+
+    t_index = area.index
+    last_index = t_index
+    behind_index=parseInt(last_index)+1
+    to = behind_index
+
+    name = adv.name
+
+    link=""
+    if (adv.onclick_url){
+        link = adv.onclick_url
+    }
+    if (adv.ziya_url){
+        link=link+"</br>"+adv.ziya_url;
+    }
+
+
+    image_url = adv.image_url
+    image_png = adv.iphone_6p
+
+    image_div="无图片"
+    if(image_url){
+        image_div = '<img src="'+image_url+'" height="80px">'
+    }else if(image_png){
+        image_div = '<img src="'+image_png+'" height="80px">'
+
+    }
+    if (area.type){
+        index = area.type+"--第"+area.page+"页，第"+area.position+"位"
+    }
+
+    if (area.adv.image_url_list){
+        image_div = '<img src="'+area.adv.image_url_list[0]+'" height="80px">'
+    }
+
+    area_name = area.area
+    new_adv_show = ""
+    if (area_name == "tool_list"||area_name == "post_list"||area_name == "article_list"){
+        new_adv_show = 'style="display:none"'
+    }
+    adv_html = adv_html_template.replaceAll("{id}",id).replaceAll("{name}",name).replaceAll("{image_div}",image_div).replace("{index}",index)
+        .replace("{link}",link).replaceAll("{last_index}",last_index).replaceAll("{behind_index}",behind_index).replaceAll("{t_index}",t_index).replace("{to}",to)
+        .replace("{to_next_display}",to_next_display).replaceAll("{new_adv_show}", new_adv_show).replaceAll("{area_id}",area_id).replaceAll("{area_name}",area_name);
+
+
+    return adv_html
+
+}
+
+
+
+function release_user(id){
+
+    requestURL = fishing_admin_Url + "/extend_user_record?id="+id
+
+    response = getRequest(requestURL, '', 'DELETE', '', '')
+    layer.msg('解绑成功',1,1);
+
+}
+
+function reloadAdv(advid){
+    var requestURL = fishing_admin_Url + '/advertisement/'+advid
+    res = getRequest(requestURL,'','GET','','')
+    adv=res.entities[0]
+    adv_html = loadAdv(adv)
+    $("#tr_"+advid).replaceWith(adv_html)
+
+}
+
+function adv_sold_out(advid){
+    d= {
+        "advid":advid,
+        "valid":false
+    }
+    var requestURL=fishing_admin_Url+"/advertisement"
+    reusult=getRequest(requestURL,d,'PUT','','')
+    layer.msg("下架成功",1,1);
+    reloadAdv(advid)
+
+
+}
+
+
+function adv_start(advid){
+    d= {
+        "advid":advid,
+        "valid":true
+    }
+    var requestURL=fishing_admin_Url+"/advertisement"
+    reusult=getRequest(requestURL,d,'PUT','','')
+    layer.msg("启用成功",1,1);
+    reloadAdv(advid)
+
+
+}
+
+var ad_banner_array=new Array();
+var ad_buffer_array=new Array();
+ad_startup_array = new Array();
+function adv_init(){
+    var requestURL=fishing_admin_Url+"/advertisement?valid=1&d=all"
+    res=getRequest(requestURL,'','GET','','')
+    if (res){
+        adv_list = res.entities;
+        for (i in adv_list) {
+            var adv = adv_list[i]
+            var name = adv.name
+            var id = adv._id
+
+            if (adv.ad_type){
+                if (adv.ad_type=="1"){
+                    ad_banner_array.push({
+                        "id":id,
+                        "name":name
+                    })
+                }
+                if (adv.ad_type=="2"){
+                    ad_buffer_array.push({
+                        "id":id,
+                        "name":name
+                    })
+                }
+                if (adv.ad_type=="3"){
+                    ad_startup_array.push({
+                        "id":id,
+                        "name":name
+                    })
+                }
+                    // else{ad_startup_array.push({
+                //        "id":"111",
+                //        "name":"111"
+                //     )}
+            }
+        }
+        fill_adv_list(ad_banner_array)
+    }
+
+}
+
+function fill_adv_list(ad_list){
+    if (ad_list && ad_list.length>0)
+    {
+        $("#adv").empty();
+        for (var i in ad_list) {
+            var ad_obj = ad_list[i]
+            $("#adv").append("<option value='" + ad_obj.id + "'>" + ad_obj.name + "</option>")
+        }
+    }else{ $("#adv").empty();}
+}
+
+function add_adv(){
+    index = parseInt($("#add_index").val())
+    area= $("#area").val()
+    advid = $("#adv").val()
+    d = {
+
+        "area":area,
+        "index":index,
+        "advid":advid
+
+    }
+    var requestURL=fishing_admin_Url+"/area_adv"
+    reusult=getRequest(requestURL,d,'POST','','')
+    $("#close").trigger("click")
+    loadAreaList(area)
+    $("#"+area).attr("class","current")
+
+
+}
+
+
+
+function next_adv(index,to,advid){
+   area= $("#area").val()
+   d= {
+        "area":area,
+        "index":parseInt(index),
+        "advid":advid,
+        "to":parseInt(to)
+    }
+    var requestURL=fishing_admin_Url+"/area_adv"
+    reusult=getRequest(requestURL,d,'PUT','','')
+    loadAreaList(area)
+    $("#"+area).attr("class","current")
+
+}
+
+
+function exchange_adv(){
+    area= $("#area").val()
+    index =$("#exchange_index").val()
+    id = $("#exchange_name").val()
+    to=$("#index").val()
+    d= {
+        "area":area,
+        "index":parseInt(index),
+        "advid":id,
+        "to":parseInt(to)
+    }
+    var requestURL=fishing_admin_Url+"/area_adv"
+    reusult=getRequest(requestURL,d,'PUT','','')
+    $("#close2").trigger("click")
+    loadAreaList(area)
+    $("#"+area).attr("class","current")
+
+}
+function add_index(index){
+    $("#add_index").val(index)
+
+}
+
+
+function exchange_init(index,id){
+    $("#exchange_index").val(index)
+    $("#exchange_name").val(id)
+
+
+}
+
+function delete_adv(adv_name,advid,area_id){
+    var area= $("#area").val()
+    var requestURL=fishing_admin_Url+"/area_adv?advid="+advid+"&area="+area+"&area_id="+area_id
+    res=getRequest(requestURL,'','DELETE','','')
+    layer.msg("删除成功",1,1)
+    $("#tr_"+advid).hide()
+
+}
+
+function load_tab_data(index){
+    if (index<tab_text_array.length){
+        area = tab_text_array[index].id
+        loadAreaList(tab_text_array[index].id)
+    }else{
+        alert("数据异常")
+    }
+}
+
+function refresh_banner(){
+    if( confirm('确定更新广告系统？') ) {
+        var requestURL=fishing_admin_Url+"/refresh_banner"
+        res=getRequest(requestURL,'','GET','','')
+        layer.msg("刷新成功",1,1)
+    }
+
+}

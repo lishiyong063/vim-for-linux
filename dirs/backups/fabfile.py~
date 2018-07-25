@@ -1,0 +1,29 @@
+# -*- coding: utf-8 -*-
+# Created Time: 2018-05-28 10:58:39
+
+import os
+from fabric.api import run, env, prompt, cd, put
+
+# lcd 可以设置本地工作目录
+"""
+from fabric.colors import *
+def hello():
+    print green("Successful")
+    print yellow("Warning")
+    print red("Error")
+"""
+
+env.hosts = "47.95.38.67"
+env.user = 'root'
+env.password = 'rwAJDAmO1Z87'
+
+def hello():
+    run('ls -l')
+    # 提示输入
+    # command = prompt('Are you Sure Command Test-Server(y/n): ')
+    with cd('/root/work/fishing_server'):
+        run('svn update')
+        run('sed -i "s/default=8090/default=6090/g" optionsSetting.py')
+        run("""lsof -i:9090 | grep LISTEN |awk '{print "kill -9 " $2}' | sh """)
+        run("nohup python run.py &")
+        run("tail -f nohup.out")

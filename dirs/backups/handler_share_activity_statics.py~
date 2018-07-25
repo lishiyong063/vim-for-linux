@@ -1,0 +1,106 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# @Date    : 2015-05-18 17:41:52
+# @Author  : Your Name (you@example.org)
+# @Link    : http://example.org
+# @Version : $Id$
+from handler_baseHt import BaseHtHandler
+from log import get_logger
+import tornado.web
+from tornado.web import asynchronous
+from tornado.options import options
+import json
+import hashlib
+import datetime
+import hashlib
+from bson import ObjectId
+import random
+import time
+from log import get_logger
+from auth import requires_auth
+from model.advices import Advice
+from model.permissions_ht import Permissions_ht
+import optionsSetting
+from utils.secret import *
+import traceback
+from utils.redis_client import RedisClient
+from mongo_field_encoder import MongoFieldEncoder
+from mongolog import MongoHandler
+from mongokit.helpers import totimestamp, fromtimestamp
+from utils.token_im import TokenService
+from tornado.httpclient import HTTPRequest
+from utils.mongo_client import MongoClient
+from utils.mongo_front import MongoFront
+
+MongoFront.init()
+import pymongo
+
+try:
+    from tornado.curl_httpclient import CurlAsyncHTTPClient as AsyncHTTPClient
+except ImportError:
+    from tornado.simple_httpclient import SimpleAsyncHTTPClient as AsyncHTTPClient
+log = get_logger()
+class ShareActivityStaticsHandler(BaseHtHandler):
+    @asynchronous
+    @requires_auth
+    def get(self):
+        # log.info("ShareActivityStaticsHandler.get:"+str(self.request.query_arguments))
+
+        date_value = int(self.get_argument('date',""))
+        account= self.get_argument('account',"")
+
+        if not date_value:
+            self.fire_response_bad_response()
+            return
+        # where = {}
+        # if date_value:
+        #     where["created"] = date_value
+        # if account:
+        #     where["username"]= account
+        where={
+            # "username" : account,
+            "created":date_value
+        }
+        log.info('where:'+json.dumps(where,indent=2, ensure_ascii=False,cls=MongoFieldEncoder))
+
+        share_activity_result = list(MongoFront.find_all(where, "admin_share_activity"))
+        username_list = []
+        if share_activity_result:
+            for user in share_activity_result:
+                username_list.append(user.get("username", ""))
+
+        where = {
+            "username":{
+                "$in":username_list
+            }
+        }
+        filter = {
+            "real_name": 1,
+            "username": 1
+        }
+        account_result = MongoClient.find_all(where,"accounts", filter)
+        if account_result:
+            account_dic = {}
+            for user in account_result:
+                account_dic[user["username"]] = user["real_name"]
+
+        for share_activity in share_activity_result:
+            share_activity["username"] = account_dic[share_activity["username"]]
+
+        response={}
+        if share_activity_result:
+            response["entities"]=share_activity_result
+        self.write(json.dumps(response,indent=2, ensure_ascii=False,cls=MongoFieldEncoder))
+        self.finish()
+
+
+    def fire_response_bad_response(self):
+        """
+        返回登录请求错误响应
+        """
+        self.set_status(400)
+        response = {}
+        response["error"] = "invalid_date"
+        response["error_description"] = "invalid date"
+        self.write(json.dumps(response, indent=2, ensure_ascii=False))
+        self.finish()

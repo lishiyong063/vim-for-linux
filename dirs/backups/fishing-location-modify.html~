@@ -1,0 +1,220 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="renderer" content="webkit|ie-comp|ie-stand">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width,initial-scale=1,minimum-scale=1.0,maximum-scale=1.0,user-scalable=no" />
+    <meta http-equiv="Cache-Control" content="no-siteapp" />
+    <!--[if lt IE 9]>
+    <script type="text/javascript" src="lib/html5.js"></script>
+    <script type="text/javascript" src="lib/respond.min.js"></script>
+    <script type="text/javascript" src="lib/PIE_IE678.js"></script>
+    <![endif]-->
+    <link href="css/H-ui.min.css" rel="stylesheet" type="text/css" />
+    <link href="css/jquery-ui.css" rel="stylesheet" type="text/css" />
+    <link href="css/H-ui.admin.css" rel="stylesheet" type="text/css" />
+    <link href="lib/icheck/icheck.css" rel="stylesheet" type="text/css" />
+
+    <link href="lib/font-awesome/font-awesome.min.css" rel="stylesheet" type="text/css" />
+
+    <link rel="stylesheet" href="http://cache.amap.com/lbs/static/main1119.css"/>
+    <style>
+        #progressbar{
+            position: relative;
+        }
+        .ui-progressbar .ui-progressbar-value{
+            position: absolute;
+            left: 0px;
+            bottom: 0px;
+        }
+        .progress-label{
+            position: relative;
+            z-index: 8;
+        }
+
+
+    </style>
+
+    <!--[if IE 7]>
+    <link href="lib/font-awesome/font-awesome-ie7.min.css" rel="stylesheet" type="text/css" />
+    <![endif]-->
+    <link href="lib/iconfont/iconfont.css" rel="stylesheet" type="text/css" />
+    <!--[if IE 6]>
+    <script type="text/javascript" src="lib/DD_belatedPNG_0.0.8a-min.js" ></script>
+
+    <script>DD_belatedPNG.fix('*');</script>
+    <![endif]-->
+    <title>发布钓场</title>
+</head>
+<body>
+<div class="pd-20">
+    <form action="" method="post" class="form form-horizontal" id="form-user-add">
+
+
+        <div class="row cl">
+            <label class="form-label col-3"><span class="c-red">*</span>钓场名称：</label>
+            <div class="formControls col-3">
+                <input type="text" class="input-text" id="name" name="name" datatype="*2-16">
+            </div>
+            <div class="col-4"> </div>
+        </div>
+
+        <div class="row cl">
+            <label class="form-label col-3">手机号：</label>
+            <div class="formControls col-3">
+                <input type="text" class="input-text" id="tel" name="user-tel" datatype="*2-16" placeholder="多个手机号以逗号分隔">
+            </div>
+            <div class="col-4"> </div>
+        </div>
+
+        <div class="row cl">
+            <label class="form-label col-3"><span class="c-red">*</span>简介：</label>
+            <div class="formControls col-2">
+                <textarea id ="desc" name="message" style="width:400px; height:50px;"></textarea>
+            </div>
+            <div class="col-4"> </div>
+        </div>
+
+        <div class="row cl">
+            <label class="form-label col-3">价格：</label>
+            <div class="formControls col-1">
+                <input type="text" class="input-text" id="price" style="width: 60px" onkeyup="this.value=this.value.replace(/[^\d.]/g,'')" onafterpaste="this.value=this.value.replace(/[^\d.]/g,'')">
+            </div>
+
+            <label class="form-label col-1">单位：</label>
+            <div class="formControls col-2">
+                <input type="text" class="input-text" id="unit" name="unit" placeholder="如：元/小时">
+                <!--<select size="1" name="unit" datatype="*" nullmsg="元/小时" id="unit">-->
+                    <!--<option value="免费" selected>免费</option>-->
+                    <!--<option value="元/小时" >元/小时</option>-->
+                    <!--<option value="元/3小时" >元/3小时</option>-->
+                    <!--<option value="元/6小时" >元/6小时</option>-->
+                <!--</select>-->
+            </div>
+        </div>
+
+        <div class="row cl">
+            <label class="form-label col-3"><span class="c-red">*</span>封面图片：</label>
+            <input type="file" id="cover_file" name="cover_file" value="" style="display:None"><br>
+            <input type="button" id="cover_file_upload"  value="上传图片">
+            <div style="padding-left:350px;display:none;" id="image_div">
+                <img src="" id="cover_img" style="height: 100px;width: 200px">
+                <!--<input type="button"  onclick="imageDelete('cover_img','image_div')" value="删除">-->
+            </div>
+        </div>
+
+        <div class="row cl">
+            <label class="form-label col-3"><span class="c-red">*</span>其他图片：</label>
+            <input type="file" id="pages_file_1" name="pages_file" value="" style="display:None"><br>
+            <input type="button" id="pages_file_upload"  value="上传图片">
+            <div style="padding-left:350px;display:none;" id="image_div_1">
+                <img src="" id="page_img_1" style="height: 100px;width: 200px">
+                <!--<input type="button"  onclick="imageDelete('page_img','image_div1')" value="删除">-->
+            </div>
+        </div>
+
+        <div class="row cl">
+            <label class="form-label col-3">其他图片2：</label>
+            <input type="file" id="pages_file_2" name="pages_file" value="" style="display:None"><br>
+            <input type="button" id="pages_file_upload_2"  value="上传图片">
+            <div style="padding-left:350px;display:none;" id="image_div_2">
+                <img src="" id="page_img_2" style="height: 100px;width: 200px">
+                <!--<input type="button" onclick="imageDelete('image_div_2','image_div_2')" value="删除">-->
+            </div>
+        </div>
+
+        <div class="row cl">
+            <label class="form-label col-3"><span class="c-red">*</span>地址：</label>
+            <div class="formControls col-3">
+                <input type="text"  style="width:300px;" class="input-text" value="" placeholder="如：河北省张家口市怀来县土木镇云乐旅店" id="address"  datatype="*2-16" >
+            </div>
+        </div>
+
+        <div class="row cl">
+            <label class="form-label col-3"><span class="c-red">*</span>地图标注：</label>
+            <div class="formControls col-3">
+                <input type="text" style="width:300px;" class="input-text" value="" placeholder="如：河北省张家口市怀来县土木镇云乐旅店" id="map_tagging"  datatype="*2-16" >
+                <input class="btn btn-primary radius" type="button" onclick="find_map()" value="&nbsp;&nbsp;搜索&nbsp;&nbsp;">
+            </div>
+        </div>
+
+        <div class="row cl">
+            <label class="form-label col-3"><span class="c-red">*</span>经纬度：</label>
+            <div class="formControls col-3">
+                <input type="text" class="input-text" value="" placeholder="地图选点自动生成，如：115.555218,40.412966" id="Lng_Lat"  datatype="*2-16" >
+            </div>
+        </div>
+
+
+        <div class="row cl">
+            <div class="col-9 col-offset-3">
+                <!--<input class="btn btn-primary radius" type="button" onclick="save_check()" value="&nbsp;&nbsp;提交&nbsp;&nbsp;">-->
+                <input class="btn btn-primary radius" type="button" onclick="save()" value="&nbsp;&nbsp;提交&nbsp;&nbsp;">
+            </div>
+        </div>
+        <div class="row cl">
+            <div class="col-9">
+                <div id="container" tabindex="0" style="width:800px; height: 500px;"></div>
+            </div>
+        </div>
+        <br><br>
+
+    </form>
+</div>
+</div>
+<script type="text/javascript" src="lib/jquery.min.js"></script>
+<!--<script type="text/javascript" src="lib/jquery-ui.js"></script>-->
+<script type="text/javascript" src="lib/icheck/jquery.icheck.min.js"></script>
+<script type="text/javascript" src="lib/Validform_v5.3.2.js"></script>
+<script type="text/javascript" src="lib/layer1.8/layer.min.js"></script>
+<script type="text/javascript" src="lib/ajaxfileupload.js"></script>
+<script type="text/javascript" src="lib/layer1.8/layer.min.js"></script>
+<script type="text/javascript" src="lib/My97DatePicker/WdatePicker.js"></script>
+<script type="text/javascript" src="js/H-ui.js"></script>
+<script type="text/javascript" src="js/H-ui.admin.js"></script>
+<script type="text/javascript" src="js/H-ui.admin.doc.js"></script>
+<script type="text/javascript" src="lib/laypage/laypage.js"></script>
+<script type="text/javascript" src="lib/jquery.provincesCity.js"></script>
+<script type="text/javascript" src="lib/provincesData.js"></script>
+<script type="text/javascript" src="bizjs/map.js"></script>
+<script type="text/javascript" src="bizjs/base.js"></script>
+<script src="http://webapi.amap.com/maps?v=1.3&key=abda0335cd3e3c7f0f7ed18a14b27460&&plugin=AMap.Marker,AMap.Geocoder,AMap.PlaceSearch,AMap.ToolBar"></script>
+<script type="text/javascript" src="https://webapi.amap.com/demos/js/liteToolbar.js"></script>
+<script type="text/javascript" src="bizjs/gaode-map.js"></script>
+<script type="text/javascript" src="bizjs/upload_img.js"></script>
+<script type="text/javascript" src="bizjs/fishing-location-modify.js"></script>
+<script type="text/javascript">
+    var chargeCity= new Array()
+    $(function(){
+
+        place_id=queryString("place_id")
+        loadfishingPlace(place_id);
+
+        bucket_name = "placeimage";
+        $("#cover_file_upload").click(function(){
+            $("#cover_file").trigger("click")
+        });
+        $("#pages_file_upload").click(function(){
+            $("#pages_file_1").trigger("click")
+        });
+        $("#pages_file_upload_2").click(function(){
+            $("#pages_file_2").trigger("click")
+        });
+        $("#pages_file_upload_3").click(function(){
+            $("#pages_file_3").trigger("click")
+        });
+        change_file($("#cover_file"), $("#cover_img"), $("#image_div"));
+        change_file($("#pages_file_1"), $("#page_img_1"), $("#image_div_1"));
+        change_file($("#pages_file_2"), $("#page_img_2"), $("#image_div_2"));
+    });
+    //        loadChargeCity()
+
+
+
+</script>
+<script>
+
+</script>
+</body>
+</html>

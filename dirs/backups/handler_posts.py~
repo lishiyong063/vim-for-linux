@@ -1,0 +1,785 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# @Date    : 2015-05-18 17:41:52
+# @Author  : Your Name (you@example.org)
+# @Link    : http://example.org
+# @Version : $Id$
+from handler_baseHt import BaseHtHandler
+from log import get_logger
+import tornado.web
+from tornado.web import asynchronous
+import re
+from tornado.options import options
+import json
+import hashlib
+import datetime
+import hashlib
+import random
+import pymongo
+import time
+from log import get_logger
+from model.accounts_ht import Account_ht
+from model.posts import Post
+import optionsSetting
+from utils.secret import *
+import traceback
+from utils.redis_client import RedisClient
+from mongo_field_encoder import MongoFieldEncoder
+from mongolog import MongoHandler
+from mongokit.helpers import totimestamp, fromtimestamp
+from utils.token_im import TokenService
+from tornado.httpclient import HTTPRequest
+from utils.mongo_front import MongoFront
+from utils.mongo_slave_client import MongoSlaveClient
+from services.service_post import getPostList
+from services.service_activity import *
+from services.service_post_display_count import *
+from bson import ObjectId
+from auth import requires_auth
+from services.service_admin_log import save_log
+from services.service_credits import addCredits
+from utils.redis_weibo_client import RedisWeiboClient
+
+try:
+    from tornado.curl_httpclient import CurlAsyncHTTPClient as AsyncHTTPClient
+except ImportError:
+    from tornado.simple_httpclient import SimpleAsyncHTTPClient as AsyncHTTPClient
+log = get_logger()
+class PostHandler(BaseHtHandler):
+
+    def __init__(self, application, request, **kwargs):
+        super(PostHandler, self).__init__(application, request, **kwargs)
+        self.rank_score_dic={
+            "1":2730122372110,
+            "2":2730122372109,
+            "3":2730122372108,
+            "4":2730122372107,
+            "5":2730122372106,
+            "6":2730122372105,
+            "7":2730122372104,
+            "8":2730122372103,
+            "9":2730122372102,
+            "10":2730122372101
+        }
+
+
+    @asynchronous
+    @requires_auth
+    def get(self):
+        log.info("PostHandler.get is called:"+str(self.request.remote_ip))
+        boutique = self.get_argument('boutique',None)
+        pre_delete = self.get_argument('pre_delete',None)
+        yuhuo_type = int(self.get_argument('yuhuo_type',0))
+        link_post = int(self.get_argument('link_post',0))
+
+        type = int(self.get_argument('type', 0))
+        log.info("yuhuo_type:"+str(yuhuo_type))
+        post_rank = self.get_argument('post_rank',None)
+        skill = self.get_argument('skill',None)
+
+        post_id = self.get_argument('post_id', "")
+
+
+        where={
+            'deleted': {'$ne': True},
+            'sold_out': {'$ne': "1"},
+            'yuhuo_type':yuhuo_type
+        }
+        if type==1:
+            where["video"]={"$exists":True}
+        sort=[]
+        if pre_delete=='true':
+            where['pre_delete'] = True
+            del where["yuhuo_type"]
+
+        if link_post:
+            where["product_detail_array"]={"$exists":True}
+
+
+        # 钓法查询条件
+        if skill is not None:
+            where["fishingSkill"]=str(skill)
+
+        ## 排名设置查询条件
+        place_ids = []
+        if post_rank is not None:
+            place_code = post_rank[5:]
+            log.info("place_code:"+place_code)
+            place_where = {
+                "place_code":place_code
+            }
+            sort = [('rank',pymongo.ASCENDING)]
+            place_cursors = MongoFront.find_all_sorted_limited(place_where,"post_place_rank",sort,10)
+            for place_cursor in place_cursors:
+                place_id = ObjectId(place_cursor["post_id"])
+                place_ids.append(place_id)
+            where["_id"] = {"$in":place_ids}
+
+        ##精品查询条件
+        if boutique is not None:
+            if boutique=="1":
+                where['boutique'] = {'$in':["1","2"]}
+                sort = [('created', pymongo.DESCENDING)]
+            ##仅搜索精品审核中的申请的渔获
+            if boutique=="2":
+                where['boutique'] = {'$in':["1"]}
+
+            ##仅搜索精品渔获
+            if boutique == "3":
+                where['boutique'] = {'$in': ["2"]}
+        limit=10
+        curr = self.get_argument('curr',"")
+        # log.info("curr:"+curr)
+        datemin = self.get_argument('datemin',None)
+        datemax = self.get_argument('datemax',None)
+        if datemin!=None:
+           # log.info("datemin:"+datemin)
+           datemin = datetime.datetime.strptime(datemin, "%Y-%m-%d")-datetime.timedelta(hours=8)
+           where["created"]={"$gte":datemin}
+ 
+        if datemax!=None:
+           # log.info("datemax:"+datemax)
+           datemax = datetime.datetime.strptime(datemax, "%Y-%m-%d")-datetime.timedelta(hours=8)
+           between={}
+           if where.has_key("created"):
+               between=where["created"]
+
+           between["$lte"]=datemax
+           where["created"]=between
+        
+        city = self.get_argument('city',None)  
+
+        self.city_deal(city,where)
+        
+            
+        province = self.get_argument('province',None)
+        if province!=None:
+            # log.info("province:"+province)
+            where['gps_info.province']=province
+
+        username = self.get_argument('username',None)
+        if username!=None:
+            # log.info("username:"+username)
+            where['actor.username']=username
+
+        user_nick = self.get_argument('user_nick',None)
+        if user_nick:
+            user_where={
+                "$or":[
+                    {"nick": re.compile(user_nick + '.*')},
+                    {"invite_code": user_nick}
+                ]
+
+            }
+            # log.info("user_where:"+str(user_where))
+            users_cursor=MongoFront.find_all(user_where,"users")
+            # log.info("users_cursor:"+str(users_cursor.count()))
+            username_array=[]
+            for user in users_cursor:
+                username=user.get("username","")
+                username_array.append(username)
+            where["actor.username"]={
+                "$in":username_array
+            }
+
+        post_type = self.get_argument('post_type',None)
+        if post_type!=None:
+            # log.info("post_type:"+post_type)
+            where['post_type']=post_type
+            
+        admin = self.get_argument('admin',None)  
+        if admin!=None:
+            user_list = getVestPostUser(admin,"posts",limit)
+            where['actor.username'] = {"$in":user_list}
+
+        condition = self.get_argument('condition',None)
+
+        if condition!=None:
+            condition_dic=json.loads(condition,encoding="utf-8")
+            if condition_dic.has_key("ids"):
+                ids=condition_dic["ids"]
+                id_array=ids.split(",")
+                objectIdArray=[]
+                for id in id_array:
+                    objectIdArray.append(ObjectId(id))
+                where['_id'] = {"$in":objectIdArray}
+        
+        sort_by = 'created'  
+        sort_value =  pymongo.DESCENDING
+        sort_get = self.get_argument("sort_by",None)
+        if sort_get!=None :
+            sort_by = sort_get
+            sort_val = self.get_argument('sort_value',"-1")   
+            boutique="0"
+            if sort_val=="1" :
+                 sort_value =  pymongo.ASCENDING
+
+        log.info("usernmae:"+self.username+" where:"+str(where))
+        if curr=="":
+            if boutique=="1":
+                index=0
+                # post_cursor = MongoSlaveClient.finds(where,"posts").sort(sort).limit(limit)
+            else:
+                sort=[(sort_by,sort_value)]
+                index=0
+                # post_cursor = MongoSlaveClient.finds(where,"posts").sort(sort_by, sort_value).limit(limit)
+        else:
+            if boutique=="1":
+                index=(int(curr)-1)*limit
+                # post_cursor = MongoSlaveClient.finds(where,"posts").sort(sort).skip((int(curr)-1)*limit).limit(limit)
+            else:
+                sort=[(sort_by,sort_value)]
+                index=(int(curr)-1)*limit
+                # post_cursor = MongoSlaveClient.finds(where,"posts").sort(sort_by, sort_value).skip((int(curr)-1)*limit).limit(limit)
+
+        if post_id:
+            where["_id"] = ObjectId(post_id)
+
+        post_cursor=MongoSlaveClient.find_by_page(where,"posts",sort,index=index,count_pre_page=limit)
+        # log.info("post_cursor:"+str(post_cursor.count()))
+        posts=[]
+        posts_dic={}
+        if post_cursor!=None:
+            posts_dic = getPostList(post_cursor)
+            if post_rank is not None:
+                for place_id in place_ids:
+                    post_tem = posts_dic.get(str(place_id))
+                    posts.append(post_tem)
+            else:
+                posts = posts_dic.values()
+        response={}
+        response["entities"]=posts
+        response["count"]=str(post_cursor.count())
+        self.write(json.dumps(response,indent=2, ensure_ascii=False,cls=MongoFieldEncoder))
+        self.finish()
+
+    @asynchronous
+    @requires_auth
+    def put(self):
+        log.info("PostHandler.put:"+self.request.body)
+        body_dic = json.loads(self.request.body,encoding="utf-8")
+        post_id = body_dic.get("post_id",None)
+        try:
+            if post_id is None or post_id =="":
+                self.fire_response_bad_response()
+                return
+
+            if body_dic.has_key("update"):
+                where={
+                    "_id":ObjectId(post_id)
+                }
+                post_obj=options.dbconn.Post.find_one(where)
+                if post_obj:
+                    update_el=body_dic["update"]
+                    if update_el=="content":
+                        content=body_dic.get("content","").strip()
+
+                        ###当文字内容为空时,必须有图片
+                        if content=="":
+                            self.write({})
+                            self.finish()
+                    value=body_dic["value"]
+                    if update_el=="oldth":
+                        value=int(value)
+                    if update_el == "label":
+                        value = value.split(",")
+                    self.update_post(post_id,update_el,value)
+
+            elif body_dic.has_key("rank"):
+                ##精品排名相关操作
+                self.setRank(body_dic)
+
+            elif body_dic.has_key("pre_delete"):
+                ##删帖申请相关操作
+                self.pre_delete(body_dic)
+
+            elif body_dic.has_key("boutique"):
+                ##精品申请相关操作
+                self.apply_boutique(body_dic)
+        except Exception as e:
+            log.info('PostHandler.fetch_post Exception():%s' % e.message)
+            log.error(traceback.format_exc())
+
+    def update_post(self,post_id,update_el,value):
+        lookup= {"_id": ObjectId(post_id)}
+        updated_value={
+            "$set":{
+                update_el:value
+            }
+        }
+        MongoFront.update(lookup,updated_value,"posts")
+        response = {"entities":[]}
+        self.write(json.dumps(response,
+                              indent=2,
+                              ensure_ascii=False,
+                              cls=MongoFieldEncoder))
+        self.finish()
+
+    def pre_delete(self,body_dic):
+        post_id = body_dic.get("post_id",None)
+        pre_delete_content = body_dic.get("pre_delete_content",None)
+        lookup = {"_id": ObjectId(post_id)}
+
+        updated={
+            "$set":{
+                "pre_delete":True,
+                "pre_delete_content":pre_delete_content
+            }
+        }
+        MongoFront.update(lookup,updated,"posts")
+        response = {"entities":[]}
+        self.write(json.dumps(response,
+                              indent=2,
+                              ensure_ascii=False,
+                              cls=MongoFieldEncoder))
+        self.finish()
+
+        act = "apply_delete_post"
+        save_log(act,post_id,self.username)
+
+
+
+    def apply_boutique(self,body_dic):
+        boutique = body_dic.get("boutique",None)
+        post_id = body_dic.get("post_id",None)
+        post_id_array=post_id.split(",")
+        post_id_object_array=[]
+        for post_id in post_id_array:
+            post_id_object_array.append(ObjectId(post_id))
+
+        lookup = {"_id": {"$in":post_id_object_array}}
+
+        updated={
+            # # "$set":{
+            #     "boutique":boutique,
+            #
+            # # }
+        }
+        if boutique=="1":
+            # updated["$set"]["apply_boutique_date"]=datetime.datetime.utcnow()
+            pre_hot_history = [{"act":"apply","actor":self.username,"created":datetime.datetime.utcnow()}]
+            updated = {
+                "$set":{
+                    "boutique":boutique,
+                    "apply_boutique_date":datetime.datetime.utcnow(),
+                    "pre_hot_history":pre_hot_history
+                    }
+            }
+
+        elif boutique=="2":
+            # updated["$set"]["boutique_date"]=datetime.datetime.utcnow()
+            updated = {
+                '$set':{'boutique_date':datetime.datetime.utcnow(), "boutique":boutique},
+                "$push":{
+                    "pre_hot_history":{"act":"operate","actor":self.username,"created":datetime.datetime.utcnow()}
+                }
+            }
+        elif boutique == "0":
+            updated={
+            "$set": {
+                "boutique": boutique,
+                "pre_hot_history": []
+            }
+        }
+        MongoFront.find_and_modify(lookup,updated,"posts")
+        response = {"entities":[]}
+        self.write(json.dumps(response,
+                              indent=2,
+                              ensure_ascii=False,
+                              cls=MongoFieldEncoder))
+        self.finish()
+
+        if boutique=="1":
+            act = "apply_boutique"
+            save_log(act,post_id,self.username)
+        elif boutique=="0":
+            ####退出redis精品列表
+            RedisClient.removeMultiToList(options.boutique_post_list,post_id_array)
+
+        elif boutique=="2":
+            act = "boutique"
+            save_log(act,post_id,self.username)
+
+
+
+            for post_id in post_id_array:
+                post = self.getPost(post_id)
+                created_micros=post['created_micros']
+                to_usernames = [post["actor"]["username"]]
+
+                #精品加金币
+                add,credits = addCredits(post["actor"]["username"],post_id,"boutique")
+                content = self.getContent("boutique",post,add,credits)
+
+                ####加入redis精品列表
+                RedisClient.addToList(options.boutique_post_list,post_id,created_micros)
+
+
+                push = body_dic.get("push",None)
+                if push=="1":
+                    ####给全员发消息
+                    message_event = {}
+                    message_event["post_id"]=str(post_id)
+                    message_event["target"]="apoint"
+                    message_event["message_type"]="boutique"
+                    message_event["content"] = content
+                    message_event["to_usernames"] = to_usernames
+                    message_event["created"]=datetime.datetime.utcnow()
+
+                    send_range=body_dic.get("range",None)
+                    push_history={}
+                    if send_range:
+                        message_event["range"]=send_range
+
+                        push_history["range"]=send_range
+                        push_history["post_id"]=str(post_id)
+                        push_history["created"] = datetime.datetime.utcnow()
+                        push_history["actor"]=self.username
+                        if send_range=="city":
+                            cities=body_dic.get("cities","")
+                            message_event["cities"]=cities
+                            push_history["cities"] = cities
+
+                        if send_range=="all":
+                            message_event["days"]=body_dic.get("days","")
+                            push_history["days"] = body_dic.get("days","")
+
+                        if send_range=="near":
+                            gps_info=post.get("gps_info", {})
+                            if gps_info:
+                                push_history["point"]=gps_info
+                        MongoFront.insert(push_history, "post_push_history")
+
+                    # push_all=body_dic.get('push',None)
+                    # if push_all is not None and push_all=="1":
+                    #     message_event["push_all"] = push_all
+                    # else:
+                    #     message_event["push_all"] = "0"
+
+                    #### 保存消息监控表
+                    message_monitor_entity={
+                        "created":datetime.datetime.utcnow(),
+                        "begin_milli":int(round(time.time() * 1000)),
+                        "message_event":message_event
+                    }
+                    id,db_error=MongoFront.insert(message_monitor_entity,"message_monitor")
+
+                    message_event["message_monitor_id"]=id
+
+                    message_event = json.dumps(message_event,
+                                      indent=2,
+                                      ensure_ascii=False,
+                                      cls=MongoFieldEncoder)
+                    queue_name=options.redis_queue_message_event_boutique
+                    log.info("insert queue:%s"%queue_name)
+                    log.info("insert message_event:%s"%message_event)
+                    result =RedisWeiboClient.rpush(queue_name,message_event)
+
+                ####给用户发通知消息
+                to_usernames = [post["actor"]["username"]]
+                message_event = {}
+                message_event["message_type"] = "check"
+                message_event["target"] = "apoint"
+                message_event["content"] = content
+                message_event["to_usernames"] = to_usernames
+                
+                #### 保存消息监控表
+                message_monitor_entity={
+                    "created":datetime.datetime.utcnow(),
+                    "begin_milli":int(round(time.time() * 1000)),
+                    "message_event":message_event
+                }
+                id,db_error=MongoFront.insert(message_monitor_entity,"message_monitor")
+
+                message_event["message_monitor_id"]=id
+                
+                message_event = json.dumps(message_event,
+                                  indent=2,
+                                  ensure_ascii=False,
+                                  cls=MongoFieldEncoder)
+                queue_name=options.redis_queue_message_event
+                log.info("insert queue:%s"%queue_name)
+                log.info("insert message_event:%s"%message_event)
+                result =RedisClient.rpush(queue_name,message_event)
+
+                ####异步新增浏览量
+                addPostDisplayCount(str(post_id),"boutique")
+
+                # 增加贡献值
+                contribution_json = {
+                    "username": post["actor"]["username"],
+                    "act": "daily_hot_post"
+                }
+                message_event = json.dumps(contribution_json,
+                                           indent=2,
+                                           ensure_ascii=False,
+                                           cls=MongoFieldEncoder)
+                queue_name = options.contribution_redis
+                log.info("insert queue:%s" % queue_name)
+                log.info("insert message_event:%s" % message_event)
+                result = RedisClient.rpush(queue_name, message_event)
+
+                # ####给其他人也要推送
+                # push_all=body_dic.get('push',None)
+                # push_content=body_dic.get('content',None)
+                #
+                # if push_all is not None and push_all=="0":
+                #
+                #
+                #     message_event = {}
+                #     message_event["message_type"]="boutique"
+                #     # content=push_content
+                #     # if content is None or content=="":
+                #     #     content=self.getContent("boutique_all_push",post)
+                #     # message_event["content"] = content
+                #     message_event["post_id"] = post_id
+                #
+                #     message_event = json.dumps(message_event,
+                #                       indent=2,
+                #                       ensure_ascii=False,
+                #                       cls=MongoFieldEncoder)
+                #     queue_name=options.redis_queue_message_event
+                #     log.info("insert queue:%s"%queue_name)
+                #     log.info("insert message_event:%s"%message_event)
+                #     result =RedisClient.rpush(queue_name,message_event)
+
+
+    def setRank(self,body_dic):
+        post_id = body_dic.get("post_id",None)
+
+
+        lookup = {"_id": ObjectId(post_id)}
+        post = options.dbconn.Post.find_one(lookup)
+
+        send_message = False
+        ###如果当前渔获属于待审核状态（boutique＝＝1）的精品，则属于第一次申请精品渔获，需要发消息通知
+        if post is not None:
+            if post.has_key("boutique") and post["boutique"]==1:
+                send_message=True
+
+
+        ##1,将之前占据该rank的帖子的rank设置成999
+        rank=999
+        if body_dic.has_key("rank"):
+            rank=int(body_dic["rank"])
+            if rank<999:
+                lookup1={
+                    "rank":rank
+                }
+                old_rank_post=MongoFront.find_and_modify(lookup1,{"$set":{"rank":999}},"posts")
+                if old_rank_post:
+                    old_rank_post_id=str(old_rank_post["_id"])
+                    created_micros=old_rank_post["created_micros"]
+                    ####加入redis精品列表
+                    RedisClient.addToList(options.boutique_post_list,old_rank_post_id,created_micros)
+
+                ####提升在redis精品的位置
+                score=self.getScoreByRank(rank)
+            else:
+                score=post["created_micros"]
+
+            RedisClient.addToList(options.boutique_post_list,post_id,score)
+
+        updated={}
+
+        ##2,将rank赋给新帖子
+        if body_dic.has_key("boutique"):
+            updated["boutique"]=body_dic["boutique"]
+
+        if body_dic.has_key("rank"):
+            updated["rank"]=int(body_dic["rank"])
+
+        log.info("options:"+str(updated))
+        log.info("lookup:"+str(lookup))
+
+        MongoFront.update(lookup,{"$set":updated},"posts")
+
+
+
+
+
+
+
+
+        response = {"entities":[post]}
+        self.write(json.dumps(response,
+                              indent=2,
+                              ensure_ascii=False,
+                              cls=MongoFieldEncoder))
+        self.finish()
+
+        if rank<999:
+            act = "boutique_rank"
+            save_log(act,post_id,self.username)
+
+        if send_message:
+            to_usernames = [post["actor"]["username"]]
+            content = self.getContent("boutique",post)
+            message_event = {}
+            message_event["target"]="apoint"
+            message_event["message_type"]="boutique"
+            message_event["content"] = content
+            message_event["to_usernames"] = to_usernames
+            message_event = json.dumps(message_event,
+                              indent=2,
+                              ensure_ascii=False,
+                              cls=MongoFieldEncoder)
+            queue_name=options.redis_queue_message_event
+            log.info("insert queue:%s"%queue_name)
+            log.info("insert message_event:%s"%message_event)
+            result =RedisClient.rpush(queue_name,message_event)
+
+    @asynchronous
+    @requires_auth
+    def delete(self):
+        post_id = self.get_argument('post_id',None)
+        content = self.get_argument('content',None)
+        if post_id==None :
+            self.fire_response_bad_response()
+            return
+        post_id_ary = post_id.split(",")
+        delete_ary = [ObjectId(x)  for x in post_id_ary]
+        lookup = {'_id': {'$in':delete_ary}}
+
+        option = {'$set':{'deleted':True}}
+        is_success=False
+        try:
+            MongoFront.update(lookup, option, 'posts')
+          
+          
+            self.finish()
+            is_success=True
+        except Exception as e:
+            self.set_status(400)
+            response = {}
+            response["error"] = "bad_request"
+            response["error_description"] = e.message
+            self.write(json.dumps(response, indent=2, ensure_ascii=False))
+            self.finish()
+
+        lookup = {
+            "post_id":{"$in":post_id_ary}
+        }
+        if is_success:
+            
+            MongoFront.delete(lookup,"user_like_post")
+            MongoFront.delete(lookup,"user_join_post")
+            MongoFront.delete(lookup,"user_collect_post")
+            deletePostActiviy(post_id_ary)
+            MongoFront.remove(lookup,"posts_search")
+            ####从redis最新渔获集合中删除
+            RedisClient.removeToList(options.new_post_list,post_id_ary)
+
+            ####从redis精品集合中删除
+            RedisClient.removeToList(options.boutique_post_list,post_id_ary)
+            
+            #消息推送
+            if content!=None:
+                for post_id in post_id_ary:
+                    post = self.getPost(post_id)
+                    to_usernames = [post["actor"]["username"]]
+                    message_event = {}
+                    message_event["message_type"] = "delete"
+                    message_event["target"] = "apoint"
+                    message_event["content"] = content
+                    message_event["to_usernames"] = to_usernames
+                    message_event = json.dumps(message_event,
+                                      indent=2,
+                                      ensure_ascii=False,
+                                      cls=MongoFieldEncoder)
+                    queue_name=options.redis_queue_message_event
+                    log.info("insert queue:%s"%queue_name)
+                    log.info("insert message_event:%s"%message_event)
+                    result =RedisClient.rpush(queue_name,message_event)
+            
+            
+            
+            
+
+    def fire_response_bad_response(self):
+        """        返回登录请求错误响应
+        """
+        self.set_status(400)
+        response = {}
+        response["error"] = "invalid_grant"
+        response["error_description"] = "invalid username or password"
+        self.write(json.dumps(response, indent=2, ensure_ascii=False))
+        self.finish()
+        
+        
+    def getPost(self,id):
+        lookup = {"_id":ObjectId(id)}
+        filters = {"gps_info":1,"page":1,"content":1,"actor":1,"_id":0,"created_micros":1}
+        post = MongoFront.find_one(lookup,"posts",filters)
+        return post
+
+    def getScoreByRank(self,rank):
+        return self.rank_score_dic.get(str(rank),0)
+        
+    def getContent(self,type,post,add=False,credits=50):
+        mes = ""
+        content = post.get("content","")
+        if type=="delete":
+            pre_delete_content = post.get("pre_delete_content","")
+            if content!="" :
+                mes = '你的渔获"'+content+'"由于违反相关规定被删除'
+            else:
+                mes = '你的渔获由于违反相关规定被删除'
+            
+        elif type=="boutique":
+            text = "并奖励"+str(credits)+"个元宝，"
+            if content!="" :
+                if add:
+                    mes = '恭喜你的渔获"'+content+'"被官方推荐为热门渔获，'+text+'祝你天天爆箱，夜夜爆护。'
+                else:
+                    mes = '恭喜你的渔获"'+content+'"被官方推荐为热门渔获，祝你天天爆箱，夜夜爆护。'
+            else:
+                if add:
+                    mes = '恭喜你的渔获被官方推荐为热门渔获，'+text+'祝你天天爆箱，夜夜爆护。'
+                else:
+                    mes = '恭喜你的渔获被官方推荐为热门渔获，祝你天天爆箱，夜夜爆护。'
+
+        elif type=="boutique_all_push":
+            if content!="":
+                if len(content)>5:
+                    content=content[0:5]+"。。。"
+                mes = '又有新渔获（内容："'+content+'"）被官方推荐为热门渔获，快去精品一栏围观吧！！'
+            else:
+                mes = '又有新渔获被官方推荐为热门渔获，快去精品渔获围观吧！！'
+        return mes
+
+
+    
+    
+    
+    def city_deal(self,city,where):
+        
+        if city!=None:
+            log.info("city:"+city) 
+            cities = city.split(',')
+            if '海外' in city:
+                index = cities.index('海外')
+                del cities[index]
+                where['$or']=[
+                              {'gps_info.city':{'$in':cities}},
+                              {'gps_info.country_code':{'$nin':['','cn'],'$exists':True}}
+                              ]
+            
+            elif '其他' in city:
+                index = cities.index('其他')
+                del cities[index]
+                cities.append('')
+                
+                #由于海外的数据存在只有country_code,没有city，所以其他的数据应该把这类排除在外
+                where['$or']=[
+                              {'gps_info.city':{'$in':cities},'gps_info.country_code':'cn'},
+                              {'gps_info.city':{'$exists':False},'gps_info.country_code':{'$exists':False}},
+                              {'gps_info.city':{'$exists':False},'gps_info.country_code':'cn'}
+                              ]
+                
+              
+            else:
+                 where['gps_info.city']={'$in':cities}
+
+
+

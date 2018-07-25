@@ -1,0 +1,197 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# @Date    : 2017-09-22 10:19:40
+# @Author  : Your Name (you@example.org)
+# @Link    : http://example.org
+# @Version : $Id$
+import urllib2
+from mongokit import *
+from mongokit.helpers import totimestamp, fromtimestamp
+from utils.mongo_slave_client import MongoSlaveClient
+from log import get_logger
+import traceback
+import json
+from utils.redis_client import RedisClient
+from tornado.options import options
+from bson import ObjectId
+import bson
+from mongo_field_encoder import MongoFieldEncoder
+from services.service_user_new import *
+from utils.banner import getBanner
+import pymongo
+import math
+from utils.mongo_client import MongoClient
+
+
+log = get_logger()
+
+shop_filter = {
+    "desc":0
+}
+
+def getNearShops(where={},center=[],min=0,maxDistance=300,limit=20):
+
+    where["gps_info.location"]={
+                                "$near":{"$geometry":{
+                                                     "type" : "Point",
+                                                     "coordinates" : center
+                                                     },
+                                        "$minDistance":min,
+                                        "$maxDistance":maxDistance
+                                }}
+    return getNearShopList(where,limit,center)
+
+
+'''
+获取渔具店评论列表
+'''
+def getShopCommentList(shop_where, sort_key="created", limit=10):
+    shop_cursor = ""
+    sort = [(sort_key, -1)]
+    fishing_shop_cursor = MongoClient.find_all_sorted_limited(shop_where, "fishing_shop_comment", sort, limit+1)
+    fishing_shop_array = []
+    for user_act in fishing_shop_cursor:
+        fishing_shop_array.append(user_act)
+    if len(fishing_shop_array) == limit + 1:
+        fishing_shop_array.pop(-1)
+        place_cursor = str(fishing_shop_array[-1][sort_key])
+
+    return fishing_shop_array, shop_cursor
+
+
+
+
+'''
+获取附近信息
+'''
+def getNearShopList(lookup={},limit=15,center=[]):
+    global shop_filter
+    shop_search = list(MongoSlaveClient.find_all(lookup,"fishing_store",filter=shop_filter).limit(limit+1)) or []
+
+    cursor=""
+    if len(shop_search)==limit+1:
+        del shop_search[-1]
+        # cursor = str(totimestamp(place_search[-1]["created"]))
+        place = shop_search[-1]
+        point = place["gps_info"]["location"]["coordinates"]
+        distance = getDistance(point, center)
+        cursor = str(distance)
+    return shop_search,cursor
+
+'''
+获取钓场列表
+'''
+def getShopList(shop_where,sort_key="created",limit=10):
+    global place_filter
+    place_cursor=""
+    sort = [(sort_key, -1)]
+    fishing_shop_cursor = MongoClient.find_all_sorted_limited(shop_where, "fishing_store", sort, limit + 1,filter=shop_filter)
+    fishing_shop_array = []
+    for user_act in fishing_shop_cursor:
+        fishing_shop_array.append(user_act)
+    if len(fishing_shop_array) == limit + 1:
+        fishing_shop_array.pop(-1)
+        place_cursor = str(fishing_shop_array[-1][sort_key])
+
+    return fishing_shop_array,place_cursor
+
+'''
+获取收藏列表
+'''
+def getCollectShopList(collect_where,sort_key="created",limit=10):
+    place_cursor=""
+    sort = [(sort_key, -1)]
+    fishing_shop_cursor = MongoClient.find_all_sorted_limited(collect_where, "user_collect_shop", sort, limit + 1)
+    fishing_shop_array = []
+    for user_act in fishing_shop_cursor:
+        fishing_shop_array.append(user_act)
+    if len(fishing_shop_array) == limit + 1:
+        fishing_shop_array.pop(-1)
+        place_cursor = str(fishing_shop_array[-1][sort_key])
+
+    return fishing_shop_array,place_cursor
+
+
+'''
+组装返回数据
+'''
+def assembleShopInfo(fishing_shop_array):
+    place_return_array=[]
+    for fishing_shop in fishing_shop_array:
+        cover = fishing_shop.get("cover",{})
+        begin_time = fishing_shop.get("begin_time", "8:00")
+        end_time = fishing_shop.get("end_time", "20:00")
+        # 默认管理员
+        role = fishing_shop.get("end_time", "3")
+
+        shop_dic={
+            'begin_time': begin_time,
+            'end_time': end_time,
+            'role': role
+        }
+
+        if cover:
+            shop_dic["cover"]=cover
+        shop_dic["name"] = fishing_shop["name"]
+        shop_dic["display_count"] = fishing_shop["display_count"]
+        # shop_dic["gps_info"] = fishing_shop["gps_info"]
+        gps_info = fishing_shop["gps_info"]
+        area = gps_info.get("area", "")
+        if not area:
+            gps_info["area"] = gps_info["city"]
+        shop_dic["gps_info"] = gps_info
+        shop_dic["_id"] = str(fishing_shop["_id"])
+        if fishing_shop.has_key("contact_tel"):
+            shop_dic["contact_tel"]=fishing_shop["contact_tel"]
+            shop_dic["tel_auth"]=1
+
+        place_return_array.append(shop_dic)
+
+    return place_return_array
+
+
+def getDistance(point1, point2):
+    final = 6378137.0
+    flng = calcDegree(float(point1[0]))
+    flat = calcDegree(float(point1[1]))
+    tlng = calcDegree(float(point2[0]))
+    tlat = calcDegree(float(point2[1]))
+    result = math.sin(flat) * math.sin(tlat)
+    result += math.cos(flat) * math.cos(tlat) * math.cos(flng - tlng)
+    return final * math.acos(float(result))
+
+def getShopByKw(shop_where,limit=50):
+    global shop_filter
+    shop_cursor = ""
+    sort = [("shop_num", 1)]
+    fishing_store_cursor = MongoClient.find_all_sorted_limited(shop_where, "fishing_store", sort, limit,
+                                                               filter=shop_filter)
+    fishing_shop_array = []
+    for user_act in fishing_store_cursor:
+        fishing_shop_array.append(user_act)
+    # if len(fishing_shop_array) == limit + 1:
+    #     fishing_shop_array.pop(-1)
+    #     shop_cursor = str(fishing_shop_array[-1]["shop_num"])
+    return fishing_shop_array, shop_cursor
+
+
+
+def get_image_info(image_url):
+    image_dic={"image_url":image_url}
+    image_url_tmp = image_url + "?imageInfo"
+    flag=False
+    s = urllib2.Request(image_url_tmp)
+    resp = urllib2.urlopen(s)
+    #resp =  requests.get(image_url_tmp)
+    code = resp.code
+    if code ==200:
+        #resp.read()
+        image_info = resp.read()
+        #image_info = resp.content
+        page_info = json.loads(image_info)
+        width = page_info["width"]
+        height = page_info["height"]
+        image_dic["width"] = width
+        image_dic["height"] = height
+        flag=True
+    return image_dic,flag

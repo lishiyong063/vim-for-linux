@@ -1,0 +1,166 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# @Date    : 2015-05-18 17:41:52
+# @Author  : Your Name (you@example.org)
+# @Link    : http://example.org
+# @Version : $Id$
+from handler_baseHt import BaseHtHandler
+from log import get_logger
+import tornado.web
+from tornado.web import asynchronous
+from tornado.options import options
+import json
+import hashlib
+import datetime
+import hashlib
+import random
+from auth import requires_auth
+import pymongo
+import time
+from log import get_logger
+from model.message_push_control import Message_Push_Control
+from model.permissions_ht import Permissions_ht
+import optionsSetting
+from utils.secret import *
+import traceback
+from utils.redis_client import RedisClient
+from mongo_field_encoder import MongoFieldEncoder
+from mongolog import MongoHandler
+from mongokit.helpers import totimestamp, fromtimestamp
+from utils.token_im import TokenService
+from tornado.httpclient import HTTPRequest
+from utils.mongo_client import MongoClient
+from utils.mongo_front import MongoFront
+import bson
+from bson import ObjectId
+try:
+    from tornado.curl_httpclient import CurlAsyncHTTPClient as AsyncHTTPClient
+except ImportError:
+    from tornado.simple_httpclient import SimpleAsyncHTTPClient as AsyncHTTPClient
+log = get_logger()
+class MPCHandler(BaseHtHandler):
+    @asynchronous
+    @requires_auth
+    def get(self):
+        log.info("MPCHandler.get:"+ str(self.request.arguments))
+        where={
+        "status":{"$ne":2}
+        }
+        belong_to = self.get_argument("belong_to","")
+        if belong_to:
+            where["belong_to"] = belong_to
+        id = self.get_argument("id","")
+        if id:
+            where["_id"] = ObjectId(id)
+        sort_arry=[("place",pymongo.ASCENDING),('belong_to', pymongo.ASCENDING)]
+        message_push_control_cursor=options.dbconn.Message_Push_Control.find(where).sort(sort_arry).limit(1000)
+
+        # MongoFront.find(where,"message_push_control","belong_to",True,0,1000)
+
+        count=message_push_control_cursor.count()
+        message_push_control_array=[]
+        for mesage_push_control in message_push_control_cursor:
+            message_push_control_array.append(mesage_push_control)
+
+
+        response={}
+        response["entities"]=message_push_control_array
+        response["count"]=count
+
+        self.write(json.dumps(response,indent=2, ensure_ascii=False,cls=MongoFieldEncoder))
+        self.finish()
+
+    @asynchronous
+    @requires_auth
+    def post(self):
+        log.info("MPCHandler.post is called:+" + self.request.body)
+
+        body_dic = json.loads(self.request.body, encoding="utf-8")
+        title_type = body_dic['title_type']
+        belong_to = body_dic['belong_to']
+        event = body_dic['event']
+        info = body_dic['info']
+        inner_info = body_dic['inner_info']
+        scope = body_dic['scope']
+        is_push = body_dic['is_push']
+        no_read_message = body_dic['no_read_message']
+
+        where = {
+            "title_type": title_type
+        }
+
+        updated_value = {
+            "belong_to":belong_to,
+            "event":event,
+            "info":info,
+            "inner_info":inner_info,
+            "scope":scope,
+            "is_push":is_push,
+            "night_push":"0",
+            "no_read_message":no_read_message
+        }
+
+        update = {"$set":updated_value}
+
+        update_str = json.dumps(update, indent=2, ensure_ascii=False, cls=MongoFieldEncoder)
+
+        log.info("###update_str###" + update_str)
+        MongoFront.upsert(where, update, "message_push_control")
+        response = {}
+        response["entities"] = "ok"
+        self.write(json.dumps(response, indent=2, ensure_ascii=False, cls=MongoFieldEncoder))
+        self.finish()
+
+
+    @asynchronous
+    @requires_auth
+    def put(self):
+        log.info("MPCHandler.put is called:+"+self.request.body)
+
+        body_dic = json.loads(self.request.body,encoding="utf-8")
+        title_type=body_dic['title_type']
+        key=body_dic.get('key',"")
+
+        if key=="delete":
+            where = {"title_type":title_type}
+            update = {"status":2,"is_push":"0","no_read_message":"0"}
+            update_value = {
+                "$set":update
+            }
+            MongoFront.update(where, update_value, "message_push_control")
+            self.fire_response_response_ok("ok")
+        elif key=="modify":
+            id = body_dic["id"]
+            body_dic.pop("id","")
+            update_value = {
+                "$set":body_dic
+            }
+            where = {
+                "_id":ObjectId(id)
+            }
+            MongoFront.update(where, update_value, "message_push_control")
+            self.fire_response_response_ok("ok")
+        else:
+
+            where={
+                "title_type":title_type
+            }
+
+            updated_value={
+                '$set':{
+                    body_dic['column']:body_dic['value']
+                }
+            }
+            log.info("updated_value:"+str(updated_value))
+            MongoFront.update(where,updated_value,"message_push_control")
+            self.fire_response_response_ok()
+
+    def fire_response_response_ok(self,result=""):
+        response = {}
+        if result:
+            response = {"response": "ok"}
+        self.write(json.dumps(response,
+                              indent=2,
+                              ensure_ascii=False,
+                              cls=MongoFieldEncoder))
+        self.finish()

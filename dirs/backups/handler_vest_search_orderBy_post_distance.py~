@@ -1,0 +1,207 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# @Date    : 2015-05-18 17:41:52
+# @Author  : Your Name (you@example.org)
+# @Link    : http://example.org
+# @Version : $Id$
+from handler_baseHt import BaseHtHandler
+from log import get_logger
+import tornado.web
+from tornado.web import asynchronous
+from tornado.options import options
+import json
+import hashlib
+import datetime
+import hashlib
+import math
+import pymongo
+from bson import ObjectId
+import time
+from log import get_logger
+from model.accounts_ht import Account_ht
+from model.users import Users
+import optionsSetting
+import datetime
+import  time
+from utils.secret import *
+import traceback
+from utils.redis_client import RedisClient
+from mongo_field_encoder import MongoFieldEncoder
+from mongolog import MongoHandler
+from mongokit.helpers import totimestamp, fromtimestamp
+from utils.token_im import TokenService
+from tornado.httpclient import HTTPRequest
+from utils.mongo_client import MongoClient
+from utils.mongo_front import MongoFront
+from auth import requires_auth
+import re
+try:
+    from tornado.curl_httpclient import CurlAsyncHTTPClient as AsyncHTTPClient
+except ImportError:
+    from tornado.simple_httpclient import SimpleAsyncHTTPClient as AsyncHTTPClient
+log = get_logger()
+class VestSearchOrderByPostDistanceHandler(BaseHtHandler):
+    @asynchronous
+    @requires_auth
+    def get(self):
+        log.info("VestSearchOrderByPostDistanceHandler.get:"+self.request.body)
+        self.set_header("Access-Control-Allow-Origin", "*")
+        where={
+            'freeze_status': {'$ne': "2"},
+            'user_type':'2'
+        }
+        condition = self.get_argument('condition',"")
+        post_id = self.get_argument('post_id',"")
+        lat=None
+        lon=None
+
+        post_where={
+            "_id":ObjectId(post_id)
+        }
+        post=MongoFront.find_one(post_where,"posts")
+        if post:
+
+            gps_info=post.get("gps_info",{})
+            if gps_info:
+                location=gps_info.get("location",{})
+                if location:
+                    coordinates=location.get("coordinates",[])
+                    if coordinates and isinstance(coordinates, list):
+                        if len(coordinates)==2:
+                            lon=coordinates[0]
+                            lat=coordinates[1]
+
+
+        curr_username=self.username
+        if curr_username=="admin" or curr_username=="fenglin" or curr_username=='ziya009':
+            if condition:
+                condition_dic = json.loads(condition,encoding="utf-8")
+                belong_to=condition_dic.get("belong_to","")
+                if belong_to:
+                    where["belong_to"]=belong_to
+        else:
+           where["belong_to"]=curr_username
+
+
+        response={}
+
+        filter={
+            "_id":0,
+            "username":1,
+            "sex":1,
+            "followed_num":1,
+            "post_count":1,
+            "nick":1,
+            "gps_info":1,
+            "last_post_date":1,
+            "following_num":1,
+            "avatar_url":1
+        }
+        log.info("where:"+json.dumps(where,indent=2, ensure_ascii=False,cls=MongoFieldEncoder))
+
+        limit=1000
+        curr = self.get_argument('curr',"")
+        # log.info("curr:"+curr)
+        if curr=="":
+            user_cursor = options.dbconn.Users.find(where,fields=filter).limit(limit)
+        else:
+            user_cursor = options.dbconn.Users.find(where,fields=filter).skip((int(curr)-1)*limit).limit(limit)
+
+        # log.info("user_cursor:"+str(user_cursor.count()))
+        users=[]
+        # username_array=[]
+        username_dic={}
+        for user in user_cursor:
+            users.append(user)
+            # username_array.append(user["username"])
+            username_dic[user["username"]]="1"
+
+
+        lookup = {
+            "to_post_id":post_id
+        }
+        filter={
+            "_id":0,
+            "actor":1,
+            "created":1,
+        }
+        comments=options.dbconn.Comment.find(lookup,fields=filter)
+        user_comment_dic={}
+        if comments is not None:
+            for comment in comments:
+                comment_username=comment["actor"]["username"]
+                comment_created=comment["created"]
+
+                if username_dic.has_key(comment_username):
+                    if user_comment_dic.has_key(comment_username):
+                        user_comment_info=user_comment_dic[comment_username]
+
+                        user_comment_info["comment_count"]=user_comment_info["comment_count"]+1
+                        if user_comment_info["comment_date"]<comment_created:
+                            user_comment_info["comment_date"]=comment_created
+                    else:
+                        user_comment_dic[comment_username]={
+                            "comment_count":1,
+                            "comment_date":comment_created
+                        }
+
+        gps_user_array=[]
+        no_gps_user_array=[]
+        for user in users:
+            username=user["username"]
+            if user_comment_dic.has_key(username):
+                user_comment_info=user_comment_dic[username]
+                user["is_comment"]=1
+                user["comment_count"]=user_comment_info["comment_count"]
+                user["comment_created"]=user_comment_info["comment_date"]
+
+            gps_info=user.get("gps_info",{})
+            if gps_info:
+                country_code= gps_info.get("country_code","")
+                if country_code and lat is not None:
+
+                    coordinates=gps_info["location"]["coordinates"]
+                    distance=self.getDistance(coordinates,[lon,lat])
+                    user["distance"]=distance
+                    gps_user_array.append(user)
+                else:
+                    no_gps_user_array.append(user)
+            else:
+                no_gps_user_array.append(user)
+
+        if gps_user_array:
+            gps_user_array.sort(key = lambda x:x["distance"])
+
+        response["entities"]=gps_user_array+no_gps_user_array
+        response["post_count_sum"]=0
+        response["count"]=str(user_cursor.count())
+
+        self.write(json.dumps(response, ensure_ascii=False,cls=MongoFieldEncoder))
+        self.finish()
+    
+    def fire_response_bad_response(self):
+        """
+        返回登录请求错误响应
+        """
+        self.set_status(400)
+        response = {}
+        response["error"] = "invalid_grant"
+        response["error_description"] = "invalid username or password"
+        self.write(json.dumps(response, indent=2, ensure_ascii=False))
+        self.finish()
+
+    def getDistance(self,point1,point2):
+        final = 6378137.0
+        if point1[0]==point2[0] and point1[1]==point2[1]:
+            return 0
+
+        flng = self.calcDegree(float(point1[0]))
+        flat = self.calcDegree(float(point1[1]))
+        tlng = self.calcDegree(float(point2[0]))
+        tlat = self.calcDegree(float(point2[1]))
+        result = math.sin(flat)*math.sin(tlat)
+        result += math.cos(flat)*math.cos(tlat)*math.cos(flng-tlng)
+        return final*math.acos(float(result))
+
+    def calcDegree(self,d):
+        return d*math.pi/180.0

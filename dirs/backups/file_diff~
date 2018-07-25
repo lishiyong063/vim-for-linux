@@ -1,0 +1,3 @@
+#/bin/bash
+
+python /work/project/diff_dir.py

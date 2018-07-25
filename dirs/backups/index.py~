@@ -1,0 +1,20 @@
+# -*- coding: utf-8 -*-
+# Created Time: 2018-05-24 16:09:02
+import os.path
+import tornado.httpserver
+import tornado.ioloop
+import tornado.web
+import tornado.options
+from tornado.web import asynchronous, gen
+import time
+
+class IndexHandler(tornado.web.RequestHandler):
+
+    @asynchronous
+    @gen.coroutine
+    def get(self):
+            lst = ["python","www.itdiffer.com","qiwsir@gmail.com"]
+            #self.render("index.html", info=lst)
+            for i in lst:
+                yield gen.sleep(2)
+                self.write(i)

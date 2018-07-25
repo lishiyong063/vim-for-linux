@@ -1,0 +1,13 @@
+from django.contrib import admin
+
+from apps.models import AllCityinfo
+
+
+class AllCityinfoAdmin(admin.ModelAdmin):
+    date_hierarchy = 'time'
+    list_display = ('title', 'url', 'citys', 'time', 'types', 'remark')
+    list_filter = ('title', 'url', 'citys', 'time', 'types', 'remark')
+
+
+admin.site.register(AllCityinfo, AllCityinfoAdmin)
+

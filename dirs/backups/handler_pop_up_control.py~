@@ -1,0 +1,84 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# @Date    : 2015-05-18 17:41:52
+# @Author  : Your Name (you@example.org)
+# @Link    : http://example.org
+# @Version : $Id$
+from handler_baseHt import BaseHtHandler
+from log import get_logger
+import tornado.web
+from tornado.web import asynchronous
+from tornado.options import options
+import json
+import hashlib
+import datetime
+import hashlib
+import random
+from auth import requires_auth
+import pymongo
+import time
+from log import get_logger
+from model.message_push_control import Message_Push_Control
+from model.permissions_ht import Permissions_ht
+import optionsSetting
+from utils.secret import *
+import traceback
+from utils.redis_client import RedisClient
+from mongo_field_encoder import MongoFieldEncoder
+from mongolog import MongoHandler
+from mongokit.helpers import totimestamp, fromtimestamp
+from utils.token_im import TokenService
+from tornado.httpclient import HTTPRequest
+from utils.mongo_client import MongoClient
+from utils.mongo_front import MongoFront
+
+try:
+    from tornado.curl_httpclient import CurlAsyncHTTPClient as AsyncHTTPClient
+except ImportError:
+    from tornado.simple_httpclient import SimpleAsyncHTTPClient as AsyncHTTPClient
+log = get_logger()
+class PopUpControlHandler(BaseHtHandler):
+    @asynchronous
+    @requires_auth
+    def get(self):
+        log.info("PopUpControlHandler.get:"+self.request.body)
+        where={
+
+        }
+        pop_up_control_cursor = MongoFront.find(where,"pop_up_control","belong_to",True,0,1000)
+
+        count=pop_up_control_cursor.count()
+        pop_ip_control_array=[]
+        for pop_up_control in pop_up_control_cursor:
+            pop_ip_control_array.append(pop_up_control)
+
+
+        response={}
+        response["entities"]=pop_ip_control_array
+        response["count"]=count
+
+        self.write(json.dumps(response,indent=2, ensure_ascii=False,cls=MongoFieldEncoder))
+        self.finish()
+
+
+
+    @asynchronous
+    @requires_auth
+    def put(self):
+        log.info("PopUpControlHandler.put is called:+"+self.request.body)
+
+        body_dic = json.loads(self.request.body,encoding="utf-8")
+        act=body_dic['act']
+
+        where={
+            "act":act
+        }
+        updated_value={
+            '$set':{
+                body_dic['column']:body_dic['value']
+            }
+        }
+        log.info("updated_value:"+str(updated_value))
+        MongoFront.update(where,updated_value,"pop_up_control")
+        self.write({})
+        self.finish()

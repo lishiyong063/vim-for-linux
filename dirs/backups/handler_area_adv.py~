@@ -1,0 +1,255 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# @Date    : 2015-05-18 17:41:52
+# @Author  : Your Name (you@example.org)
+# @Link    : http://example.org
+# @Version : $Id$
+from handler_baseHt import BaseHtHandler
+from log import get_logger
+import tornado.web
+from tornado.web import asynchronous
+from tornado.options import options
+import json
+import hashlib
+import datetime
+from bson import ObjectId
+import hashlib
+import random
+import pymongo
+import time
+from log import get_logger
+from model.accounts_ht import Account_ht
+from model.users import Users
+import optionsSetting
+import datetime
+import  time
+from utils.secret import *
+import traceback
+from utils.redis_client import RedisClient
+from mongo_field_encoder import MongoFieldEncoder
+from mongolog import MongoHandler
+from mongokit.helpers import totimestamp, fromtimestamp
+from utils.token_im import TokenService
+from tornado.httpclient import HTTPRequest
+from utils.mongo_client import MongoClient
+from utils.mongo_front import MongoFront
+from auth import requires_auth
+import re
+try:
+    from tornado.curl_httpclient import CurlAsyncHTTPClient as AsyncHTTPClient
+except ImportError:
+    from tornado.simple_httpclient import SimpleAsyncHTTPClient as AsyncHTTPClient
+log = get_logger()
+class AreaAdvHandler(BaseHtHandler):
+
+
+    @asynchronous
+    @requires_auth
+    def get(self):
+        log.info("AreaAdvHandler.get")
+        area = self.get_argument('area',"")
+        new_area_list = ["tool_list", "post_list", "article_list"]
+        where = {
+            "area":area
+        }
+        area_advs = list(MongoFront.find_all(where,"area_adv").sort("index",1)) or []
+        for area_adv in area_advs:
+            advid = area_adv["advid"]
+            where = {
+                "_id":ObjectId(advid)
+            }
+            adv = MongoFront.find_one(where,"advs")
+            if adv!=None:
+                area_adv["adv"]=adv
+            if area in new_area_list:
+                if area == "tool_list":
+                    table = "tool_list_place_property"
+                elif area == "post_list":
+                    table = "post_list_place_property"
+                else:
+                    table = "article_list_place_property"
+                type = area_adv["type"]
+                where = {
+                    "code": type
+                }
+                filter = {
+                    "_id": 0,
+                    "value": 1
+                }
+                type = MongoFront.find_one(where, table, filter)
+                if type:
+                    type = type["value"]
+                area_adv["type"] = type
+        response={}
+        response["entities"]=area_advs
+        self.write(json.dumps(response,indent=2, ensure_ascii=False,cls=MongoFieldEncoder))
+        self.finish()
+
+    @asynchronous
+    @requires_auth
+    def post(self):
+        '''
+        {
+            "area":"new",
+            "index":1,
+            "created":now,
+            "advid":advid,
+
+
+        }
+        :return:
+        '''
+        response = {}
+        log.info("AreaAdvHandler.post:"+self.request.body)
+        body_dic = json.loads(self.request.body, encoding="utf-8")
+
+        index = body_dic.get("index", 0)
+        if index:
+            area = body_dic.get("area")
+            advid = body_dic.get("advid")
+            #更改别的数据的位置
+            where = {
+                "area":area,
+                "index":{"$gte":index}
+            }
+            update = {
+                "$inc":{"index":1}
+            }
+
+            MongoFront.update(where, update, "area_adv")
+
+            now = datetime.datetime.utcnow()
+            area_adv = {
+                "area":area,
+                "advid":advid,
+                "index":index,
+                "created":now
+            }
+            MongoFront.insert(area_adv, "area_adv")
+        else:
+            type = body_dic.get("type", "")
+            page = body_dic.get("page", "")
+            position = body_dic.get("position", "")
+            area = body_dic.get("area", "")
+            where = {
+                "type": type,
+                "page": page,
+                "position": position,
+                "area": area
+            }
+            result = MongoFront.find_one(where, "area_adv")
+
+            if result:
+                response["status"] = 1
+                where = {
+                    "_id": ObjectId(result["advid"])
+                }
+                adv = MongoFront.find_one(where, "advs")
+                response["name"] = adv["name"]
+            else:
+                area_adv = body_dic
+                now = datetime.datetime.utcnow()
+                area_adv["created"] = now
+                MongoFront.insert(area_adv, "area_adv")
+        response = json.dumps(response,
+                                  indent=2,
+                                  ensure_ascii=False,
+                                  cls=MongoFieldEncoder)
+        self.write(response)
+        self.finish()
+
+    @asynchronous
+    @requires_auth
+    def put(self):
+        '''
+        1与2交换
+        {
+            "area":"new",
+            "index":1,
+            "to":2,
+            "advid":""
+        }
+        :return:
+        '''
+        log.info("AreaAdvHandler.post:"+self.request.body)
+        body_dic = json.loads(self.request.body,encoding="utf-8")
+
+        index = body_dic.get("index")
+        area = body_dic.get("area")
+        to = body_dic.get("to")
+        advid = body_dic.get("advid")
+        #更改别的数据的位置
+        where = {
+            "area":area,
+            "index":to
+        }
+        update = {
+            "$set":{"index":index},
+
+        }
+
+        MongoFront.update(where,update,"area_adv")
+
+        where = {
+            "area":area,
+            "advid":advid
+        }
+        update = {
+            "$set":{"index":to}
+        }
+
+        MongoFront.update(where,update,"area_adv")
+
+        response = json.dumps({},
+                                  indent=2,
+                                  ensure_ascii=False,
+                                  cls=MongoFieldEncoder)
+        self.write(response)
+        self.finish()
+
+
+    @asynchronous
+    @requires_auth
+    def delete(self):
+        log.info("AreaAdvHandler.delete")
+        area = self.get_argument('area')
+        advid = self.get_argument("advid")
+        area_id = self.get_argument("area_id")
+        if area in ["post_list", "tool_list", "article_list"]:
+            where = {
+                "area":area,
+                "_id": ObjectId(area_id)
+            }
+            print where
+            MongoFront.delete(where, "area_adv")
+        else:
+            #更改别的数据的位置
+            where = {
+                "area":area,
+                "advid":advid
+            }
+
+
+            MongoFront.delete(where,"area_adv")
+
+
+
+        response = json.dumps({},
+                                  indent=2,
+                                  ensure_ascii=False,
+                                  cls=MongoFieldEncoder)
+        self.write(response)
+        self.finish()
+
+
+
+
+
+
+
+
+
+
+
+
+

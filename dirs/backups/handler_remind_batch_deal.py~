@@ -1,0 +1,75 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# @Date    : 2015-05-18 17:41:52
+# @Author  : Your Name (you@example.org)
+# @Link    : http://example.org
+# @Version : $Id$
+from handler_baseHt import BaseHtHandler
+from log import get_logger
+import tornado.web
+from tornado.web import asynchronous
+from tornado.options import options
+import json
+import hashlib
+import datetime
+import hashlib
+import random
+import pymongo
+import time
+from log import get_logger
+from model.accounts_ht import Account_ht
+from model.users import Users
+import optionsSetting
+from utils.secret import *
+import traceback
+from utils.redis_client import RedisClient
+from mongo_field_encoder import MongoFieldEncoder
+from mongolog import MongoHandler
+from mongokit.helpers import totimestamp, fromtimestamp
+from utils.token_im import TokenService
+from tornado.httpclient import HTTPRequest
+from utils.mongo_client import MongoClient
+from utils.mongo_front import MongoFront
+from tornado import gen
+from auth import requires_auth
+from bson.objectid import ObjectId
+try:
+    from tornado.curl_httpclient import CurlAsyncHTTPClient as AsyncHTTPClient
+except ImportError:
+    from tornado.simple_httpclient import SimpleAsyncHTTPClient as AsyncHTTPClient
+log = get_logger()
+class RemindBatchDealHandler(BaseHtHandler):
+    @asynchronous
+    @tornado.gen.engine
+    @requires_auth
+    def post(self):
+        log.info("RemindBatchDealHandler.post:"+self.request.body)
+        self.set_header("Access-Control-Allow-Origin", "*")
+
+
+        body_dic = json.loads(self.request.body,encoding="utf-8")
+
+        deal_reminds=body_dic["deal_reminds"]
+        log.info("deal_reminds:"+deal_reminds)
+        deal_reminds_array=deal_reminds.split(",")
+
+        log.info("deal_reminds_array"+str(deal_reminds_array))
+        log.info("len_deal_reminds_array"+str(len(deal_reminds_array)))
+
+        for deal_reminds in deal_reminds_array:
+            log.info("deal_reminds"+deal_reminds)
+            remind_where = {
+                "_id":ObjectId(deal_reminds)
+            }
+            update_val = {
+                "$set":{
+                    "is_deal":1
+                }
+            }
+            log.info("remind_where"+str(remind_where))
+            MongoFront.update(remind_where,update_val,"ziya_order_flow_remind")
+            # remind_cursor = MongoFront.find_all(remind_where,"ziya_order_flow_remind")
+
+
+        self.write(json.dumps({},indent=2, ensure_ascii=False,cls=MongoFieldEncoder))
+        self.finish()

@@ -1,0 +1,271 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# @Date    : 2014-12-05 15:45:20
+# @Author  : Your Name (you@example.org)
+# @Link    : http://example.org
+# @Version : $Id$
+
+from __future__ import division
+import tornado.web
+from tornado.web import asynchronous
+from tornado.options import options
+import copy
+from mongokit import *
+from mongokit.helpers import totimestamp, fromtimestamp
+import pymongo
+from mongo_field_encoder import MongoFieldEncoder
+from handler_base import BaseHandler
+from access_track import access_log
+from services.service_waterfall_list import *
+from services.service_user_waterfall_flow import *
+from services.service_waterfall_flow_json import *
+from utils.banner import *
+from services.service_post_list_place_property import *
+import traceback
+import json
+import bson
+import datetime
+import time
+import random
+from log import get_logger
+from utils.redis_client import RedisClient
+from utils.mongo_client import MongoClient
+from utils.gps_info import *
+from distutils.version import LooseVersion
+from services.service_waterfall_list import *
+from services.service_waterfall_flow_json import *
+log = get_logger()
+
+
+class JingCaiListHandler(BaseHandler):
+    """
+    精彩列表
+    """
+    def __init__(self, application, request, **kwargs):
+        super(JingCaiListHandler, self).__init__(application, request, **kwargs)
+        self.request_cursor_array = []
+
+    @asynchronous
+    @access_log
+    def get(self):
+        log.info("JingCaiListHandler begin:" + str(self.request.arguments))
+        response = {}
+        request_cursor = self.get_argument("cursor", "")
+        request_cursor_array = []
+        if request_cursor:
+            request_cursor_array = request_cursor.split(",")
+
+        if 0 < len(request_cursor_array) < 4:
+            self.fire_response_bad_response()
+            return
+
+        lastest_up_time = self.get_argument("lastest_up_time", None)
+        act = self.get_argument('act', '')
+
+        now = datetime.datetime.utcnow()
+        new_lastest_up_time = lastest_up_time
+
+        if not lastest_up_time:
+            new_lastest_up_time = str(totimestamp(now))
+        else:
+            if act == "up":
+                new_lastest_up_time = str(totimestamp(now))
+        response["lastest_up_time"] = new_lastest_up_time
+
+        post_array = []
+        self.request_cursor_array = request_cursor_array
+        if act == "up" and lastest_up_time:
+            where = {
+                "deleted": {"$ne": True},
+                "sold_out": {"$ne": "1"},
+                "yuhuo_type": 0,
+                "page": {"$exists": True},
+                "created": {'$gt': fromtimestamp(int(lastest_up_time))}
+            }
+            order_by = [('created', pymongo.DESCENDING)]
+            new_post_array, post_id_array = getPostSearchListNoCursor(where, order_by)
+            if request_cursor_array:
+                post_id_obj_array = []
+                post_id_obj_array = self.iterable_get_posts(
+                        post_id_obj_array, 5, int(self.request_cursor_array[3]), True, post_id_array)
+                post_array, post_id_array = get_sort_posts(post_id_obj_array, username=self.username)
+            if self.request_cursor_array:
+                if self.request_cursor_array[1] and self.request_cursor_array[2]:
+                    # self.request_cursor_array[0] = str(int(self.request_cursor_array[0]))
+                    self.request_cursor_array[3] = str(self.request_cursor_array[3])
+                    response["cursor"] = ",".join(self.request_cursor_array)
+            response["entities"] = getPostListJson(new_post_array+post_array)
+        else:
+            if not request_cursor_array:
+                key = self.udid
+                if key:
+                    # is_first = RedisClient.get(key)
+                    is_first = True
+                    if not is_first:
+                        cur = str(1)
+                        self.request_cursor_array = ["1", cur, cur, cur]
+                        now = datetime.datetime.now()
+                        end = datetime.datetime(now.year, now.month, now.day, 23, 59, 59)
+                        expire_second = (end-now).seconds
+                        if expire_second <= 0:
+                            expire_second = 1
+                        RedisClient.setex(key, expire_second, 1)
+                    else:
+                        cur = str(random.randint(7, 50))
+                        self.request_cursor_array = ["1", cur, cur, cur]
+                else:
+                # cur = str(random.randint(4, 50))
+                    cur = str(random.randint(7, 50))
+                    self.request_cursor_array = ["1", cur, cur, cur]
+            post_id_obj_array = []
+            post_id_obj_array = self.iterable_get_posts(post_id_obj_array, 15, int(self.request_cursor_array[3]))
+            ###广告去重
+            if post_id_obj_array:
+                post_id_obj_array = map(ObjectId, remove_in_adv_post("1", map(str, post_id_obj_array)))
+            post_array, post_id_array = get_sort_posts(post_id_obj_array, username=self.username)
+            post_array1 = copy.deepcopy(post_array)
+            response["entities"] = getPostListJson(assemble_new_post_ad(
+                    post_array1, self.request_cursor_array[0], "1", username=self.username, version="3.2.0"))
+            if self.request_cursor_array[1] and self.request_cursor_array[2]:
+                self.request_cursor_array[0] = str(int(self.request_cursor_array[0])+1)
+                self.request_cursor_array[3] = str(self.request_cursor_array[3])
+                response["cursor"] = ",".join(self.request_cursor_array)
+        response["show_type"] = 1
+        self.write(json.dumps(response, indent=2, ensure_ascii=False, cls=MongoFieldEncoder))
+        self.finish()
+
+    def iterable_get_posts(self, data_id_obj_list, num, cur, up_flag=False, post_id_list=None):
+        if not int(self.request_cursor_array[3]) == 1:
+            if not up_flag:
+                if cur <= int(self.request_cursor_array[1]) <= 400 or int(self.request_cursor_array[1]) < cur - 3:
+                    if len(data_id_obj_list) < num:
+                        i = 2
+                        if num - len(data_id_obj_list) < 2:
+                            i = 1
+                        redis_cursor_7_days, hot_post_id_array_7_days = get_hot_posts_id_from_redis(
+                                int(self.request_cursor_array[1]), i, options.days_7_hot_posts,post_id_list)
+                        if redis_cursor_7_days == "400":
+                            redis_cursor_7_days = "0"
+                        self.request_cursor_array[1] = redis_cursor_7_days
+                        data_id_obj_list.extend(hot_post_id_array_7_days)
+
+                if cur <= int(self.request_cursor_array[2]) <= 400 or int(self.request_cursor_array[2]) < cur - 2:
+                    if len(data_id_obj_list) < num:
+                        i = 1
+                        redis_cursor_15_days, hot_post_id_array_15_days = get_hot_posts_id_from_redis(
+                                int(self.request_cursor_array[2]), i, options.days_15_hot_posts, post_id_list)
+                        if redis_cursor_15_days == "400":
+                            redis_cursor_15_days = "0"
+                        self.request_cursor_array[2] = redis_cursor_15_days
+                        data_id_obj_list.extend(hot_post_id_array_15_days)
+                if len(data_id_obj_list) >= num:
+                    if (int(self.request_cursor_array[1]) >= cur - 3 and int(self.request_cursor_array[2]) >= cur - 3) and (
+                        int(self.request_cursor_array[1]) < cur and int(self.request_cursor_array[2]) < cur
+                    ):
+                        self.request_cursor_array = ["", "", "", cur]
+                    return data_id_obj_list
+                elif cur <= int(
+                        self.request_cursor_array[1]) <= 400 or cur <= int(
+                        self.request_cursor_array[2]) <= 400 or int(
+                        self.request_cursor_array[1]) < cur - 3 or int(self.request_cursor_array[2]) < cur - 3:
+                    return self.iterable_get_posts(data_id_obj_list, num, cur)
+                else:
+                    self.request_cursor_array = ["", "", "", cur]
+                    return data_id_obj_list
+            else:
+                if cur <= int(self.request_cursor_array[1]) <= 400 or int(self.request_cursor_array[1]) < cur - 6:
+                    if len(data_id_obj_list) < num:
+                        i = 5
+                        if num - len(data_id_obj_list) < 5:
+                            i = num - len(data_id_obj_list)
+                        redis_cursor_7_days, hot_post_id_array_7_days = get_hot_posts_id_from_redis(
+                                int(self.request_cursor_array[1]), i, options.days_7_hot_posts,post_id_list)
+                        if redis_cursor_7_days == "400":
+                            redis_cursor_7_days = "0"
+                        self.request_cursor_array[1] = redis_cursor_7_days
+                        data_id_obj_list.extend(hot_post_id_array_7_days)
+
+                if cur <= int(self.request_cursor_array[2]) <= 400 or int(self.request_cursor_array[2]) < cur - 6:
+                    if len(data_id_obj_list) < num:
+                        i = 5
+                        if num - len(data_id_obj_list) < 5:
+                            i = num - len(data_id_obj_list)
+                        redis_cursor_15_days, hot_post_id_array_15_days = get_hot_posts_id_from_redis(
+                                int(self.request_cursor_array[2]), i, options.days_15_hot_posts, post_id_list)
+                        if redis_cursor_15_days == "400":
+                            redis_cursor_15_days = "0"
+                        self.request_cursor_array[2] = redis_cursor_15_days
+                        data_id_obj_list.extend(hot_post_id_array_15_days)
+
+                if len(data_id_obj_list) >= num:
+                    if (int(self.request_cursor_array[1]) >= cur - 6 and int(self.request_cursor_array[2]) >= cur - 6) and (
+                        int(self.request_cursor_array[1]) < cur and int(self.request_cursor_array[2]) < cur
+                    ):
+                        self.request_cursor_array = ["", "", "", cur]
+                    return data_id_obj_list
+                elif cur <= int(
+                        self.request_cursor_array[1]) <= 400 or cur <= int(
+                        self.request_cursor_array[2]) <= 400 or int(
+                        self.request_cursor_array[1]) < cur - 6 or int(self.request_cursor_array[2]) < cur - 6:
+                    return self.iterable_get_posts(data_id_obj_list, num, cur, True, post_id_list)
+                else:
+                    self.request_cursor_array = ["", "", "", cur]
+                    return data_id_obj_list
+        else:
+            if not up_flag:
+                if int(self.request_cursor_array[1]) < 400:
+                    if len(data_id_obj_list) < num:
+                        i = 2
+                        if num - len(data_id_obj_list) < 2:
+                            i = 1
+                        redis_cursor_7_days, hot_post_id_array_7_days = get_hot_posts_id_from_redis(
+                                int(self.request_cursor_array[1]), i, options.days_7_hot_posts, post_id_list)
+                        self.request_cursor_array[1] = redis_cursor_7_days
+                        data_id_obj_list.extend(hot_post_id_array_7_days)
+
+                if int(self.request_cursor_array[2]) < 400:
+                    if len(data_id_obj_list) < num:
+                        i = 1
+                        redis_cursor_15_days, hot_post_id_array_15_days = get_hot_posts_id_from_redis(
+                                int(self.request_cursor_array[2]), i, options.days_15_hot_posts, post_id_list)
+                        self.request_cursor_array[2] = redis_cursor_15_days
+                        data_id_obj_list.extend(hot_post_id_array_15_days)
+
+                if len(data_id_obj_list) >= num:
+                    return data_id_obj_list
+                elif int(
+                        self.request_cursor_array[1]) < 400 or int(
+                        self.request_cursor_array[2]) < 400:
+                    return self.iterable_get_posts(data_id_obj_list, num, cur)
+                else:
+                    self.request_cursor_array = ["", "", "", cur]
+                    return data_id_obj_list
+            else:
+                if int(self.request_cursor_array[1]) < 400:
+                    if len(data_id_obj_list) < num:
+                        i = 5
+                        if num - len(data_id_obj_list) < 5:
+                            i = num - len(data_id_obj_list)
+                        redis_cursor_7_days, hot_post_id_array_7_days = get_hot_posts_id_from_redis(
+                                int(self.request_cursor_array[1]), i, options.days_7_hot_posts, post_id_list)
+                        self.request_cursor_array[1] = redis_cursor_7_days
+                        data_id_obj_list.extend(hot_post_id_array_7_days)
+
+                if int(self.request_cursor_array[2]) < 400:
+                    if len(data_id_obj_list) < num:
+                        i = 5
+                        if num - len(data_id_obj_list) < 5:
+                            i = num - len(data_id_obj_list)
+                        redis_cursor_15_days, hot_post_id_array_15_days = get_hot_posts_id_from_redis(
+                                int(self.request_cursor_array[2]), i, options.days_15_hot_posts, post_id_list)
+                        self.request_cursor_array[2] = redis_cursor_15_days
+                        data_id_obj_list.extend(hot_post_id_array_15_days)
+                if len(data_id_obj_list) >= num:
+                    return data_id_obj_list
+                elif int(
+                        self.request_cursor_array[1]) < 400 or int(
+                        self.request_cursor_array[2]) < 400:
+                    return self.iterable_get_posts(data_id_obj_list, num, cur)
+                else:
+                    self.request_cursor_array = ["", "", "", cur]
+                    return data_id_obj_list

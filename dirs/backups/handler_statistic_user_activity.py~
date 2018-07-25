@@ -1,0 +1,117 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# @Date    : 2015-05-18 17:41:52
+# @Author  : Your Name (you@example.org)
+# @Link    : http://example.org
+# @Version : $Id$
+from handler_baseHt import BaseHtHandler
+from log import get_logger
+import tornado.web
+from tornado.web import asynchronous
+from tornado.options import options
+import json
+import hashlib
+import datetime
+import hashlib
+import random
+import pymongo
+import time
+from log import get_logger
+import optionsSetting
+import datetime
+import  time
+from utils.secret import *
+import traceback
+from utils.redis_client import RedisClient
+from mongo_field_encoder import MongoFieldEncoder
+from mongolog import MongoHandler
+from mongokit.helpers import totimestamp, fromtimestamp
+from utils.token_im import TokenService
+from tornado.httpclient import HTTPRequest
+from utils.mongo_client import MongoClient
+from utils.mongo_front import MongoFront
+from auth import requires_auth
+import re
+try:
+    from tornado.curl_httpclient import CurlAsyncHTTPClient as AsyncHTTPClient
+except ImportError:
+    from tornado.simple_httpclient import SimpleAsyncHTTPClient as AsyncHTTPClient
+log = get_logger()
+class StatisticUserActivityHandler(BaseHtHandler):
+    def __init__(self, application, request, **kwargs):
+        super(StatisticUserActivityHandler, self).__init__(application, request, **kwargs)
+        self.static_name_dic={
+            "dau_rate":"日活",
+            "wau_rate":"周活",
+            "mau_rate":"月活",
+            "week_retention_rate": "周留存",
+            "month_retention_rate":"月留存",
+        }
+
+    @asynchronous
+    @requires_auth
+    def post(self):
+        log.info("StatisticUserActivityHandler.post:"+self.request.body)
+        body_dic = json.loads(self.request.body, encoding="utf-8")
+        statistics_obj_array=body_dic["statistics_obj_array"]
+        begin=body_dic["begin"]
+        end=body_dic["end"]
+
+        where={
+            'statics_date': {'$gte': begin,"$lt":end}
+        }
+        # log.info("where:"+str(where))
+        order_by=[("statics_date",1)]
+        static_data_dic={}
+        user_account_action_cursor=MongoFront.find_all_sorted(where,"user_account_action",sorted=order_by)
+        for user_account_action in user_account_action_cursor:
+            statics_date=user_account_action["statics_date"]
+            static_data_dic[statics_date]=user_account_action
+
+        begin_datetime=datetime.datetime.strptime(begin, '%Y%m%d')
+
+        static_data_array=[]
+        for statistics_obj in statistics_obj_array:
+            static_data_format = {
+            }
+            statistics_obj_name=self.static_name_dic[statistics_obj]
+            static_data_format["name"]=statistics_obj_name
+
+            cur_datetime = datetime.datetime.strptime(begin, '%Y%m%d')
+            end_datetime = datetime.datetime.strptime(end, '%Y%m%d')
+
+            data_array=[]
+            while cur_datetime<end_datetime:
+                cur_ymd=cur_datetime.strftime('%Y%m%d')
+                static_json=static_data_dic.get(cur_ymd,{})
+                if static_json:
+                    statistics_data=round(static_json.get(statistics_obj,0)*100,2)
+                else:
+                    statistics_data=0
+                data_array.append(statistics_data)
+                cur_datetime = cur_datetime + datetime.timedelta(days=1)
+
+            static_data_format["data"]=data_array
+            static_data_array.append(static_data_format)
+
+        result={
+            "data":static_data_array,
+            "begin_date":begin_datetime
+        }
+        response={
+            "result":result
+        }
+
+        self.write(json.dumps(response,indent=2, ensure_ascii=False,cls=MongoFieldEncoder))
+        self.finish()
+    
+    def fire_response_bad_response(self):
+        """
+        返回登录请求错误响应
+        """
+        self.set_status(400)
+        response = {}
+        response["error"] = "invalid_grant"
+        response["error_description"] = "invalid username or password"
+        self.write(json.dumps(response, indent=2, ensure_ascii=False))
+        self.finish()

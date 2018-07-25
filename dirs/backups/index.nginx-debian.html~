@@ -1,0 +1,172 @@
+
+<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01//EN" "http://www.w3.org/TR/html4/strict.dtd"><html>
+  <head>
+    <META http-equiv="Content-Type" content="text/html; charset=utf-16">
+    <meta http-equiv="X-UA-Compatible" content="IE=Edge">
+<link type="text/css" rel="stylesheet" href="./global.css?v=0920"/>
+<link type="text/css" rel="stylesheet" href="./project.css?v=0920"/>
+<script type="text/javascript" src="./jquery-1.11.3.min.js?v=0920"></script>
+<script type="text/javascript" src="./jquery-ui-1.10.4.custom.min.js?v=0920"></script>
+<script type="text/javascript" src="./util.js?v=0920"></script>
+<script type="text/javascript" src="./fusion.js?v=0920"></script>
+<script type="text/javascript" src="./form.js?v=0920"></script>
+<script type="text/javascript" src="./project.js?v=0920"></script>
+<script type="text/javascript" src="./t_nme.js?v=0920"></script>
+<script type="text/javascript">
+        $(document).ready(function () {
+            $("#T_Print").click(function () {
+                window.print();
+            });
+        });
+        $(window).load(function () {
+            $("#T_Print").prop("disabled", false);
+        });
+    </script><style type="text/css">
+        body { background-image: none; background-color: white; }
+        table.ReportTable td {border-color: #000;}
+        #T_Print { position: fixed; top: 15px; right: 20px; z-index: 1000; }
+        @media print { #T_Print { display: none; } }
+    </style>
+    <title>
+打印 - 考试报名 - 国家医学考试服务平台</title>
+  </head>
+  <body tak="1"><input type="button" id="T_Print" value="打印" disabled>
+<div id="Content" du="/NME/SP/Root/SignUp/Print/Content" class="f-ph-dataunit">
+<script type="text/javascript">
+    $(document).ready(function() { $(".Portrait>img,.BarCode").Reload(); });  
+</script>  
+<style type="text/css"> body { font-size: 11pt;} </style>
+<div style="margin: 20px;"> 
+    <h2 style="font-size: 14pt; display: inline-block;margin: 0px 0px 15px 0px;font-family: 微软雅黑; font-weight: normal; color: black; width: 760px;"> 
+        <span>医师资格考试网上报名成功通知单</span>
+    <img class="BarCode" s="/library/barcode.jpg?C=511381199310080883" style="vertical-align: middle;float: right;"> 
+    </h2> 
+        <table class="ReportTable" border="1" cellspacing="0" cellpadding="0" style="width: 760px;"> 
+            <tr> 
+                <td align="center">考区代码</td> 
+                <td align="center">考点代码</td> 
+                <td align="center">类别</td> 
+                <td align="center">加试科目</td> 
+                <td align="center">序列号</td> 
+            </tr> 
+            <tr> 
+                <td align="center"> 
+                    <span>11</span> 
+                </td> 
+                <td align="center"> 
+                    <span>08</span> 
+                </td> 
+                <td align="center"> 
+                    <span id="Edit:EX_RegisterInfo.0$Type">110</span> 
+                </td> 
+                <td align="center"> 
+                    <span id="Edit:EX_RegisterInfo.0$CandidateType">-</span> 
+                </td> 
+                <td align="center"> 
+                    <span></span> 
+                </td> 
+            </tr> 
+            <tr> 
+                <td colspan="2"> 
+                    考区：<span id="ExOrg_ParentCode">北京市</span> 
+                </td> 
+                <td width="" colspan="2"> 
+                    考点：<span id="ExOrg_Code">丰台区</span> 
+                </td> 
+                <td rowspan="8" align="center" style="padding: 0px;"> 
+                    <div class="Portrait" style="margin: 5px;"> 
+                        <img id="Edit:EX_RegisterInfo.0$IMG" oe="./no_portrait.png" s="./6257880.jpg"> 
+                    </div> 
+                </td> 
+            </tr> 
+            <tr> 
+                <td colspan="2"> 
+                    姓名：<span for="Edit:EX_RegisterInfo.0$Name">李佳芸</span> 
+                </td> 
+                <td width="" colspan="2"> 
+                    性别：<span id="User_Gender">女</span> 
+                </td> 
+            </tr> 
+            <tr> 
+                <td colspan="2"> 
+                    证件类型：<span id="User_Certificate_TypeID">居民身份证</span> 
+                </td> 
+                <td width="" colspan="2"> 
+                    民族：<span id="User_Nationality">汉族</span> 
+                </td> 
+            </tr> 
+            <tr> 
+                <td colspan="2"> 
+                    证件编号：<span id="Certificate_No">511381199310080883</span> 
+                </td> 
+                <td width="" colspan="2"> 
+                    出生日期：<span id="User_Birthday">1993-10-08</span> 
+                </td> 
+            </tr> 
+            <tr> 
+                <td colspan="2"> 
+                    国籍：<span id="User_Nation">中国 China</span> 
+                </td> 
+                <td colspan="2"> 
+                    学习形式：<span id="EDUExperience_EDU_Form">普通全日制</span> 
+                </td> 
+            </tr> 
+            <tr> 
+                <td colspan="2"> 
+                    报考学历：<span id="EDUExperience_QualificationsID" style="margin-right: 10px;">大专</span> 
+                </td> 
+                <td width="" colspan="2"> 
+                    学制：<span id="EDUExperience_EDU_System">三年制</span> 
+                </td> 
+            </tr> 
+            <tr> 
+                <td width="552" colspan="4"> 
+                    毕业学校： <span for="Edit:EX_RegisterInfo.0$Graduation_School">长沙医学院</span> 
+                </td> 
+            </tr> 
+            <tr> 
+                <td width="552" colspan="4"> 
+                    毕业专业：<span id="EDUExperience_Specialty">临床医学</span> 
+                </td> 
+            </tr> 
+            <tr> 
+                <td colspan="2"> 
+                    毕业年月：<span id="EDUExperience_GainDate">2014-06</span> 
+                </td> 
+                <td colspan="3"> 
+                    毕业证书编号：<span id="EDUExperience_DiplomaCode">
+108231201406294687
+                    </span> 
+                </td> 
+            </tr> 
+            <tr> 
+                <td colspan="2"> 
+                    在岗情况：<span id="User_JobStatus">在职</span> 
+                </td> 
+                <td colspan="3"> 
+                    <span style="display: none;" id="User_ORGID"></span>工作单位所在行政区域：<span id="ORG_DistrictCode">北京市市辖区丰台区</span> 
+                </td> 
+            </tr> 
+            <tr> 
+                <td colspan="5"> 
+                    工作单位名称：<span id="User_ORGName">北京瑶医医院</span> 
+                </td> 
+            </tr> 
+        <tr> 
+            <td colspan="5" valign="bottom"> 
+提示：本年度北京考区考生继续实行网上缴费，现场审核后需进行网上缴费才能完成报名，现场确认后请于3月15日前网上缴纳技能考试费用；逾期不缴费的考生报名无效，务请考生互相转告，以免耽误考试报名。<br>
+            </td> 
+        </tr> 
+        </table> 
+<p>打印日期：2018-01-18</p>
+</div> 
+<div class="Message" style="display: none"></div> 
+</div>
+
+<div id="PageParam" du="/NME/SP/Root/SignUp/Print/PageParam" class="f-ph-dataunit">
+<input type="hidden" name="PS_Interaction" id="PS_Interaction" value="/NME/SP/Root/SignUp/Print"><input type="hidden" name="PS_ID_Interaction" id="PS_ID_Interaction" value="010210"><input type="hidden" name="PS_Param" id="PS_Param" value=""><input type="hidden" name="PS_RelationJson" id="PS_RelationJson" value=""><input type="hidden" name="PS_Relation" id="PS_Relation" value=""><input type="hidden" name="E_Version" id="E_Version" value=""></div>
+<div class="f-ph-dialog"></div>
+    <div class="f-ph-page"></div>
+</body>
+</html>
+

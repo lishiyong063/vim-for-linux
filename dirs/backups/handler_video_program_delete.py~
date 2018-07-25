@@ -1,0 +1,86 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# @Date    : 2015-05-18 17:41:52
+# @Author  : Your Name (you@example.org)
+# @Link    : http://example.org
+# @Version : $Id$
+from handler_baseHt import BaseHtHandler
+from log import get_logger
+import tornado.web
+from tornado.web import asynchronous
+from tornado.options import options
+import json
+import hashlib
+import datetime
+from bson import ObjectId
+import hashlib
+import random
+import pymongo
+import time
+from log import get_logger
+from model.accounts_ht import Account_ht
+from model.users import Users
+import optionsSetting
+import datetime
+import  time
+from utils.secret import *
+import traceback
+from utils.redis_client import RedisClient
+from mongo_field_encoder import MongoFieldEncoder
+from mongolog import MongoHandler
+from mongokit.helpers import totimestamp, fromtimestamp
+from utils.token_im import TokenService
+from tornado.httpclient import HTTPRequest
+from utils.mongo_client import MongoClient
+from utils.mongo_front import MongoFront
+from auth import requires_auth
+import re
+import urlparse
+import urllib
+try:
+    from tornado.curl_httpclient import CurlAsyncHTTPClient as AsyncHTTPClient
+except ImportError:
+    from tornado.simple_httpclient import SimpleAsyncHTTPClient as AsyncHTTPClient
+log = get_logger()
+
+
+class VideoProgramDeleteHandler(BaseHtHandler):
+    @asynchronous
+    @requires_auth
+    def put(self):
+        log.info("VideoProgramDeleteHandler.put")
+        body = json.loads(self.request.body, encoding="utf-8")
+        id = body.get("id", "")
+
+        where = {
+            "_id": ObjectId(id)
+        }
+
+        result = MongoFront.find_one(where, "video_programs")
+        program_rank = result.get("rank", -1)
+        if program_rank != -1:
+            rank_where = {
+                "status": 1,
+                "rank": {"$gt": program_rank}
+            }
+            update = {
+                "$inc": {"rank": -1}
+            }
+            MongoFront.update(rank_where, update, "video_programs")
+
+        update = {
+            "$set": {
+                "status": 0
+            },
+            "$unset": {
+                "rank": ""
+            }
+        }
+        MongoFront.update(where, update, "video_programs")
+        response = json.dumps({"result": "ok"},
+                                  indent=2,
+                                  ensure_ascii=False,
+                                  cls=MongoFieldEncoder)
+        self.write(response)
+        self.finish()
+

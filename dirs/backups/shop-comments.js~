@@ -1,0 +1,106 @@
+var result_data = {}
+
+function vest_change(){
+    if( $("#myVests").val()) {
+        delete result_data.platform_id
+        request_url = fishing_admin_Url + "/user_detail?username=" + $("#myVests").val();
+        result = getRequest(request_url, '', 'GET', '', '');
+        result = result.entities[0];
+        result_data["username"] = result.username;
+        result_data["avatar"] = result.avatar_url;
+        result_data["nick"] = result.nick;
+        result_data["invite_code"] = result.invite_code;
+        if (result.platform_id){
+            result_data["platform_id"] = result.platform_id
+        }
+    }
+    $('#content').focus();
+
+}
+
+function myVestOrderByNear(){
+
+    var request_url=fishing_admin_Url+"/vestSearchOrderByPostDistance?post_id="+"58f5d8ade1382302b60423ec";
+    //var request_url=fishing_admin_Url+"/vestSearchOrderByPostDistance";
+
+    //var coordinates=""
+    //if(post.gps_info){
+    //if (post.gps_info.country != "" && post.gps_info.location && post.gps_info.location.coordinates){
+    //    coordinates = post.gps_info.location.coordinates
+    //}}
+    //if (coordinates){
+    //    request_url=request_url+"&longitude="+coordinates[0]+"&latitude="+coordinates[1]
+    //}
+
+    var result=getRequest(request_url,'','GET','','');
+    var vests = result.entities;
+    var username_array=new Array()
+
+    var near_vest_array=new Array()
+    var no_distance_array=new Array()
+    //var vest_map = new Array()
+    if (vests.length>0) {
+        $("#myVests").prepend('<option value="" selected>请选择小号</option>')
+        for (i in vests) {
+            //vest_map.put(vests.username,vest)
+            var vest = vests[i]
+
+            if (isOfficeAccount(vest.username)){
+                continue;
+            }
+            city = "";
+            if (vest.gps_info && vest.gps_info.city) {
+                city = "  (" + vest.gps_info.city + ")"
+            }
+            comment_info=""
+            value_style=""
+            if (vest.is_comment && vest.is_comment==1) {
+                value_style='class="c-red"'
+                comment_info="   评论数:"+vest.comment_count+"   最后评论时间:"+new Date(vest.comment_created).pattern("yyyy-MM-dd HH:mm")
+            }
+            if (vest.post_count){
+                comment_info=comment_info+"  已发帖："+vest.post_count+"个 "
+            }
+            if (vest.last_post_date){
+                comment_info=comment_info+"  最近发帖时间："+new Date(vest.last_post_date).pattern("yyyy-MM-dd")
+            }
+
+            $("#myVests").append('<option value="' + vest.username+'" '+value_style + '>' + vest.nick + city+comment_info + '</option>')
+
+
+        }
+        $("#myVests").append(getOfficeAccountHtml())
+    }
+}
+
+
+
+$("#comment").click(function() {
+    var id = queryString("shop_id")
+    if($("#datetime").val() && $("#comment_rate").val()&&$("#myVests").val() &&$("#content").val()&&id) {
+        var nowTime = new Date().getTime();
+        //var clickTime = $(this).attr("ctime");
+        result_data["comment"] = $("#content").val();
+        result_data["comment_time"] = $("#datetime").val();
+        result_data["comment_rate"] = $("#comment_rate").val();
+        result_data["goods_id"] = id;
+        result_data["timestamp"] = nowTime;
+        result_data["sign"] = hex_md5(nowTime+"PkP3JRtwLToXbnsE");
+        //var result=getRequest(url, result_data, 'POST','','操作成功！！！');
+        request_url = fishing_admin_Url + "/get_shop";
+        //alert(user_info.token);
+        var result = getRequest(request_url, result_data, 'POST',user_info.token,'');
+        if (result["entities"] == "ok"){
+            alert("操作成功")
+        }else{
+            alert("数据提交异常")
+        }
+        //alert(nowTime);
+        //alert($("#datetime").val());
+        //alert(hex_md5("1111111111111"));
+    }else {
+        alert("数据不完整!!");
+    }
+
+});
+

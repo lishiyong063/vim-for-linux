@@ -1,0 +1,176 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# @Date    : 2016-06-13 16:17:12
+# @Author  : Your Name (you@example.org)
+# @Link    : http://example.org
+# @Version : $Id$
+
+import tornado.web
+from tornado.web import asynchronous
+from tornado.options import options
+import json
+import hashlib
+import datetime
+import random
+import time
+from log import get_logger
+from model.accounts import Account
+from model.users import User
+from auth import requires_auth
+import optionsSetting
+from utils.secret import *
+import traceback
+from utils.redis_client import RedisClient
+from utils.mongo_client import MongoClient
+from mongo_field_encoder import MongoFieldEncoder
+from mongolog import MongoHandler
+from mongokit.helpers import totimestamp, fromtimestamp
+from utils.token_im import TokenService
+from tornado.httpclient import HTTPRequest
+import uuid
+from tornado import gen
+from utils.platform_info import Platform_info
+from utils.monitor import *
+from services.service_register import *
+from handler_base import BaseHandler
+from services.service_image_cloud import *
+from services.service_credit import pushRedis
+from services.service_partner_recommend import *
+from services.service_register import *
+try:
+    from tornado.curl_httpclient import CurlAsyncHTTPClient as AsyncHTTPClient
+except ImportError:
+    from tornado.simple_httpclient import SimpleAsyncHTTPClient as AsyncHTTPClient
+log = get_logger()
+
+
+class MobileBindingHandler(BaseHandler):
+    """
+    绑定手机号
+    """
+    def __init__(self, application, request, **kwargs):
+        super(MobileBindingHandler, self).__init__(application, request, **kwargs)
+
+    @requires_auth
+    @asynchronous
+    @gen.coroutine
+    def post(self):
+        log.info("MobileBindingHandler.post:"+self.request.body)
+        """
+        绑定手机号
+        """
+        if self.request.body is '':
+            self.fire_response_bad_response()
+            return
+
+        body = json.loads(self.request.body, encoding='utf-8')
+        try:
+            mobile = self.me.get("mobile","")
+            mobile_len = len(mobile)
+            if mobile_len<13 and mobile_len>0:
+                 error = "common_error"
+                 des = "mobile binding error"
+                 content = "已绑定其他手机号"
+                 self.fire_response_bad_content(error,des,content)
+                 return
+
+            register_code = body["code"]
+            mobile = body["mobile"]
+            password = body["password"]
+            sms_key="register_code:"+mobile
+            register_code_correct=RedisClient.get(sms_key)
+
+            # if register_code_correct is None or register_code!=register_code_correct:
+            #   history_register_code=RedisClient.hget("history_register_code_mobile:"+mobile,register_code)
+            #
+            #   if history_register_code is None:
+            #       error = "common_error"
+            #       des = "mobile registe code error"
+            #       content = "短信验证码错误，请重新填写"
+            #       self.fire_response_bad_content(error,des,content)
+            #       return
+
+            mobile = body["mobile"]
+            #检查手机号绑定没
+            lookup = {
+                     "mobile":mobile
+                     }
+            filter = {"_id":0,"mobile":0,"invite_source":0,"invite_code":0,"location":0,"status":0,"notify":0,"ip_info":0}
+            user_info = options.dbconn.User.find_one(lookup,filter=filter)
+            if user_info is not None:
+                   error = "common_error"
+                   des = "mobile has existed"
+                   content = "你输入的手机号码已被绑定，请使用其他手机号码重新绑定"
+                   self.fire_response_bad_content(error,des,content)
+                   return
+            lookup = {"username":self.username}
+            option = {"$set":{"mobile":mobile,"binding":1}}
+            user_update = options.dbconn.User.find_and_modify(lookup, option, new=True)
+            option = {"$set":{"password":password,"mobile":mobile}}
+            account = options.dbconn.Account.find_and_modify(lookup, option, new=True)
+            _pd = account.get("im_password", "")
+            user_update["pd"] = _pd
+            user_update["binding"] = 1 #1：绑定    0：未绑定
+
+            username, is_recommend_user, recommend_user = getUsername(mobile)
+            if recommend_user:
+                recommend_created = recommend_user["created"]
+                user_created = user_info["created"]
+                if user_created>recommend_created:
+                    award_recommend_user(recommend_user,isTicketVersion = self.isTicketVersion())
+
+
+            response = {"entities":[user_update]}
+            # response["credit_info"] = pushRedis(self.username,"bindingMobile","",isAddCredits=self.isAddCredits())
+            self.write(json.dumps(response,
+                                  indent=2,
+                                  ensure_ascii=False,
+                                  cls=MongoFieldEncoder))
+            self.finish()
+
+            created = user_update["created"]
+            self.ticket(mobile,created)
+        except:
+            log.error(traceback.format_exc())
+            error = "invalid_grant"
+            des = "invalid username or password"
+            self.fire_response_bad(error,des)
+            return
+
+    def ticket(self,mobile,created):
+        self.ticket_binding_mobile()
+        self.ticket_recommend(mobile,created)
+
+
+    def ticket_binding_mobile(self):
+        now = datetime.datetime.utcnow()
+
+	ziya_ticket = {"username": self.username,
+		       "created": now,
+		       "type": 1,	# 券的类型：1，金额券   2,折扣券
+		       "status": 1,	# 状态：1:可用  2：过期
+		       "value": 10}
+
+        MongoClient.insert(ziya_ticket,"ziya_ticket")
+
+
+    def ticket_recommend(self,mobile,created):
+        username = self.username
+        where={
+            "recommend_username":{"$ne":username},
+            "mobile":mobile,
+            "created":{"$lt":created}  #用户推荐一定在用户注册之前
+        }
+        award = 10
+        update = {
+            "$set":{
+                "username":username,
+                "status":1,
+                "register_date":created,
+                "award":award,
+                "award_type":"ticket"
+            }
+        }
+        recommend_user = MongoClient.find_and_modify(where,update,"recommend_user")
+        if recommend_user:
+            ticket_recommend(recommend_user)

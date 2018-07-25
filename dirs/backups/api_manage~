@@ -1,0 +1,43 @@
+/updatePWDByOldPWD          #通过用户的旧密码重置密码
+/updatePWDByCheckCode          #通过通过手机验证码重置密码
+/isFollowing          #判断是否存在关注关系
+/post_share          #用户分享帖子
+/great_posts_act          #改版精品渔获接口
+/address_favorite          #天气地址收藏
+/geocoder1              #逆地址解析
+/article_inform          #文章通知
+/activity_display          #活动新接口
+/display_paging          #活动新接口
+/reward          #打赏接口      
+/rich          #土豪接口   榜单
+/geocoder2          #逆地址解析,和高德返回的不同是，address是由province,city,area拼的   
+/post_recommend          #渔获推荐
+/activity_share          #活动分享回调
+/register_code_audio          #语音验证码
+/my_wallet          #我的钱包
+/my_tickets          #我的钓鱼券
+/refresh_banner          #banner刷新
+/weixin_sign          # 通过 request_url 参数, 来获取微信的签名信息
+/token_user          # 根据token获取用户详细信息
+/activity_apply          # 活动接口
+/activity_list_custom           #可以根据用户选择优先活动类型返回活动列表接口
+/new_app_icon          #新版APP按钮样式
+/createAndScanActivities          # 用户活动列表,创建的和浏览的
+/new_advice          #新用户反馈
+/new_startup          #新启动页广告
+/taobaoProductSearch          # 淘宝商品搜索
+/tool_list          # 装备列表
+/at_list          #at列表 消息
+/user_act          #行为接口
+/user_act_message          #获取消息弹框列表
+/appeal          #用户申诉
+/video_time          #攻略视频时长控制
+/guanzhu          # 关注列表
+/localPostList          # 90天本地渔获
+/recommend_follow          # 推荐用户
+/city          #同城
+/refresh_sort_post          #新版post排序
+/tansuo_user_list          #探索用户列表
+/user_interest         #用户兴趣
+/new_jingcai          #新精彩接口
+/new_tansuo          #新探索接口

@@ -1,0 +1,149 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# @Date    : 2015-05-18 17:41:52
+# @Author  : Your Name (you@example.org)
+# @Link    : http://example.org
+# @Version : $Id$
+from handler_baseHt import BaseHtHandler
+from log import get_logger
+from tornado import gen
+import tornado.web
+from tornado.web import asynchronous
+from tornado.options import options
+import json
+import hashlib
+import datetime
+from services.service_post import *
+import re
+import hashlib
+from bson import ObjectId
+import random
+import time
+from log import get_logger
+from model.biz_user import Biz_User
+from model.permissions_ht import Permissions_ht
+import optionsSetting
+from utils.secret import *
+import traceback
+from utils.redis_client import RedisClient
+from utils.mongo_front import MongoFront
+from mongo_field_encoder import MongoFieldEncoder
+from services.service_activity import *
+from mongolog import MongoHandler
+from mongokit.helpers import totimestamp, fromtimestamp
+from utils.token_im import TokenService
+from tornado.httpclient import HTTPRequest
+from utils.mongo_client import MongoClient
+from services.service_image_cloud import *
+import pymongo
+from auth import requires_auth
+from services.service_admin_log import save_log
+from services.service_fishing_place import get_image_info
+import urlparse
+from urllib import quote
+
+try:
+    from tornado.curl_httpclient import CurlAsyncHTTPClient as AsyncHTTPClient
+except ImportError:
+    from tornado.simple_httpclient import SimpleAsyncHTTPClient as AsyncHTTPClient
+log = get_logger()
+
+
+class GetShop(BaseHtHandler):
+    @gen.coroutine
+    @asynchronous
+    @requires_auth
+    def get(self):
+        log.info("GetShop.get is called:")
+        response = {"entities": []}
+        url = self.get_argument('url', '')
+        key_word = self.get_argument("key_word", "")
+        if url:
+            response = yield get_shop(url, response)
+        if key_word:
+            goods_list = yield get_search(key_word)
+            # url_list = ["https://shop.ziyadiaoyu.com/goods.php?id=560", "https://shop.ziyadiaoyu.com/goods.php?id=561"]
+            if goods_list:
+                for goods_id in goods_list:
+                    url = options.ziya_shop+"/goods.php?id="+goods_id
+                    response = yield get_shop(url, response)
+        self.write(json.dumps(response, indent=2, ensure_ascii=False, cls=MongoFieldEncoder))
+        self.finish()
+
+    @gen.coroutine
+    @asynchronous
+    @requires_auth
+    def post(self):
+        log.info("GetShop.post is called:")
+        response = {}
+        body_dic = json.loads(self.request.body, encoding="utf-8")
+        url = options.ziya_shop+"/user_comment.php"
+        request = HTTPRequest(url=url, \
+                              method="POST", \
+                              body=json.dumps(body_dic, \
+                                          indent=2, \
+                                          ensure_ascii=False), \
+                              follow_redirects=False, \
+                              request_timeout=3000)
+        shop_response = yield gen.Task(AsyncHTTPClient().fetch, request)
+        if shop_response.code == 200:
+            response = {
+                "entities": "ok"
+            }
+        else:
+            response = {
+                "entities": "error"
+            }
+            log.error("shop_error_reason:" + str(shop_response.reason))
+        self.write(json.dumps(response, indent=2, ensure_ascii=False, cls=MongoFieldEncoder))
+        self.finish()
+
+
+@gen.coroutine
+def get_shop(url, response):
+    request_url =options.ziya_shop+"/goods_info.php"
+    data = {
+        "url": url
+    }
+    request = HTTPRequest(url=request_url, \
+                          method="POST", \
+                          body=json.dumps(data, \
+                                          indent=2, \
+                                          ensure_ascii=False), \
+                          follow_redirects=False, \
+                          request_timeout=3000)
+    shop_response = yield gen.Task(AsyncHTTPClient().fetch, request)
+    if shop_response.code == 200:
+        result = json.loads(shop_response.body, encoding="utf-8")
+        if result:
+            result["id"] = urlparse_key(url)["id"]
+            result["url"] = url
+            response["entities"].append(result)
+    raise gen.Return(response)
+
+
+@gen.coroutine
+def get_search(key):
+    result_list = []
+    key = quote(key.encode('utf8'))
+    request_url = options.ziyafish_search + "/search?type=2&kw="+key
+    request = HTTPRequest(url=request_url, \
+                          method="GET", \
+                          # body=json.dumps(data, \
+                          #                 indent=2, \
+                          #                 ensure_ascii=False), \
+                          follow_redirects=False, \
+                          request_timeout=3000)
+    shop_response = yield gen.Task(AsyncHTTPClient().fetch, request)
+    if shop_response.code == 200:
+        result = json.loads(shop_response.body, encoding="utf-8")
+        result_list_array = result.get("entities", [])
+        if result_list_array:
+            for id in result_list_array:
+                result_list.append(id.get("id", ""))
+    raise gen.Return(result_list)
+
+
+def urlparse_key(url):
+    query = urlparse.urlparse(url).query
+    return dict([(k, v[0]) for k, v in urlparse.parse_qs(query).items()])

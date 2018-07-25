@@ -1,0 +1,192 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# @Date    : 2015-05-18 17:41:52
+# @Author  : Your Name (you@example.org)
+# @Link    : http://example.org
+# @Version : $Id$
+from handler_baseHt import BaseHtHandler
+from log import get_logger
+import tornado.web
+from tornado.web import asynchronous
+from tornado.options import options
+import json
+import hashlib
+import datetime
+import time
+import hashlib
+from bson import ObjectId
+import random
+from log import get_logger
+from model.comment import Comment
+from model.activities import Activities
+import optionsSetting
+from utils.secret import *
+import traceback
+from utils.redis_client import RedisClient
+from utils.mongo_front import MongoFront
+from mongo_field_encoder import MongoFieldEncoder
+from model.posts import Post
+from mongolog import MongoHandler
+from mongokit.helpers import totimestamp, fromtimestamp
+from utils.token_im import TokenService
+from tornado.httpclient import HTTPRequest
+from utils.mongo_client import MongoClient
+import pymongo
+from auth import requires_auth
+try:
+    from tornado.curl_httpclient import CurlAsyncHTTPClient as AsyncHTTPClient
+except ImportError:
+    from tornado.simple_httpclient import SimpleAsyncHTTPClient as AsyncHTTPClient
+log = get_logger()
+
+
+class StatisticsPostHandler(BaseHtHandler):
+    #查看统计数据
+    # @requires_auth
+    @asynchronous
+    def post(self):
+        log.info("StatisticsPostHandler.post:"+self.request.body)
+        try:
+            body_dic = json.loads(self.request.body, encoding="utf-8")
+            date_type = body_dic.get("date_type", None)
+            statistics_id_array = body_dic.get("statistics_id_array", None)
+            now = datetime.datetime.utcnow()
+            now = datetime.datetime(now.year, now.month, now.day)
+            datemin = body_dic.get("datemin", None)
+            datemax = body_dic.get("datemax", None)
+            date = body_dic.get("date", None)
+            data_list = []
+            if date:
+                date = int(date)
+            response = {}
+            '''
+            尝试获取前台提供的筛选条件和自定义变量的初始化
+            '''
+
+            if date_type and date_type == "statistics_data":
+                if date:
+                    start_date = now+datetime.timedelta(days=-date)
+                    end_date = now
+                else:
+                    start_date = datetime.datetime.strptime(datemin, "%Y-%m-%d")
+                    end_date = datetime.datetime.strptime(datemax, "%Y-%m-%d")
+                    date = int((end_date - start_date).days)+1
+                '''
+                这里通过前台提供的条件
+                判断提交的POST请求是要进行保存提交还是进行统计
+                并初始化时间
+                '''
+                int_start_date = int(start_date.strftime("%Y%m%d"))
+                int_end_date = int(end_date.strftime("%Y%m%d"))
+                start_timestamp = time.mktime(start_date.timetuple())
+                if statistics_id_array:
+                    obj_idlist = [ObjectId(id_) for id_ in statistics_id_array]
+                    statistics_access_date_where = {
+                        "$and": [{
+                            "stat_date": {
+                                "$gte": int_start_date
+                            }
+                         }, {
+                            "stat_date":
+                            {
+                                "$lte": int_end_date
+                            }
+                        }]
+                    }
+
+                    statistics_project_where = {
+                        "_id": {
+                            "$in":
+                            obj_idlist
+                        }
+                    }
+
+                    statistics_value = MongoFront.find_all(
+                            statistics_access_date_where,
+                            "statistics_access_date"
+                    )
+
+                    statistics_model_name = MongoFront.find_all(
+                            statistics_project_where,
+                            "statistics_project",
+                        )
+
+
+                    statistics_value_list = list(statistics_value)
+                    statistics_model_name_list = list(statistics_model_name)
+                    '''
+                    判断当天数据，数据库还没有相关数据故直接为0
+                    '''
+                    for id_ in statistics_id_array:
+                        data = []
+                        '''
+                        每个id的每天的数量如:
+                        data: [1,2,3,4,5,6,7]
+                        只保留一次
+                        '''
+
+                        a_data = {}
+                        '''
+                        每个id每天的数量和名称的字典如:
+                            {
+                            name: "发渔获",
+                            data: [1,2,3,4,5,6,7]
+                            }
+                        只保留一次
+                        '''
+
+                        for model_ in statistics_model_name_list:
+                            if str(model_["_id"]) == id_:
+                                    a_data["name"] = model_["project_name"]
+                        '''
+                        取出当前id的名字
+                        '''
+
+                        for day in xrange(0, date):
+                            if not statistics_value_list:
+                                data.append(0)
+                            else:
+                                for value in statistics_value_list:
+                                    value_datetime = datetime.datetime.strptime(str(int(value["stat_date"])), "%Y%m%d")
+                                    if value_datetime == start_date + datetime.timedelta(days=day):
+                                        id_value = value.get(id_, 0)
+                                        data.append(id_value)
+                                        break
+                                    elif value == statistics_value_list[-1]:
+                                        data.append(0)
+
+                        '''
+                        根据每天的数据循环往列表里添加值,没有为0
+                        '''
+
+                        a_data["data"] = data
+                        data_list.append(a_data)
+
+                    response["data"] = data_list
+                    response["begin_date"] = start_timestamp
+
+                    '''
+                    统计组包
+                    前台要求返回json格式如下：
+                    {
+                        data: [
+                            {
+                            name: "发渔获",
+                            data: [1,2,3,4,5,6,7]
+                            },
+                            {
+                            name: "发活动",
+                            data: [1,2,3,4,5,6,7]
+                            }
+                        ],
+                        begin_date: timestamp
+                    }
+                    '''
+            self.write(json.dumps(response, indent=2, ensure_ascii=False, cls=MongoFieldEncoder))
+            self.finish()
+
+        except Exception as e:
+            log.info('StatisticsPostHandler.psot Exception:%s' % e.message)
+            log.error(traceback.format_exc())
+            self.fire_response_bad_response()
+            return

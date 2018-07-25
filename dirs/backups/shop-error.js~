@@ -1,0 +1,274 @@
+/**
+ * Created by jiangjianfeng on 15-6-12.
+ */
+
+function loaderrorList(){
+    var requestURL = fishing_admin_Url+'/get_report_error?types=shop'
+
+
+    $.getJSON(requestURL, {curr: 1,t:new Date()}, function (res) { //从第6页开始请求。返回的json格式可以任意定义
+        //alert(JSON.stringify(res))
+        users_count=parseInt(res.count);
+
+        page_count=0
+        if (users_count%10==0){
+            page_count=users_count/10;
+        }else{
+            page_count=users_count/10+1;
+        }
+        //page_count=20
+        laypage({
+            cont: 'pageComponent', //容器。值支持id名、原生dom对象，jquery对象。【如该容器为】：&lt;div id="page1">&lt;/div>
+            pages: page_count, //通过后台拿到的总页数
+            curr: 1, //初始化当前页
+            jump: function (e) { //触发分页后的回调
+                //alert("111:"+e.curr)
+
+                $.getJSON(requestURL, {curr: e.curr,t:new Date()}, function (res) {
+                    users_count=parseInt(res.count);
+
+                    page_count=0
+                    if (users_count%10==0){
+                        page_count=users_count/10;
+                    }else{
+                        page_count=users_count/10+1;
+                    }
+
+                    if(res.count){
+                        count  = res.count
+                        $("#count").html(count)
+
+                    }
+
+                    e.pages = e.last = parseInt(page_count); //重新获取总页数，一般不用写
+                    //渲染
+                    //var view = document.getElementById('view1'); //你也可以直接使用jquery
+                    //var demoContent = (new Date().getTime() / Math.random() / 1000) | 0; //此处仅仅是为了演示
+                    //view.innerHTML = res.content + demoContent;
+
+                    //alert("xxx:"+JSON.stringify(res))
+                    error_list=res.entities;
+
+                    fill_errors_list(error_list)
+                });
+            }
+        });
+    });
+}
+
+function fill_errors_list(entities){
+    var template='<tr class="text-c">'
+        +'<td><img class="picture-thumb" src="{avatar_url}" width="30"></td>'
+        +'<td><u style="cursor:pointer" class="text-primary" title="查看用户资料" onclick="layer_show(\'1000\',\'\',\'\',\'user-show.html?username={username}\')">{nick}</u></td>'
+        +'<td><a href="javascript:;" title="渔具店修改"  onclick="layer_show(\'900\',\'700\',\'渔具店修改\',\'fishing-shop-modify.html?id={id}&r='+ (new Date()).getTime() + '\')">{shop_name}</a>&nbsp;&nbsp;</td>'
+        +'<td>{content}</td>'
+        +'<td>{created}</td>'
+        +'<td>{picture}</td>'
+        +'<td>{is_reply}</td>'
+        +'</tr>'
+
+
+    var user_array=new Array();
+
+    for(index in entities) {
+        error = entities[index];
+        if (error.actor && error.actor.username)
+            user_array.push(error.actor.username)
+    }
+
+    if (user_array.length>0){
+        html_text=""
+        for(index in entities){
+            var error=entities[index];
+            var question=""
+            var image_url=""
+            var image_str=""
+            var image_display=""
+            var is_lazy_property="src"
+            var error_content="报错内容"
+            if (error.actor && error.actor.username){
+                username=error.actor.username
+                var nick=error.actor.nick
+                var errorr_avatar_url=error.actor.errorr_avatar_url
+                var errorr_nick="昵称："+nick
+                var question_content=error.content
+                var error_created=new Date(error.created).pattern("yyyy-MM-dd HH:mm:ss")
+                if (error.page){
+                    var page = error.page
+                    if(page.length>0){
+                        image_url=page[0].image_url;
+                        for(i in page){
+                            image_str+=page[i].image_url+","
+                        }
+                    }
+                    if (image_url && image_str){
+
+                        if (image_str.length > 0) {
+                            image_str = image_str.substring(0, image_str.length - 1)
+                        }
+                        image_display_template='<a href = "javascript:;" onclick = "layer_show(\'700\',\'700\',\'举报图片\',\'post-image.html?image_str={image_str}\')"> <img width="70px" {is_lazy_property} = "{image_url}" ></a>'
+                        image_display=image_display_template.replace('{image_str}',image_str).replace('{image_url}',image_url).replace('{is_lazy_property}',is_lazy_property)
+                    }else{
+                        image_display=""
+                    }
+                }
+
+
+                if (error.classes=="1"){
+                    error_content = "老板认领"
+                }
+
+                if (error.classes=="3"){
+                    error_content = "钓场位置错误"
+                }
+
+                if (error.classes=="4"){
+                    error_content = error.error_info
+                }
+                // 什么情况下视为已处理
+
+                is_reply="否"
+                if (error.is_reply && error.is_reply==1){
+                    is_reply="是"
+                }
+                if (errorr_nick==""){
+                    errorr_nick="点击查看用户详情"
+                }else{
+                    errorr_nick+= "<br>子牙号：" + error.actor.invite_code
+                }
+                html_text=html_text+template.replace("{avatar_url}",errorr_avatar_url)
+                        .replace("{nick}",errorr_nick)
+                        .replace("{content}",error_content)
+                        .replace("{created}",error_created)
+                        .replace("{picture}",image_display)
+                        .replaceAll("{username}",username)
+                        .replace("{error_id}",error._id)
+                        .replace("{shop_name}",error.name)
+                        .replace("{id}",error.id)
+                        .replace("{is_reply}",is_reply);
+            }
+
+        }
+
+        $('#error_list').html(html_text);
+    }
+}
+
+
+function error_reply(){
+    var message = $('#message').val()
+    var user_array=new Array();
+    var error_id_array=new Array();
+
+    var user_map=new Map();
+
+    $('input[name="username"]:checked').each(function(){
+        var username = $(this).val();
+        if (!user_map.containsKey(username)){
+
+            user_array.push(username);
+            user_map.put(username,"1");
+        }
+        error_id_array.push($(this).attr("error_id"))
+    })
+
+
+    if (error_id_array.length<=0){
+        alert("请选择一条建议！！")
+        return
+    }
+    var data ={
+        "message":message,
+        "user":user_array,
+        "error_id_array":error_id_array
+
+    }
+    //alert("data:"+JSON.stringify(data))
+
+    var requestURL = fishing_admin_Url+"/errors"
+    $.ajax({
+        url:requestURL,
+        type:'PUT',
+        data:JSON.stringify(data),
+        dataType:'json',
+        error: function(jqXHR, textStatus, errorThrown) {
+            alert('访问服务器失败，请重试');
+            //alert("error:"+jqXHR.readyState+"  请求状态:"+jqXHR.status+" response:"+jqXHR.responseText)
+            //alert("textStatus:"+textStatus)
+        },
+        success: function(data, textStatus, jqXHR) {
+
+            alert("回复成功")
+            location.reload()
+
+        }
+    });
+
+}
+
+
+function error_type_change(){
+    $('#error_list').html('');
+    $("#count").html(0)
+    loaderrorList()
+}
+
+
+function question_type_trans(type){
+    if (type=='1'){
+        return "渔获"
+    }
+    if (type=='2'){
+        return "活动"
+    }
+    if (type=='3'){
+        return "攻略"
+    }
+    if (type=='4'){
+        return "集市"
+    }
+    if (type=='5'){
+        return "商城"
+    }
+    if (type=='6'){
+        return "发布"
+    }
+    if (type=='7'){
+        return "消息"
+    }
+    if (type=='8'){
+        return "我"
+    }
+    if (type=='9'){
+        return "其他"
+    }
+
+}
+
+function weather_type_trans(type){
+    if (type=='1'){
+        return "温度"
+    }
+    if (type=='2'){
+        return "天气状况"
+    }
+    if (type=='3'){
+        return "潮汐"
+    }
+    if (type=='4'){
+        return "浪高"
+    }
+    if (type=='5'){
+        return "湿度"
+    }
+    if (type=='6'){
+        return "气压"
+    }
+    if (type=='7'){
+        return "风向"
+    }
+    if (type=='8'){
+        return "风速"
+    }
+
+}

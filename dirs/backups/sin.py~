@@ -1,0 +1,19 @@
+# -*- coding: utf-8 -*-
+# Created Time: 2018-04-16 16:00:58
+
+class Singleton(object):
+    def __new__(cls, *args, **kw):
+        if not hasattr(cls, '_instance'):
+            cls._instance = super().__new__(cls, *args, **kw)
+        return cls._instance
+
+class MyClass(Singleton):
+    a = 1
+
+
+if __name__ == "__main__":
+    a1 = MyClass()
+    a2 = MyClass()
+    print(id(a1))
+    print(id(a2))
+

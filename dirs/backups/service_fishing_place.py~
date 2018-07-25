@@ -1,0 +1,344 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# @Date    : 2017-09-22 10:19:40
+# @Author  : Your Name (you@example.org)
+# @Link    : http://example.org
+# @Version : $Id$
+import urllib2
+import random
+from mongokit import *
+from mongokit.helpers import totimestamp, fromtimestamp
+from utils.mongo_slave_client import MongoSlaveClient
+from log import get_logger
+import traceback
+import json
+from utils.redis_client import RedisClient
+from tornado.options import options
+from bson import ObjectId
+import bson
+from mongo_field_encoder import MongoFieldEncoder
+from services.service_user_new import *
+from utils.banner import getBanner
+import pymongo
+import math
+from utils.mongo_client import MongoClient
+
+
+log = get_logger()
+
+place_filter = {
+    "desc":0
+}
+
+def getNearPlaces(where={},center=[],min=0,maxDistance=300,limit=20):
+
+    where["gps_info.location"]={
+                                "$near":{"$geometry":{
+                                                     "type" : "Point",
+                                                     "coordinates" : center
+                                                     },
+                                        "$minDistance":min,
+                                        "$maxDistance":maxDistance
+                                }}
+    return getNearPlaceList(where,limit,center)
+
+
+'''
+获取附近信息
+'''
+def getNearPlaceList(lookup={},limit=15,center=[]):
+    global place_filter
+    place_search = list(MongoSlaveClient.find_all(lookup,"fishing_place",filter=place_filter).limit(limit+1)) or []
+
+    cursor=""
+    if len(place_search)==limit+1:
+        del place_search[-1]
+        # cursor = str(totimestamp(place_search[-1]["created"]))
+        place = place_search[-1]
+        point = place["gps_info"]["location"]["coordinates"]
+        distance = getDistance(point, center)
+        cursor = str(distance)
+    return place_search,cursor
+
+
+'''
+获取钓场评论列表
+'''
+def getPlaceCommentList(place_where, sort_key="created", limit=10):
+    place_cursor = ""
+    sort = [(sort_key, -1)]
+    fishing_place_cursor = MongoClient.find_all_sorted_limited(place_where, "fishing_place_comment", sort, limit+1)
+    fishing_place_array = []
+    for user_act in fishing_place_cursor:
+        fishing_place_array.append(user_act)
+    if len(fishing_place_array) == limit + 1:
+        fishing_place_array.pop(-1)
+        place_cursor = str(fishing_place_array[-1][sort_key])
+
+    return fishing_place_array,place_cursor
+
+
+'''
+获取钓场列表
+'''
+def getPlaceList(place_where,sort_key="created",limit=10):
+    global place_filter
+    place_cursor=""
+    sort = [(sort_key, -1)]
+    fishing_place_cursor = MongoClient.find_all_sorted_limited(place_where, "fishing_place", sort, limit + 1,filter=place_filter)
+    fishing_place_array = []
+    for user_act in fishing_place_cursor:
+        fishing_place_array.append(user_act)
+    if len(fishing_place_array) == limit + 1:
+        fishing_place_array.pop(-1)
+        place_cursor = str(fishing_place_array[-1][sort_key])
+
+    return fishing_place_array,place_cursor
+
+'''
+组装返回数据
+'''
+def assemblePlaceInfo(fishing_place_array):
+    place_return_array=[]
+    for fishing_place in fishing_place_array:
+        place_dic={}
+        cover = fishing_place.get("cover",{})
+        if cover:
+            place_dic["cover"]=cover
+        place_dic["begin_time"] = fishing_place.get("begin_time", "08:00")
+        place_dic["end_time"] = fishing_place.get("end_time", "21:00")
+        place_dic["role"] = fishing_place.get("role", 3)
+        place_dic["place_type"] = fishing_place.get("place_type", [])
+
+        place_dic["name"] = fishing_place["name"]
+        place_dic["display_count"] = fishing_place["display_count"]
+        # place_dic["gps_info"] = fishing_place["gps_info"]
+        gps_info = fishing_place["gps_info"]
+        area = gps_info.get("area","")
+        if not area:
+            gps_info["area"] = gps_info["city"]
+        place_dic["gps_info"] = gps_info
+        place_dic["_id"] = str(fishing_place["_id"])
+        if fishing_place.has_key("contact_tel"):
+            contact_tel =fishing_place["contact_tel"]
+            if type(contact_tel) is not list:
+                contact_tel = contact_tel.split(",")
+            place_dic["contact_tel"]=contact_tel
+            place_dic["tel_auth"]=1
+
+        price_array = price_handler(fishing_place)
+        place_dic["price_array"]=price_array
+
+        place_return_array.append(place_dic)
+
+    return place_return_array
+
+
+def price_handler(fishing_place):
+    price_array = []
+    price = fishing_place.get("price","")
+    if price:
+        unit_dic = {
+            "content": "￥",
+            "font_color": "#FF8000",
+            "font_size": "13",
+        }
+        price_array.append(unit_dic)
+        price_dic = {
+            "content": str(price),
+            "font_color": "#FF8000",
+            "font_size": "17",
+        }
+    else:
+        price_dic = {
+            "content": "免费",
+            "font_color": "#FF8000",
+            "font_size": "17",
+        }
+    price_array.append(price_dic)
+    unit = fishing_place.get("unit","")
+    if unit:
+        unit = unit[1:]
+        price_dic = {
+            "content": unit,
+            "font_color": "#FF8000",
+            "font_size": "13",
+        }
+        price_array.append(price_dic)
+    return price_array
+
+def getDistance(point1, point2):
+    try:
+        final = 6378137.0
+        flng = calcDegree(float(point1[0]))
+        flat = calcDegree(float(point1[1]))
+        tlng = calcDegree(float(point2[0]))
+        tlat = calcDegree(float(point2[1]))
+        result = math.sin(flat) * math.sin(tlat)
+        result += math.cos(flat) * math.cos(tlat) * math.cos(flng - tlng)
+        return final * math.acos(float(result))
+    except Exception as e:
+        log.error("getDistance exception:" + e.message)
+        log.error(traceback.format_exc())
+        return 0
+
+def getPlaceByKw(place_where,limit=50):
+    global place_filter
+    place_cursor = ""
+    sort = [("place_num", 1)]
+    fishing_place_cursor = MongoClient.find_all_sorted_limited(place_where, "fishing_place", sort, limit,
+                                                               filter=place_filter)
+    fishing_place_array = []
+    for user_act in fishing_place_cursor:
+        fishing_place_array.append(user_act)
+    # if len(fishing_place_array) == limit + 1:
+    #     fishing_place_array.pop(-1)
+    #     place_cursor = str(fishing_place_array[-1]["place_num"])
+    return fishing_place_array, place_cursor
+
+
+def get_image_info(image_url):
+    image_dic = {"image_url":image_url}
+    image_url_tmp = image_url + "?imageInfo"
+    flag = False
+    print(image_url_tmp)
+    s = urllib2.Request(image_url_tmp)
+    resp = urllib2.urlopen(s)
+    #resp =  requests.get(image_url_tmp)
+    code = resp.code
+    if code ==200:
+        #resp.read()
+        image_info = resp.read()
+        #image_info = resp.content
+        page_info = json.loads(image_info)
+        width = page_info["width"]
+        height = page_info["height"]
+        image_dic["width"] = width
+        image_dic["height"] = height
+        flag=True
+    return image_dic,flag
+
+
+def get_gps_info(lon,lat):
+    key = getKey()
+    url = 'http://apis.map.qq.com/ws/geocoder/v1/?location=%s,%s&coord_type=1&key=%s&get_poi=0' %(str(lat), str(lon), key)
+    req = urllib2.Request(url)
+    address=""
+    res_data = urllib2.urlopen(req)
+    try:
+        gps_info = {
+            "province": "",
+            "city": "",
+            "area": "",
+            "country": "中国",
+            "country_code": "cn"
+        }
+        location = {
+            "type": "Point",
+            "coordinates": [
+                float(lon),
+                float(lat)]
+        }
+
+        gps_info["location"] = location
+
+        if res_data.code == 200:
+            res = res_data.read()
+            result_dic = json.loads(res, encoding="utf-8")
+
+            if result_dic.has_key("result"):
+                location_info = result_dic["result"]
+                if location_info.has_key("address_component"):
+                    address_component = location_info["address_component"]
+                    if address_component.has_key("province"):
+                        gps_info["province"] = address_component["province"]
+
+                    if address_component.has_key("city"):
+                        gps_info["city"] = address_component["city"]
+
+                    if address_component.has_key("district"):
+                        gps_info["area"] = address_component["district"]
+
+                    if address_component.has_key("nation"):
+                        gps_info["country"] = address_component["nation"]
+                if location_info.has_key("address"):
+                    gps_info["address"] = location_info["address"]
+
+        else:
+            print "error"
+        return gps_info
+
+
+
+    except Exception as e:
+        pass
+    # print address
+    # print "res_body:"+json.dumps(res_body,indent=2,encoding="utf-8")
+    return address
+
+def getKey():
+    keys = {1: "4KHBZ-MCUAD-A2245-PIVQB-PDILJ-3RFK3",
+            2: "SKRBZ-BRW3J-GRQFW-FGXA2-5MLN3-BEB6Y",
+            3: "TTUBZ-HHRRR-34LWT-WHHKZ-X6CR5-CSBGU",
+            4: "IGYBZ-D2SHD-RN74X-PNIRE-IA4VH-ILBXL",
+            5: "LC6BZ-UPARR-E4WWJ-WCMDD-Z22RQ-QHFCQ",
+            6: "XYHBZ-KB3HD-YNI45-PD7CC-ZPXVE-45BCY",
+            7: "MBWBZ-HFRA3-47T3B-3IAVD-6WIYE-PMFPO",
+            8: "SGYBZ-YQEWD-RIW4W-PIMPD-VLLLO-PDFOW",
+            9: "CKQBZ-H4EW3-W7W3I-3GUPY-2YQYQ-BYFGA",
+            10: "XXXBZ-J3HHU-BHLV5-2XDAU-NRHCF-SPFTR",
+            11: "I7RBZ-WAMRR-Z2DW2-WIV3T-DJYR6-NGF7J",
+            12: "63QBZ-TTKHD-WI64C-PVNSQ-TLBLF-DOFRC",
+            13: "PWFBZ-IUDK4-QGBUE-DKMJS-MVLH2-3PBJS",
+            14: "OU2BZ-JJH3S-ALHOJ-6M6LF-XQNM2-TYFMJ",
+            15: "5SDBZ-GMNWR-TBWWX-WRRXT-2UMRQ-TMBTZ",
+            16: "P6EBZ-FS63R-P4KWR-WE7O4-T7ER6-5MBBQ",
+            17: "ELJBZ-MI43S-LVUOW-6UUBQ-LELM5-2GFQN",
+            18: "C36BZ-PVLRG-VEQQX-I4U4D-SJB5T-BGBOO",
+            19: "U7VBZ-FXOWJ-IOSFI-FDIFQ-WD2NS-IRB7G",
+            20: "GF7BZ-DZB33-FSL3S-3K5MK-ZZA3T-IUBJW",
+            21: "DQTBZ-XGW3J-FDKFM-KFN6N-465AO-ACBRB",
+            22: "LCMBZ-S5QRV-456PV-UYGJT-DMXBE-PRFZM",
+            23: "C6DBZ-OD43J-3ODF7-FYDJR-QVTNT-3PFCZ",
+            24: "MBCBZ-B7TR3-4SM3R-3TFJG-ESZ32-T4BRL",
+            25: "VRTBZ-PN4RS-7LNOJ-67JJF-JTMMJ-YYF6M",
+            26: "CY4BZ-HODHR-S2ZWT-W73NG-YKMRJ-6OBHN",
+            27: "NUEBZ-AY4W4-VAWUP-X65O3-HUH72-TWBVS",
+            28: "RGDBZ-QEY3R-VBHWS-WC7UA-PUGRV-JWFAX",
+            29: "A54BZ-5L33G-IEMQZ-IXF7O-7L65S-RVBMB",
+            30: "47GBZ-FQSWS-FX3O7-6NSNB-QCSE2-VHFJY",
+            31: "KHPBZ-FXIWJ-SDEFT-KA6YA-QEHA3-7JB6A",
+            32: "K3RBZ-JZS3D-ZIM4O-PBJSX-5XQLT-GJBGS",
+            33: "TYDBZ-YGG3J-TOLFE-F5R54-7SINJ-OUFHX",
+            34: "YZFBZ-O57RJ-JXTFB-KDMFI-ZZPAV-P2BGC",
+            35: "IIOBZ-ADX3J-XDJFB-KMUDQ-Q7LAT-OZFKJ",
+            36: "WLLBZ-473RD-HIU46-PTRDX-TFJLK-DTFRZ",
+            37: "SF6BZ-INTRG-4ELQV-I5HUB-2KR5J-7QBUZ",
+            38: "7ZLBZ-6OEHJ-XRUFX-FMG2A-QCTNH-NLB6X",
+            39: "PIRBZ-MYBWU-3HSVC-2H7X5-GXJCE-ZQFXU",
+            40: "JS7BZ-DL33S-GLWOR-6K5VS-X5ZMQ-IXFJ5"
+            }
+    randint = random.randint(1, 40)
+    key = keys[randint]
+    return key
+
+
+
+'''
+获取收藏列表
+'''
+def getCollectPlaceList(collect_where,sort_key="created",limit=10):
+    place_cursor=""
+    sort = [(sort_key, -1)]
+    fishing_place_cursor = MongoClient.find_all_sorted_limited(collect_where, "user_collect_place", sort, limit + 1)
+    fishing_place_array = []
+    for user_act in fishing_place_cursor:
+        fishing_place_array.append(user_act)
+    if len(fishing_place_array) == limit + 1:
+        fishing_place_array.pop(-1)
+        place_cursor = str(fishing_place_array[-1][sort_key])
+
+    return fishing_place_array,place_cursor
+
+
+

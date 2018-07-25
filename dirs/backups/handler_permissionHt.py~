@@ -1,0 +1,91 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# @Date    : 2015-05-18 17:41:52
+# @Author  : Your Name (you@example.org)
+# @Link    : http://example.org
+# @Version : $Id$
+from handler_baseHt import BaseHtHandler
+from log import get_logger
+import tornado.web
+from tornado.web import asynchronous
+from tornado.options import options
+import json
+import hashlib
+import datetime
+import hashlib
+import random
+import time
+from log import get_logger
+from model.permission_ht import Permission_ht
+import optionsSetting
+from utils.secret import *
+import traceback
+from utils.redis_client import RedisClient
+from mongo_field_encoder import MongoFieldEncoder
+from mongolog import MongoHandler
+from mongokit.helpers import totimestamp, fromtimestamp
+from utils.token_im import TokenService
+from tornado.httpclient import HTTPRequest
+from utils.mongo_client import MongoClient
+from auth import requires_auth
+try:
+    from tornado.curl_httpclient import CurlAsyncHTTPClient as AsyncHTTPClient
+except ImportError:
+    from tornado.simple_httpclient import SimpleAsyncHTTPClient as AsyncHTTPClient
+log = get_logger()
+class PermissionHtHandler(BaseHtHandler):
+    @asynchronous
+    @requires_auth
+    def get(self):
+        log.info("PermissionHtHandler.get:"+self.request.body)
+
+        permissions=[]
+
+        reuslt=options.dbconn_ht.Permission_ht.find({})
+        for permission in reuslt:
+            permissions.append(permission)
+
+        response={}
+        response["entities"]=permissions
+        self.write(json.dumps(response,indent=2, ensure_ascii=False,cls=MongoFieldEncoder))
+        self.finish()
+
+    @requires_auth
+    @asynchronous
+    def post(self):
+        log.info("PermissionHtHandler.post:"+self.request.body)
+        self.set_header("Access-Control-Allow-Origin", "*")
+
+        permission_name = self.get_argument('permission_name')
+        permission_url = self.get_argument('permission_url')
+        
+        method = self.get_argument('method')
+        model=self.get_argument('model_group')
+
+        """
+        新增权限点处理
+        """
+        try:
+            permissions_obj = options.dbconn_ht.Permission_ht()
+            permissions_obj["permission_name"]=permission_name
+            permissions_obj["url"]=permission_url
+            permissions_obj["method"]=method
+            permissions_obj["model"]=model
+            permissions_obj.save()
+
+            self.redirect('/static/admin-permission.html')
+        except:
+            log.error(traceback.format_exc())
+            self.fire_response_bad_response()
+            return
+
+    def fire_response_bad_response(self):
+        """
+        返回登录请求错误响应
+        """
+        self.set_status(400)
+        response = {}
+        response["error"] = "invalid_grant"
+        response["error_description"] = "invalid username or password"
+        self.write(json.dumps(response, indent=2, ensure_ascii=False))
+        self.finish()

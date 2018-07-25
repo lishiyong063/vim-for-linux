@@ -1,0 +1,466 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="renderer" content="webkit|ie-comp|ie-stand">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width,initial-scale=1,minimum-scale=1.0,maximum-scale=1.0,user-scalable=no" />
+    <meta http-equiv="Cache-Control" content="no-siteapp" />
+    <!--[if lt IE 9]>
+    <script type="text/javascript" src="lib/html5.js"></script>
+    <script type="text/javascript" src="lib/respond.min.js"></script>
+    <script type="text/javascript" src="lib/PIE_IE678.js"></script>
+    <![endif]-->
+    <link href="css/H-ui.min.css" rel="stylesheet" type="text/css" />
+    <!--<link href="css/H-ui.admin.css" rel="stylesheet" type="text/css" />-->
+    <!--<link href="lib/icheck/icheck.css" rel="stylesheet" type="text/css" />-->
+    <!--<link href="lib/font-awesome/font-awesome.min.css" rel="stylesheet" type="text/css" />-->
+    <!--&lt;!&ndash;[if IE 7]>-->
+    <!--<link href="lib/font-awesome/font-awesome-ie7.min.css" rel="stylesheet" type="text/css" />-->
+    <!--<![endif]&ndash;&gt;-->
+    <!--<link href="lib/iconfont/iconfont.css" rel="stylesheet" type="text/css" />-->
+    <!--&lt;!&ndash;[if IE 6]>-->
+    <script type="text/javascript" src="lib/DD_belatedPNG_0.0.8a-min.js" ></script>
+    <link rel="stylesheet" type="text/css" href="bizjs/diyUpload/css/webuploader.css">
+    <link rel="stylesheet" type="text/css" href="bizjs/diyUpload/css/diyUpload.css">
+    <link rel="stylesheet" type="text/css" href="bizjs/tenxun/tenxun-map.css">
+    <link rel="stylesheet" type="text/css" href="css/imgareaselect-anima.css" >
+    <script>DD_belatedPNG.fix('*');</script>
+    <![endif]-->
+    <title>创建广告</title>
+</head>
+<body>
+<style>
+    *{ margin:0; padding:0;}
+    #box{ margin:50px auto; width:240px; min-height:200px; background:#FF9}
+</style>
+<div>
+    <div  class="form form-horizontal" id="form-post-add">
+        <div class="row cl">
+            <label class="form-label col-3"><span class="c-red">*</span>广告类型：</label>
+            <div class="formControls col-6">
+                <input name="ad_type" value="1" checked="checked" type="radio" onclick="desc_display(1)">&nbsp;banner广告&nbsp;&nbsp;
+                <input name="ad_type" value="2" type="radio" onclick="desc_display(2)">&nbsp;缓冲广告&nbsp;&nbsp;
+                <input name="ad_type" value="4" type="radio" onclick="desc_display(4)">&nbsp;渔获列表广告&nbsp;&nbsp;
+                <input name="ad_type" value="5" type="radio" onclick="desc_display(5)">&nbsp;装备列表广告&nbsp;&nbsp;
+                <input name="ad_type" value="6" type="radio" onclick="desc_display(6)">&nbsp;攻略列表广告&nbsp;&nbsp;
+            </div>
+
+        </div>
+
+        <div class="row cl">
+            <label class="form-label col-3"><span class="c-red">*</span>广告名称：</label>
+            <div class="formControls col-3">
+                <input type="text" class="input-text" value="" placeholder="" id="name"  datatype="*2-16" >
+            </div>
+       <div class="row cl">
+            <label class="form-label col-3"><span class="c-red">*</span>是否有链接：</label>
+            <div class="radio-box">
+                <input type="radio" value="1" name="canTap" checked="checked" onclick="showADLinkDiv(1)">
+                <label >是</label>
+            </div>
+            <div class="radio-box">
+                <input type="radio" value="0" name="canTap" onclick="showADLinkDiv(0)">
+                <label >否</label>
+            </div>
+       </div>
+
+        </div>
+        <div class="row cl" id="ad_link_div">
+            <label class="form-label col-3"><span class="c-red">*</span>广告链接：</label>
+            <div class="formControls col-3">
+                <input type="text" class="input-text"  value="http://" id="link"  >
+            </div>
+            <div class="col-4"> </div>
+        </div>
+        <div class="row cl">
+            <label class="form-label col-3"><span class="c-red">*</span>链接类型：</label>
+            <div class="radio-box">
+                <input type="radio" value="normal" name="link_resource" checked="checked">
+                <label >普通链接</label>
+            </div>
+            <div class="radio-box">
+                <input type="radio" value="tb" name="link_resource" >
+                <label >淘宝链接</label>
+            </div>
+            <div class="radio-box">
+                <input type="radio" value="jd" name="link_resource" >
+                <label >京东链接</label>
+            </div>
+        </div>
+        <!--<div class="row cl" id="ziya_url_div">-->
+            <!--<label class="form-label col-3">ziya_url：</label>-->
+            <!--<div class="formControls col-3">-->
+                <!--<input type="text" class="input-text"  value="ziya://" id="ziya_url"  >-->
+            <!--</div>-->
+            <!--<div class="col-4"> </div>-->
+        <!--</div>-->
+
+        <div class="row cl" >
+            <label class="form-label col-3"><span class="c-red">*</span>广告图片：</label>
+            <input type="file" name="file" id="file" multiple="multiple"  style="display:none"/>
+            <input type="button" id="file_button" value="上传图片"><span  class="c-red" style="display: none" id="image_desc">&nbsp;&nbsp;为保证显示效果，缓冲广告请上传高400px 宽640px的图片 </span><br>
+            <div style="padding-left: 120px;display:none" id="image_div"><img src="" id="img0" style="height: 300px"></div>
+        </div>
+
+        <div class="row cl" id="ad_image">
+            <form action="/images_upload" method="post" enctype="multipart/form-data"  accept-charset="utf-8" target="hideframe">
+            <label class="form-label col-3"><span class="c-red">*</span>补充图片1：</label>
+            <input type="file" class="files" name="file"  id="file2" value="上传头像"><br>
+            <div style="padding-left: 120px;display:none" id="image_div2"><img src="" id="img2" style="height: 300px"></div>
+            </form>
+        </div>
+
+        <div class="row cl" id="ad_image1">
+            <form action="/images_upload" method="post" enctype="multipart/form-data"  accept-charset="utf-8" target="hideframe">
+            <label class="form-label col-3"><span class="c-red">*</span>补充图片2：</label>
+            <input type="file" class="files" name="file"  id="file2" value="上传头像"><br>
+            <div style="padding-left: 120px;display:none" id="image_div3"><img src="" id="img3" style="height: 300px"></div>
+            </form>
+        </div>
+
+        <div class="row cl">
+            <label class="form-label col-3"><span class="c-red">*</span>需要登录：</label>
+            <div class="formControls col-3">
+                <input type="checkbox" name="shouldLogin" value="0" checked="checked">否&nbsp;&nbsp;
+                <input type="checkbox" name="shouldLogin" value="1">是
+            </div>
+            <div class="col-4"> </div>
+        </div>
+
+        <div class="row cl" id="input_content">
+            <label class="form-label col-3"><span class="c-red">*</span>广告内容：</label>
+            <div class="formControls col-3">
+                <textarea id ="ad_content" name="message" style="width:400px; height:50px;"></textarea>
+            </div>
+            <div class="col-4"> </div>
+        </div>
+
+        <div class="row cl" id="input_price">
+            <label class="form-label col-3"><span class="c-red">*</span>价格：</label>
+            <div class="formControls col-3">
+                <input type="text" class="input-text" value="" placeholder="" id="price"  datatype="*2-16" >
+            </div>
+        </div>
+
+        <div class="row cl" id = "input_nickname">
+            <label class="form-label col-3"><span class="c-red">*</span>昵称：</label>
+            <div class="formControls col-3">
+                <input type="text" class="input-text" value="" placeholder="" id="nickname"  datatype="*2-16" >
+            </div>
+        </div>
+
+        <div class="row cl" id="avatar_upload">
+            <form action="/images_upload" method="post" enctype="multipart/form-data"  accept-charset="utf-8" target="hideframe">
+            <label class="form-label col-3"><span class="c-red">*</span>头像：</label>
+            <input type="file" class="files" name="file"  id="file1" value="上传头像"><br>
+            <div style="padding-left: 120px;display:none" id="image_div1"><img src="" id="img1" style="height: 300px"></div>
+            </form>
+        </div>
+
+        <div class="row cl">
+            <div class="col-9 col-offset-3">
+                <input class="btn btn-primary radius" type="button" onclick="save_check()" value="&nbsp;&nbsp;提交&nbsp;&nbsp;">
+            </div>
+        </div>
+        <br><br>
+    </div>
+</div>
+<iframe name="hideframe" id="hideframe" style="display:none;"></iframe>
+<script type="text/javascript" src="lib/jquery.min.js"></script>
+<script type="text/javascript" src="lib/icheck/jquery.icheck.min.js"></script>
+<script type="text/javascript" src="lib/ajaxfileupload.js"></script>
+<script type="text/javascript" src="lib/Validform_v5.3.2.js"></script>
+<script type="text/javascript" src="js/H-ui.js"></script>
+<script type="text/javascript" src="js/H-ui.admin.js"></script>
+<script type="text/javascript" src="lib/jquery.provincesCity.js"></script>
+<script type="text/javascript" src="lib/provincesData.js"></script>
+<script type="text/javascript" src="bizjs/map.js"></script>
+<script type="text/javascript" src="lib/city_code.js"></script>
+<script type="text/javascript" src="bizjs/coastal_city.js"></script>
+<script type="text/javascript" src="bizjs/base.js"></script>
+<script type="text/javascript" src="lib/jquery.imgareaselect.js" ></script>
+<script type="text/javascript" src="lib/My97DatePicker/WdatePicker.js"></script>
+
+<script type="text/javascript">
+    canTap = true;
+
+    $(function(){
+        $("#form-user-add").Validform({
+            tiptype:2
+        });
+        $('.skin-minimal input').iCheck({
+            checkboxClass: 'icheckbox-blue',
+            radioClass: 'iradio-blue',
+            increaseArea: '20%'
+        });
+        desc_display(1)
+    });
+
+
+
+	$(".files").change(function(){
+		$(this).closest("form").submit();
+		$("#hideframe").attr("index",$(".files").index(this));
+	});
+	$("#hideframe").load(function(){
+		var url = $(this).contents().find("body").html();
+        url_dic = eval('(' + url + ')');
+        filename = url_dic.filename
+		$(".files").eq($(this).attr("index")).closest("form").find("img")[0].src = filename;
+	});
+
+   $("#img1").load(function(){
+        $("#image_div1").show()
+   });
+   $("#img2").load(function(){
+        $("#image_div2").show()
+   });
+   $("#img3").load(function(){
+        $("#image_div3").show()
+   });
+</script>
+<script>
+
+    function desc_display(ad_type){
+        if (ad_type == 1 ||ad_type == 4||ad_type == 5||ad_type == 6){
+            $('#image_desc').hide();
+        }else{
+            $('#image_desc').show();
+        }
+        if (ad_type == 5){
+            $('#input_price').show();
+        }else{
+            $('#input_price').hide();
+        }
+        if (ad_type == 4){
+            $('#avatar_upload').show();
+        }else{
+            $('#avatar_upload').hide();
+        }
+        if (ad_type == 4||ad_type == 6){
+            $('#input_nickname').show();
+            $('#ad_image').show();
+            $('#ad_image1').show();
+        }else{
+            $('#input_nickname').hide();
+            $('#ad_image').hide();
+            $('#ad_image1').hide();
+        }
+        if (ad_type == 4||ad_type == 5||ad_type == 6){
+            $('#input_content').show();
+        }else{
+            $('#input_content').hide();
+        }
+    }
+
+    var filePath = ""
+    var height = ""
+    var width = ""
+    function image_upload() {
+
+        request_url = fishing_admin_Url + '/images_upload'
+
+
+        $.ajaxFileUpload({
+            url: request_url,
+            type: 'get',
+            secureuri: false, //一般设置为false
+            fileElementId: 'file', // 上传文件的id、name属性名
+            dataType: 'json',//返回值类型，一般设置为json、application/json
+            contentType: "application/json; charset=utf-8",
+            success:function (data, status) {
+               filePath = data.filename
+                width = data.width
+                height = data.height
+                save()
+
+            },
+            error:function (data, status, e) {
+                alert("服务器异常，请刷新页面重试")
+            }
+        });
+
+
+    }
+
+
+
+    //图片上传与截图开始
+    $("#file").change(function(){
+        var objUrl = getObjectURL(this.files[0]) ;
+        console.log("objUrl = "+objUrl) ;
+        if (objUrl) {
+            $("#img0").attr("src", objUrl) ;
+
+        }
+    }) ;
+    //建立一個可存取到該file的url
+    var url
+    function getObjectURL(file) {
+        url = null ;
+        if (window.createObjectURL!=undefined) { // basic
+            url = window.createObjectURL(file) ;
+        } else if (window.URL!=undefined) { // mozilla(firefox)
+            url = window.URL.createObjectURL(file) ;
+        } else if (window.webkitURL!=undefined) { // webkit or chrome
+            url = window.webkitURL.createObjectURL(file) ;
+        }
+        return url ;
+    }
+    $("#img0").load(function(){
+        $("#image_div").show()
+//        image_init()
+    });
+
+
+
+
+    function save(){
+
+
+        if (filePath==""){
+            alert("请上传广告图片")
+            return
+        }
+
+
+        var name = $('#name').val().trim();
+        var link = $('#link').val().trim();
+        var ziya_url=""
+
+        if (canTap && (link=="" || link=="http://")) {
+            alert("请输入广告链接")
+            return;
+        }
+
+        shouldLogin = $('input[name="shouldLogin"]:checked').val();
+
+        if(shouldLogin=="0"){
+            shouldLogin=false
+        }else{
+            shouldLogin=true
+        }
+
+
+        var ad_type=$('input[name="ad_type"]:checked').val()
+        var link_resource = $('input[name="link_resource"]:checked').val();
+        var d={
+            "name": name,
+            "onclick_url": link,
+            "shouldLogin":shouldLogin,
+            "ad_type":ad_type,
+            "canTap":canTap,
+            "link_resource":link_resource
+        }
+
+        avatar = $("#img1").attr("src");
+        if (avatar){
+            d["avatar"] = avatar
+        }
+
+        content = $("#ad_content").val();
+        if (content){
+            d["ad_content"] = content
+        }
+
+        price = $("#price").val();
+        if (price){
+            d["price"] = price
+        }
+
+        nickname = $("#nickname").val();
+        if (nickname){
+            d["nickname"] = nickname
+        }
+
+        var image_url = filePath;
+        if (ad_type == 4||ad_type == 5||ad_type == 6){
+            var image_url_list = new Array()
+            image_url_list[0] = image_url
+            image_url2 = $("#img2").attr("src");
+            if (image_url2){
+                image_url_list[1] = image_url2
+            }
+            image_url3 = $("#img3").attr("src");
+            if (image_url3 && image_url2){
+                image_url_list[2] = image_url3
+            }else if (image_url3){
+                image_url_list[1] = image_url3
+            }
+
+            d["image_url_list"] = image_url_list
+        }else{
+            d["image_url"] = image_url;
+            d["height"]=height;
+            d["width"]=width;
+        }
+
+        request_url=fishing_admin_Url+"/advertisement"
+
+
+        $.ajax({
+            url:request_url,
+            type:"POST",
+            async:true,
+            dataType: 'json',
+            contentType: "application/json; charset=utf-8",
+            data:JSON.stringify(d),
+            success: function(data) {
+                if(data.status==1){
+                    alert("广告名称已经存在，请重新填写")
+                }else {
+                    alert("新增成功")
+                    location.reload();
+                }
+
+
+            }, error: function (jqXHR, textStatus, errorThrown) {
+               alert("服务器异常，请重试")
+            }
+
+        });
+
+
+
+
+    }
+    $("#file_button").click(function(){
+        $("#file").trigger("click")
+    });
+
+
+    function save_check(){
+
+
+
+
+        if ($('#name').val()==""){
+            alert("请输入广告名称")
+            return
+        }
+        if( !url){
+            alert("请上传广告图片")
+            return
+        }
+
+        if(filePath==""){
+            image_upload()
+        }else{
+           save()
+        }
+
+    }
+
+    function showADLinkDiv(cantap){
+        if (cantap==1){
+            $('#ad_link_div').show()
+            canTap = true
+        }else{
+            $('#ad_link_div').hide()
+            canTap = false
+        }
+    }
+</script>
+</body>
+</html>

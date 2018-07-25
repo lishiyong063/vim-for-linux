@@ -1,0 +1,483 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# @Date    : 2014-12-05 15:45:20
+# @Author  : Your Name (you@example.org)
+# @Link    : http://example.org
+# @Version : $Id$
+
+from __future__ import division
+from access_track import access_log
+import tornado.web
+from tornado.web import asynchronous
+from tornado.options import options
+
+from mongokit import *
+import re
+from mongokit.helpers import totimestamp, fromtimestamp
+import pymongo
+from mongo_field_encoder import MongoFieldEncoder
+from handler_base import BaseHandler
+from services.service_post_list import *
+from auth import requires_auth
+import traceback
+import json
+import bson
+from bson import ObjectId
+import datetime
+import time
+import random
+from log import get_logger
+from model.posts import Post
+from model.user_post_activiy import User_post_activiy
+from model.user_collect_post import User_collect_post
+from model.user_collect_tool import User_collect_tool
+from utils.redis_client import RedisClient
+from services.service_activity import *
+from tornado import gen
+from tornado.escape import url_escape
+from services.service_article import *
+from services.service_shop import *
+from utils.mongo_client import MongoClient
+from services.service_fishing_place import *
+from services.service_geocoder import *
+from services.city_location import *
+from services.service_fishing_place import get_image_info, get_gps_info
+
+
+log = get_logger()
+location_dic = get_city_location()
+
+
+class FishingPlaceHandler(BaseHandler):
+
+    def __init__(self, application, request, **kwargs):
+        super(FishingPlaceHandler, self).__init__(application, request, **kwargs)
+        self.roles = {
+            '1': "钓友",
+            '2': "老板",
+            '3': "管理员",
+        }
+
+    """
+        获取钓场信息列表
+    """
+
+    @gen.coroutine
+    @asynchronous
+    @access_log
+    def get(self, place_id):
+        self.set_header("Access-Control-Allow-Origin", "*")
+        log.info('FishingPlaceHandler.get is called'+str(self.request.arguments))
+
+        if place_id is not None:
+            place_id = place_id[1:]
+            self.fetch_place(place_id)
+        else:
+            self.fetch_places()
+
+
+    @requires_auth
+    @asynchronous
+    @gen.coroutine
+    def post(self, id):
+        log.info("FishingPlaceHandler.post:"+str(self.request.body))
+        try:
+            body = json.loads(self.request.body, encoding="utf-8")
+            name = body.get("name", "")
+            address = body.get("address", "")
+            contact_tel = body.get("tel", "")
+            contact_name = body.get("contact_name", "")
+            # 图片信息 第一张为封面图片
+            page = body.get("page", [])
+            # 钓场类型
+            place_type = body.get("place_type", [])
+            begin_time = body.get("begin_time", "08:00")
+            end_time = body.get("end_time", "21:00")
+            # 默认上传角色为钓友
+            role = body.get("role", "1")
+
+            desc = body.get("desc", "")
+            price = body.get("price", 0)
+            unit = body.get("unit", "")
+            gps_info = body.get("gps_info", {})
+            wechat_number = body.get("wechat_number", "")
+            # 特色服务
+            service = body.get("service", [])
+            # lon, lat = body.get("lon", ""), body.get("lat", "")
+
+            if not all([name, gps_info.get("address"), wechat_number, address, page, contact_tel, role in self.roles.keys()]):
+                self.fire_response_bad_content("common_error", "keyword", "关键信息没填")
+                return
+
+            # gps_info = get_gps_info(lon, lat)
+            gps_info["address"] = address
+
+            created = datetime.datetime.utcnow()
+            tel_count = random.randrange(100, 500)
+            display_count = random.randrange(500, 1000)
+            cover_img = page[0]
+            pages = page[1:]
+            lon = gps_info["location"].get("lon")
+            lat = gps_info["location"].get("lat")
+            gps_info["location"] = {"type": "Point", "coordinates": [lon, lat]}
+            update = {
+                "cover": cover_img,
+                "gps_info": gps_info,
+                "wechat_number": wechat_number,
+                "contact_name": contact_name,
+                "name": name,
+                "contact_tel": contact_tel,
+                "service": service,
+                "created": created,
+                # 0,待审核 1,审核通过 2,下架
+                "status": 0,
+                "from": 1,
+                "pages": pages,
+                "desc": desc,
+                "tel_count": tel_count,
+                "display_count": display_count,
+                "price": price,
+                "place_type": place_type,
+                "begin_time": begin_time,
+                "end_time": end_time,
+                "role": role,
+                'username': self.username,
+            }
+
+            if price:
+                update["unit"] = unit
+
+            count_key = {"key": "fishing_place"}
+            counter_update_val = {"$inc": {"value": 1}}
+            counter_cursor = MongoClient.find_and_modify(count_key, counter_update_val, "ziya_counter")
+
+            count = counter_cursor["value"]
+            update["place_num"] = count
+            c = MongoClient.insert(update, "fishing_place")
+            log.info(str(c))
+
+            response = {}
+            response["entities"] = []
+            self.write(json.dumps(response, indent=2, ensure_ascii=False, cls=MongoFieldEncoder))
+            self.finish()
+            return
+
+        except Exception as e:
+            log.info('FishingLocationHandler.get Exception:%s' % e.message)
+            log.error(traceback.format_exc())
+            self.fire_response_bad_request(key_required=e.message)
+            return
+
+    @gen.coroutine
+    def fetch_places(self):
+        response_dic={}
+        place_cursor=""
+        gps_info={}
+        try:
+            limit = 10
+            request_cursor = self.get_argument('cursor', '')
+            place_where = {
+                "status":1
+            }
+            keyword = self.get_argument('keyword', '')
+            map = self.get_argument('map', '')
+            near = self.get_argument('near', '')
+            sort = self.get_argument('sort', '10')
+            # 关键字搜索
+            if keyword:
+                place_where["name"]={"$regex":keyword,"$options":'i'}
+                if request_cursor:
+                    place_where["place_num"]={"$gt":int(request_cursor)}
+                fishing_place_array, place_cursor = getPlaceByKw(place_where)
+            # 附近查询
+            elif near:
+                # 检查经纬度
+                self.location_check()
+
+                lon = float(self.get_argument("lon"))
+                lat = float(self.get_argument("lat"))
+                coordinates = [lon, lat]
+                distance = 50
+                min = 0.0
+                if request_cursor:
+                    min = float(request_cursor)
+                # 附近的钓场查询
+                fishing_place_array, place_cursor = getNearPlaces(where=place_where, center=coordinates, min=min,
+                                                                  maxDistance=int(distance) * 1000, limit=limit)
+            # 地图查询
+            elif map:
+                # 检查经纬度
+                self.location_check()
+                lon = float(self.get_argument("lon"))
+                lat = float(self.get_argument("lat"))
+                coordinates = [lon, lat]
+                distance = 50
+                min = 0.0
+                # limit = 20
+                # 附近的钓场查询
+                fishing_place_array, cursor = getNearPlaces(where=place_where, center=coordinates, min=min,
+                                                                  maxDistance=int(distance) * 1000)
+
+            # 按城市、距离查询
+            else:
+                # 检查经纬度
+                self.location_check()
+                # all:1 不限城市
+                all = self.get_argument('all', '')
+                lon = float(self.get_argument("lon"))
+                lat = float(self.get_argument("lat"))
+
+                coordinates = [lon, lat]
+
+                gps_info = location_dic.get(str(lat) + str(lon))
+                if not gps_info:
+                    gps_info = yield geocoderByGaode(lon, lat)
+                # 按城市查询
+                if all:
+                    city_name = gps_info["city"]
+                    place_where["gps_info.city"]=city_name
+                # 按区查询
+                else:
+                    area = gps_info["area"]
+                    city_name = gps_info["city"]
+                    place_where["gps_info.area"] = area
+                    place_where["gps_info.city"] = city_name
+
+                # 人气查询
+                if sort==u'20':
+                    sort_key = "display_count"
+                    if request_cursor:
+                        place_where[sort_key]={"$lt":int(request_cursor)}
+                    fishing_place_array, place_cursor = getPlaceList(place_where,sort_key=sort_key)
+
+                elif sort==u"10":
+                    lon = float(self.get_argument("lon_local",lon))
+                    lat = float(self.get_argument("lat_local",lat))
+                    coordinates_local = [lon, lat]
+                    coordinate_len = getDistance(coordinates,coordinates_local)
+                    if coordinate_len/1000<=500:
+                        coordinates = coordinates_local
+
+                    min = 0.0
+                    if request_cursor:
+                        min = float(request_cursor)
+
+                    # 附近的钓场查询
+                    fishing_place_array, place_cursor = getNearPlaces(where=place_where, center=coordinates, min=min,
+                                                                   maxDistance=int(options.max_distance) * 1000, limit=limit)
+                else:
+                    # 距离查询
+                    coordinates = [lon, lat]
+                    distance = self.get_argument("distance", "0")
+                    # 同城或不选距离，默认距离为500km
+                    if distance == "0":
+                        # 同城查询500km的
+                        distance = 500
+                    min = 0.0
+                    if request_cursor:
+                        min = float(request_cursor)
+
+                    # 附近的钓场查询
+                    fishing_place_array, place_cursor = getNearPlaces(where=place_where, center=coordinates, min=min,
+                                                                  maxDistance=int(distance) * 1000, limit=limit)
+            # 组装返回信息
+            entities = assemblePlaceInfo(fishing_place_array)
+            os, version = self.getClientVersion()
+            if version >= "3.2.0":
+                if len(entities) >= 5:
+                    entities[4] = {
+                        "type": "adhub",
+                        "ios_ad_id": "5616",
+                        "an_ad_id": "5679",
+                        "width": "400",
+                        "height": "300"
+                    }
+            response_dic["entities"] = entities
+
+            # 距离筛选控制
+            response_dic["distance"] = options.fishing_place_dis
+
+            # 城市信息
+            if gps_info:
+                response_dic["gps_info"] = gps_info
+
+            # 距离人气筛选控制
+            fishing_place_sort = copy.deepcopy(options.fishing_place_sort)
+            for place_sort in fishing_place_sort:
+                code = place_sort["code"]
+                if code==int(sort):
+                    place_sort["selected"]=True
+            response_dic["sort"] = fishing_place_sort
+
+            if place_cursor:
+                response_dic["cursor"] = place_cursor
+
+            response = json.dumps(response_dic,
+                                  indent=2,
+                                  ensure_ascii=False,
+                                  cls=MongoFieldEncoder)
+            self.write(response)
+            self.finish()
+
+        except Exception as e:
+            log.error("FishingPlaceHandler exception:" + e.message)
+            log.error(traceback.format_exc())
+            self.fire_response_sys_error()
+
+    def fetch_place(self,place_id):
+        try:
+            response_dic = {}
+            where = {
+                "status": 1,
+                "_id": ObjectId(place_id)
+            }
+            filter = {"fishing_id":0,"tel_count":0}
+            place_tmp = MongoClient.find_one(where, "fishing_place",filter=filter)
+            price_array = price_handler(place_tmp)
+            place_tmp["price_array"]=price_array
+            if place_tmp.has_key("contact_tel"):
+                contact_tel = place_tmp["contact_tel"]
+                if type(contact_tel) is not list:
+                    contact_tel = contact_tel.split(",")
+
+                place_tmp["contact_tel"] = contact_tel
+                place_tmp["tel_auth"] = 1
+
+            cover_temp = place_tmp.get("cover", {})
+            pages = place_tmp.get("pages", [])
+            place_from = place_tmp.get("from", 0)
+            return_pages=[]
+
+            if cover_temp:
+                image_url = cover_temp.get("image_url","")
+                if image_url:
+                    image_url_temp = image_url+"?watermark/1/image/"+options.util_watermask+"/dissolve/100/gravity/SouthEast/dx/0/dy/0"
+                    cover_temp["image_url"] = image_url_temp
+                    return_pages.append(cover_temp)
+
+            if place_from:
+                for page in pages:
+                    image_url = page.get("image_url", "")
+                    if image_url:
+                        image_url_temp = image_url + "?watermark/1/image/" + options.util_watermask + "/dissolve/100/gravity/SouthEast/dx/0/dy/0"
+                        page["image_url"] = image_url_temp
+                        return_pages.append(page)
+
+
+            place_tmp["pages"]=return_pages
+
+            # 获附近的钓场
+            coordinates = place_tmp["gps_info"]["location"]["coordinates"]
+
+            lon = float(coordinates[0])
+            lat = float(coordinates[1])
+            coordinates = [lon, lat]
+            distance = self.get_argument("distance", "20")
+            min = 0.0
+            post_cursor_req = "2730122372130"
+            timestamp = post_cursor_req
+            place_where = {"status":1}
+            place_where["_id"] = {"$ne":ObjectId(place_id)}
+            limit=2
+            # 附近的钓场
+            fishing_place_array, place_cursor = getNearPlaces(where=place_where, center=coordinates, min=min,
+                                                              maxDistance=int(distance) * 1000, limit=limit)
+            # 附近的渔获
+            post_where = {
+                "deleted": {"$ne": True},
+                "sold_out": {"$ne": "1"},
+                "yuhuo_type": 0
+            }
+            fishing_post_array, posts_cursor, post_id_array = getNearPosts(where=post_where, center=coordinates,
+                                                                    username=self.username,min=min,
+                                                                   maxDistance=int(distance) * 1000, limit=limit,
+                                                                   timestamp=timestamp)
+
+            entities=[]
+            entities.append(place_tmp)
+            response_dic["entities"] = entities
+            if fishing_place_array:
+                entities = assemblePlaceInfo(fishing_place_array)
+                place_near = {'entities':entities}
+                if place_cursor:
+                    place_near["cursor"] = place_cursor
+                response_dic["place_near"] = place_near
+
+            if fishing_post_array:
+                post_near = {'entities': fishing_post_array}
+                if posts_cursor!="-1":
+                    post_near["cursor"]= posts_cursor
+                response_dic["post_near"] = post_near
+
+            # 广告位
+            response_dic["banners"] = self.get_banner_ad("new")
+
+            # 是否收藏
+            where = {
+                'place_id': place_id,
+                'username': unicode(self.username)
+            }
+            collect_place = MongoClient.find_one(where, "user_collect_place")
+            response_dic["is_collect"] = bool(collect_place)
+
+            # 评论列表
+            try:
+                where = {
+                    "fishing_id": place_id,
+                    "status": 1,
+                }
+                part_comments_list = []
+                # 默认评论为两条
+                comments_list, cursor = getPlaceCommentList(where, limit=2)
+                for comment in comments_list:
+                    user = MongoClient.find_one({"username": comment["username"]}, 'users')
+                    userinfo = {
+                        "username": user["username"],
+                        "nickname": user["nick"],
+                        "avator": user["avatar_url"],
+                    }
+                    dic = {"userinfo": userinfo, 'comment_content': comment['content'], 
+                           'pages': comment.get("pages", ""), "created": comment["created"]}
+
+                    part_comments_list.append(dic)
+            except:
+                log.error(traceback.format_exc())
+            response_dic["comments_list"] = part_comments_list
+            response = json.dumps(response_dic,
+                                  indent=2,
+                                  ensure_ascii=False,
+                                  cls=MongoFieldEncoder)
+            self.write(response)
+            self.finish()
+
+
+            # 添加浏览次数和电话次数
+            display_count_inc = 1
+            tel_count_inc = 1
+
+            update_val = {
+                "$inc":{"display_count":display_count_inc,"tel_count":tel_count_inc}
+            }
+            MongoClient.update(where,update_val,"fishing_place")
+
+
+        except Exception as e:
+            log.error("FishingPlaceHandler exception:" + e.message)
+            log.error(traceback.format_exc())
+            self.fire_response_sys_error()
+
+    def location_check(self):
+        response_dic={}
+        lon = self.get_argument("lon", "")
+        lat = self.get_argument("lat", "")
+        if not lon or not lat:
+            response_dic["error_reason"] = "coordinate is need"
+
+            response = json.dumps(response_dic,
+                                  indent=2,
+                                  ensure_ascii=False,
+                                  cls=MongoFieldEncoder)
+
+            self.write(response)
+            self.finish()
+            return

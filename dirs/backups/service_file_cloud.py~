@@ -1,0 +1,64 @@
+ #!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# @Date    : 2014-10-10 10:19:40
+# @Author  : Your Name (you@example.org)
+# @Link    : http://example.org
+# @Version : $Id$
+from mongokit import *
+from mongokit.helpers import totimestamp, fromtimestamp
+from utils.mongo_client import MongoClient
+from log import get_logger
+import traceback
+import json
+from tornado.options import options
+
+import bson
+from mongo_field_encoder import MongoFieldEncoder
+import pymongo
+import cStringIO, urllib2
+
+from qiniu import Auth
+import qiniu
+
+log = get_logger()
+
+'''
+将文件上传云服务
+'''
+
+access_key = 'j5j3fml1xwWY4ebo6z9S1EBYat3v5qBmMHHXZU6P'
+secret_key = 'E5hwyRieLksajUT85-pfzdtWOMLfcnyUBmf_OPL7'
+bucket_name = 'startup'
+q = Auth(access_key, secret_key)
+
+def UploadFileToQiniu(localfile,filename):
+
+    # key=localfile.split("/")[-1]
+    log.info("key:"+filename)
+    token = q.upload_token(bucket_name, filename)
+    print token
+    print filename
+    ret, info = qiniu.put_file(token, filename, localfile)
+    qiniu_url=None
+    if info!=None and info.status_code==200:
+        qiniu_url="http://o84ir2o49.bkt.clouddn.com/"+str(filename)
+    return qiniu_url
+
+def GetFileToken(filename, bucket_name):
+    # key=localfile.split("/")[-1]
+    log.info("key:"+filename)
+    qiniu_url = ""
+    token = ""
+    if bucket_name == "startup":
+        token = q.upload_token(bucket_name, filename)
+        qiniu_url = "http://s2.ziyadiaoyu.com/"+str(filename)
+    if bucket_name == "placeimage":
+        token = q.upload_token(bucket_name)
+        qiniu_url = "http://placeimage.ziyadiaoyu.com/"
+    if bucket_name == "shopimage":
+        token = q.upload_token(bucket_name)
+        qiniu_url = "http://shopimage.ziyadiaoyu.com/"
+    if bucket_name == "fishactor2":
+        token = q.upload_token(bucket_name)
+        qiniu_url = "http://fishactor2.ziyadiaoyu.com/"
+    return qiniu_url, token

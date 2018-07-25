@@ -1,0 +1,120 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# @Date    : 2015-05-18 17:41:52
+# @Author  : Your Name (you@example.org)
+# @Link    : http://example.org
+# @Version : $Id$
+
+
+
+
+from bson import ObjectId
+from handler_baseHt import BaseHtHandler
+from log import get_logger, get_logger
+from model.informs import Inform
+from model.permissions_ht import Permissions_ht
+from mongo_field_encoder import MongoFieldEncoder
+from mongokit.helpers import totimestamp, fromtimestamp
+from mongolog import MongoHandler
+from tornado.httpclient import HTTPRequest
+from tornado.options import options
+from tornado.web import asynchronous
+from utils.mongo_client import MongoClient
+from utils.mongo_front import MongoFront
+from utils.redis_client import RedisClient
+from utils.redis_weibo_client import RedisWeiboClient
+
+from utils.secret import *
+from utils.token_im import TokenService
+import datetime
+import hashlib
+import hashlib
+import json
+import optionsSetting
+import pymongo
+import random
+import time
+import tornado.web
+import traceback
+from auth import requires_auth
+
+try:
+    from tornado.curl_httpclient import CurlAsyncHTTPClient as AsyncHTTPClient
+except ImportError:
+    from tornado.simple_httpclient import SimpleAsyncHTTPClient as AsyncHTTPClient
+log = get_logger()
+class GoodsPushHandler(BaseHtHandler):
+    @asynchronous
+    @requires_auth
+    def post(self):
+        log.info("GoodsPushHandler.post:"+self.request.body)
+        body = json.loads(self.request.body, encoding='utf-8')
+        push_goods_detail = body.get("push_goods_detail",None)
+        target_info = body.get("target_info",None)
+
+        if not target_info or not push_goods_detail:
+            return self.fire_response_bad_response()
+
+        target=target_info.get("target","")
+        days = target_info.get("days", "")
+        cities = target_info.get("cities", "")
+        tag = target_info.get("tag", "")
+
+        if target=="" or not tag:
+            return self.fire_response_bad_response()
+
+        message_event = {}
+        message_event["message_type"] = "goods_boutique"
+        message_event["user_target"] = target
+        message_event["tag"]=tag
+        message_event["goods_detail"]=push_goods_detail
+
+
+        if days:
+            message_event["days"] = int(days)
+
+        if cities:
+            message_event["cities"] = cities
+
+        #### 保存消息监控表
+        message_monitor_entity = {
+            "created": datetime.datetime.utcnow(),
+            "begin_milli": int(round(time.time() * 1000)),
+            "message_event": message_event
+        }
+        id, db_error = MongoFront.insert(message_monitor_entity, "message_monitor")
+        # log.info("id:"+str(id))
+        message_event['message_monitor_id'] = str(id)
+
+        message_event = json.dumps(message_event,
+                                   indent=2,
+                                   ensure_ascii=False,
+                                   cls=MongoFieldEncoder)
+
+        # 个推信息
+        queue_name = options.redis_queue_message_event_goods_boutique
+        log.info("insert queue:%s" % queue_name)
+        log.info("insert message_event:%s" % message_event)
+        result = RedisWeiboClient.rpush(queue_name, message_event)
+
+        log.info("redis push result=%s" % str(result))
+
+
+
+        response = {}
+        self.write(json.dumps(response,indent=2, ensure_ascii=False,cls=MongoFieldEncoder))
+        self.finish()
+        
+        
+    def fire_response_bad_response(self):
+        """
+        返回登录请求错误响应
+        """
+        self.set_status(400)
+        response = {}
+        response["error"] = "invalid_grant"
+        response["error_description"] = "invalid data"
+        self.write(json.dumps(response, indent=2, ensure_ascii=False))
+        self.finish()
+    
+   

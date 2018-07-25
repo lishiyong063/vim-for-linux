@@ -1,0 +1,264 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# @Date    : 2015-05-18 17:41:52
+# @Author  : Your Name (you@example.org)
+# @Link    : http://example.org
+# @Version : $Id$
+from handler_baseHt import BaseHtHandler
+from log import get_logger
+import tornado.web
+from tornado.web import asynchronous
+from tornado.options import options
+import json
+import hashlib
+import datetime
+import hashlib
+import random
+import pymongo
+import time
+from log import get_logger
+from model.accounts_ht import Account_ht
+from model.posts import Post
+import optionsSetting
+from utils.secret import *
+import traceback
+from utils.redis_client import RedisClient
+from mongo_field_encoder import MongoFieldEncoder
+from mongolog import MongoHandler
+from mongokit.helpers import totimestamp, fromtimestamp
+from utils.token_im import TokenService
+from tornado.httpclient import HTTPRequest
+from utils.mongo_front import MongoFront
+from utils.mongo_im import MongoIm
+from utils.mongo_client import MongoClient
+from services.service_post import getPostList
+from services.service_activity import *
+from bson import ObjectId
+from auth import requires_auth
+try:
+    from tornado.curl_httpclient import CurlAsyncHTTPClient as AsyncHTTPClient
+except ImportError:
+    from tornado.simple_httpclient import SimpleAsyncHTTPClient as AsyncHTTPClient
+log = get_logger()
+class SessionHandler(BaseHtHandler):
+    @asynchronous
+    @requires_auth
+    def get(self):
+        log.info("SessionHandler.get is called")
+        condition_dic = json.loads(self.get_argument('condition',""),encoding="utf-8")
+        target=condition_dic["target"]
+        user_array=[]
+        session_lookup={
+            "eventType" : "chat"
+        }
+        status=condition_dic.get("status","")
+        if status!="":
+            session_lookup["status"]=status
+        ###获取所有小号的聊天记录
+        if target=="vest":
+            admin_user=self.me
+
+            admin_username=admin_user["username"]
+            admin_level=admin_user.get("level","staff")
+
+            user_lookup={
+                "user_type":"2"
+            }
+            if admin_level=="staff":
+                ###获取运营人员所有的小号
+                user_lookup["belong_to"]=admin_username
+
+            user_cursor = MongoFront.find_all(user_lookup,"users")
+            for user in user_cursor:
+                username = user["username"]
+                user_array.append(username)
+
+            session_lookup["$or"]=[
+                {"from":{"$in":user_array}},
+                {"to":{"$in":user_array}}
+            ]
+
+        ###获取指定小号的聊天记录
+        if target=="specify_vest":
+            vest_username=condition_dic.get("vest_username","")
+
+            if vest_username:
+                ####如果指定了小号用户则搜索指定小号的聊天记录
+                user_array.append(vest_username)
+                session_lookup["$or"]=[
+                    {"from":{"$in":user_array}},
+                    {"to":{"$in":user_array}}
+                ]
+            else:
+                ####如果没有指定小号用户则搜索该运营人员创建的全部小号的聊天记录
+                admin_user=self.me
+
+                admin_username=admin_user["username"]
+                where={
+                    "belong_to":admin_username
+                }
+                user_cursor= MongoFront.find_all(where,"users")
+                for user in user_cursor:
+                    username = user["username"]
+                    user_array.append(username)
+
+                session_lookup["$or"]=[
+                    {"from":{"$in":user_array}},
+                    {"to":{"$in":user_array}}
+                ]
+
+        ###获取指定用户的聊天记录
+        if target=="specify_user":
+            invite_code=condition_dic.get("invite_code","")
+            nick = condition_dic.get("nick", "")
+            if invite_code=="" and nick=="":
+                response = {}
+                response["entities"] = []
+                response["count"] = "0"
+                self.write(json.dumps(response, indent=2, ensure_ascii=False, cls=MongoFieldEncoder))
+                self.finish()
+
+            where={}
+            if invite_code:
+                where["invite_code"]=invite_code
+
+            if nick:
+                where["nick"] = nick
+
+
+            user_cursor= MongoFront.find_all(where,"users")
+            for user in user_cursor:
+                username = user["username"]
+                user_array.append(username)
+
+            session_lookup["$or"]=[
+                {"from":{"$in":user_array}},
+                {"to":{"$in":user_array}}
+            ]
+
+        ###获取指定运营人员创建的小号的聊天记录
+        if target=="admin_user":
+            belonge_to=condition_dic["belonge_to"]
+            where={
+                "belong_to":belonge_to
+            }
+            user_cursor= MongoFront.find_all(where,"users")
+            for user in user_cursor:
+                username = user["username"]
+                user_array.append(username)
+
+            session_lookup["$or"]=[
+                {"from":{"$in":user_array}},
+                {"to":{"$in":user_array}}
+            ]
+
+        ###获取商家的聊天记录
+        if target == "biz":
+            biz_username = condition_dic["biz_username"]
+
+            if biz_username=="0":
+                where = {
+                    "biz_role" : "biz_manager"
+                }
+                user_cursor = MongoFront.find_all(where, "users")
+                for user in user_cursor:
+                    username = user["username"]
+                    user_array.append(username)
+
+                session_lookup["$or"] = [
+                    {"from": {"$in": user_array}},
+                    {"to": {"$in": user_array}}
+                ]
+            else:
+                session_lookup["$or"] = [
+                    {"from": biz_username},
+                    {"to": biz_username}
+                ]
+
+        shop_biz_user_array=self.get_shop_biz_user_array()
+
+        ###获取商家的聊天记录
+        if target == "shop_biz_chat":
+
+
+            session_lookup["$or"] = [
+                {"from": {"$in": shop_biz_user_array}},
+                {"to": {"$in": shop_biz_user_array}}
+            ]
+
+        # log.info("session_lookup:"+str(session_lookup))
+        # sort = [('status',pymongo.DESCENDING),('created', pymongo.DESCENDING)]
+        sort = [('created', pymongo.DESCENDING)]
+
+        curr = self.get_argument('curr',"")
+        limit=20
+        if curr=="":
+            session_cursor=MongoIm.find(session_lookup,"session_im",sort,0,limit)
+        else:
+            session_cursor=MongoIm.find(session_lookup,"session_im",sort,(int(curr)-1)*limit,limit)
+
+
+        log.info("session_cursor:"+str(session_cursor.count()))
+
+        session_array=[]
+        user_array=[]
+        for session_obj in session_cursor:
+            from_username=session_obj["from"]
+            to_username=session_obj["to"]
+            user_array.append(from_username)
+            user_array.append(to_username)
+            session_array.append(session_obj)
+
+        where={
+            "username":{"$in":user_array}
+        }
+        filter={
+            "username":1,
+            "nick":1,
+            "user_type":1,
+            "platform":1,
+            "avatar_url":1,
+            "invite_code":1,
+            "biz_role":1
+        }
+        user_list=MongoFront.find_all(where,"users",filter=filter)
+        user_dic={}
+        for user in user_list:
+            username=user["username"]
+            if username in shop_biz_user_array:
+                user["is_shop_biz"]=1
+
+            user_dic[username]=user
+
+        session_user_list=[]
+        for session_obj in session_array:
+            from_username=session_obj["from"]
+            to_username=session_obj["to"]
+
+            if user_dic.has_key(from_username):
+                from_user=user_dic[from_username]
+                session_obj["from_user"]=from_user
+
+            if user_dic.has_key(to_username):
+                to_user=user_dic[to_username]
+                session_obj["to_user"]=to_user
+
+            session_user_list.append(session_obj)
+
+        response={}
+        response["entities"]=session_user_list
+        response["count"]=str(session_cursor.count())
+        self.write(json.dumps(response,indent=2, ensure_ascii=False,cls=MongoFieldEncoder))
+        self.finish()
+
+    def get_shop_biz_user_array(self):
+        shop_biz_user_array=[]
+        where={
+            "shop_biz":"1"
+        }
+        user_cursor = MongoFront.find_all(where, "users")
+        for user in user_cursor:
+            username = user["username"]
+            shop_biz_user_array.append(username)
+
+        return shop_biz_user_array

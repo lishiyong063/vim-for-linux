@@ -1,0 +1,153 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# @Date    : 2014-12-03 18:49:42
+# @Author  : Your Name (you@example.org)
+# @Link    : http://example.org
+# @Version : $Id$
+from tornado.options import options
+import functools
+import json
+import datetime
+from log import get_logger
+from utils.secret import *
+import traceback
+from utils.redis_client import RedisClient
+from role.reload_role import *
+from check.coordinate_check import CoordinateCheck
+from check.user_check import UserCheck
+from check.activity_check import ActivityCheck
+from check.register_check import RegisterCheck
+from check.post_check import PostCheck
+from check.article_check import ArticleCheck
+from check.post_video_check import PostVideoCheck
+from check.activity_apply_check import ActivityApplyCheck
+import json
+import re
+
+def param_auth(arg):
+    def _param_auth(func):
+        def __param_auth(*args, **kwargs):
+             obj = globals()[arg]
+            
+             
+             handler = args[0]
+             method = handler.request.method
+             
+             
+             #获取模板
+             structure=None
+             if method.lower()=="get":
+                structure = obj.get_structure
+             elif method.lower()=="post":
+                structure = obj.post_structure
+             elif method.lower()=="put":
+                structure = obj.put_structure
+             elif method.lower()=="delete":
+                structure = obj.delete_structure
+             if structure !=None:
+                log.info("paramAuth div:"+str(structure))
+             
+             
+             body_dic = json.loads(handler.request.body,encoding="utf-8")
+             auth = ParamCheck()
+             
+             back_json=None
+             check=False
+             error_param=None
+             try:
+                back_json,check,error_param = auth.param_auth(structure,body_dic,handler)
+             except:
+                log.error(traceback.format_exc())
+             if back_json==None or check==False:
+                 return auth.authenticate(handler,error_param)
+             
+             log.info("param_auth is success")
+             
+             #处理校验成功结果
+             handler.request.body = json.dumps(back_json)
+            
+             return func(*args, **kwargs)
+        return __param_auth
+    return _param_auth
+
+
+class ParamCheck(object):
+
+    
+    
+    def param_auth(self,structure, doc,handler):
+        check=True
+        back_json={}
+        error_param = None
+        for el in structure:
+          if doc.has_key(el):
+              doc_el = doc[el]
+              ok = self.param_isinstance(doc_el,structure[el])
+              if ok:
+                  back_json[el] = doc_el
+              else:
+                  error_param = el
+                  check=False
+                  break
+        return back_json,check,error_param
+
+
+
+    def param_isinstance(self,doc,structure):
+       ok=True
+       
+       
+       if isinstance(structure,type):
+         if not isinstance(doc,structure):
+             log.info("param_isinstance is fail by"+str(doc))
+             ok = False
+    
+      #校验是list
+       elif isinstance(structure,list):
+          if not isinstance(doc,list):
+              log.info("param_isinstance is fail by"+str(doc))
+              ok = False
+          else:
+              for index in range(len(structure)):
+                  structure_el = structure[index]
+                  if len(doc)>index:
+                      doc_el = doc[index]
+                      ok= self.param_isinstance(doc_el,structure_el)
+                      if ok == False:
+                          log.info("param_isinstance is fail by"+str(doc))
+                          break
+     #校验是dict
+       elif isinstance(structure,dict):
+          if not isinstance(doc,dict):
+              log.info("param_isinstance is fail by"+str(doc))
+              ok = False
+          else:
+              for el in structure:
+                  if doc.has_key(el):
+                      ok = self.param_isinstance(doc[el],structure[el])
+                      if ok == False:
+                          log.info("param_isinstance is fail by"+str(doc))
+                          break
+       return ok
+    
+    
+    
+    
+    
+    def authenticate(self, handler,error_param):
+        """
+        用户鉴权未通过，返回401响应
+        """
+        mes = ""
+        if error_param !=None:
+            mes = '"'+error_param+'" type error'
+        else:
+            mes = 'Request parameter type error'
+        response = {}
+        response["error"] = 'bad request'
+        response['error_description'] = mes
+        body_response = json.dumps(response, indent=2, ensure_ascii=False)
+        handler.set_status(400)
+        handler.write(body_response)
+        handler.finish()
+

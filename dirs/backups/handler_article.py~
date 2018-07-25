@@ -1,0 +1,129 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# @Date    : 2014-12-05 15:45:20
+# @Author  : Your Name (you@example.org)
+# @Link    : http://example.org
+# @Version : $Id$
+
+from __future__ import division
+import tornado.web
+from tornado.web import asynchronous
+from tornado.options import options
+from tornado import gen
+from mongokit import *
+from mongokit.helpers import totimestamp, fromtimestamp
+import pymongo
+from mongo_field_encoder import MongoFieldEncoder
+from handler_base import BaseHandler
+from auth import requires_auth
+import traceback
+import json
+import bson
+from bson import ObjectId
+import random
+from log import get_logger
+import datetime
+import time
+from utils.redis_client import RedisClient
+
+log = get_logger()
+
+class ArticleHandler(BaseHandler):
+    """
+    文章处理类
+    """
+    def __init__(self, application, request, **kwargs):
+        super(ArticleHandler, self).__init__(application, request, **kwargs)
+
+    '''
+        发表文章
+    '''
+
+    @tornado.gen.coroutine
+    @requires_auth
+    def post(self, post_id):
+        """
+        发布文章
+        """
+        log.info('ArticleHandler.post is called:'+self.request.body)
+        request = self.request.body
+        if request == '':
+            self.fire_response_bad_request()
+            return
+        try:
+            data = json.loads(self.request.body, encoding='utf-8')
+            url=options.ziyafish_api+"/article"
+            response = self.request_post_json(url,data,token=self.token)
+            result = yield response
+
+            self.set_status(result.code)
+            self.write(result.body)
+            self.finish()
+        except Exception as e:
+            log.error("ArticlesHandler exception:"+e.message)
+            log.error(traceback.format_exc())
+            self.fire_response_sys_error()
+            return
+
+
+    @asynchronous
+    @tornado.gen.coroutine
+    # @requires_auth
+    def get(self, article_id):
+
+        log.info('ArticlesHandler.get:'+str(article_id))
+        self.set_header("Access-Control-Allow-Origin", "*")
+        if article_id is not None:
+            real_article_id = article_id[1:]
+            yield self.fetch_post(real_article_id)
+        else:
+            self.fetch_posts()
+
+    @gen.coroutine
+    def fetch_post(self, article_id):
+        try:
+            nick=''
+            avatar_url=''
+            if self.token and self.username:
+                user=self.me
+                if user:
+                    avatar_url=user.get("avatar_url","")
+                    nick=user.get("nick","")
+
+            url=options.ziyafish_api+"/articles/"+article_id
+            log.info("url:"+url)
+            response = self.request_get_json(url,self.token)
+            result = yield response
+
+            self.set_status(result.code)
+            self.write(result.body)
+            self.finish()
+        except Exception as e:
+            log.error("single_article exception:"+e.message)
+            log.error(traceback.format_exc())
+            # self.fire_response_sys_error()
+
+    @tornado.gen.coroutine
+    def fetch_posts(self):
+        try:
+            type=self.get_argument('type','recommend')
+
+            url=options.ziyafish_api+"/article?type="+type
+
+            request_cursor=self.get_argument('cursor','')
+            if request_cursor!='':
+                url=url+"&cursor="+request_cursor
+
+            response = self.request_get_json(url)
+            result = yield response
+
+            self.set_status(result.code)
+            self.write(result.body)
+            self.finish()
+        except Exception as e:
+            log.error("LoginHandler exception:"+e.message)
+            log.error(traceback.format_exc())
+            self.fire_response_sys_error()
+            return
+
+

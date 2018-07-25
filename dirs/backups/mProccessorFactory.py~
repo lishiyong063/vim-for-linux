@@ -1,0 +1,127 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# @Date    : 2014-08-15 17:04:53
+# @Author  : Your Name (you@example.org)
+# @Link    : http://example.org
+# @Version : $Id$
+
+import json
+from proccessor.mProccessor import MProccessor
+from proccessor.comment_MProccessor import Comment_MProccessor
+from proccessor.follow_MProccessor import Follow_MProccessor
+from proccessor.reply_MProccessor import Reply_MProccessor
+from proccessor.postAction_MProccessor import PostAction_MProccessor
+from proccessor.authority_MProccessor import Authority_MProccessor
+from proccessor.boutique_MProccessor import Boutique_MProccessor
+from proccessor.group_MProccessor import Group_MProccessor
+
+from proccessor.new_activity_message_proccessor import New_Activity_Message_Proccessor
+from proccessor.new_post_message_proccessor import New_Post_Message_Proccessor
+from proccessor.share_post_message_proccessor import Share_Post_Message_Proccessor
+from proccessor.activity_want_message_proccessor import Activity_want_Message_Proccessor
+from proccessor.like_post_message_proccessor import Like_Post_Message_Proccessor
+from proccessor.post_comment_message_proccessor import Post_Comment_Message_Proccessor
+from proccessor.activity_comment_message_proccessor import Activity_Comment_Message_Proccessor
+from proccessor.post_reply_message_proccessor import Post_Reply_Message_Proccessor
+from proccessor.activity_reply_message_proccessor import Activity_Reply_Message_Proccessor
+from proccessor.activity_reply_message_proccessor import Activity_Reply_Message_Proccessor
+from proccessor.user_follow_message_proccessor import User_Follow_Message_Proccessor
+from proccessor.boutique_message_proccessor import Boutique_Message_Proccessor
+from proccessor.activity_boutique_message_proccessor import Activity_Boutique_Message_Proccessor
+from proccessor.article_boutique_message_proccessor import Article_Boutique_Message_Proccessor
+
+from proccessor.activity_near_message_proccessor import Activity_Near_Message_Proccessor
+from proccessor.reward_post_message_proccessor import Reward_Post_Message_Proccessor
+from proccessor.order_message_proccessor import Order_Message_Proccessor
+from proccessor.activity_share_message_proccessor import Activity_Share_Message_Proccessor
+from proccessor.article_expert_message_proccessor import Article_Expert_Message_Proccessor
+from proccessor.activity_check_message_proccessor import Activity_Check_Message_Proccessor
+#from proccessor.activity_share_sms_message_proccessor import Activity_Share_Sms_Message_Proccessor
+from proccessor.article_share_message_proccessor import Article_Share_Message_Proccessor
+from proccessor.article_comment_message_proccessor import Article_Comment_Message_Proccessor
+from proccessor.goods_boutique_message_proccessor import Goods_Boutique_Message_Proccessor
+from proccessor.offical_recommend_message_proccessor import Offical_Recommend_Message_Proccessor
+from proccessor.weather_message_proccessor import Weather_Message_Proccessor
+import logging
+class MProccessorFactory:
+    @staticmethod
+    def  createMProccessor(message_event):
+        message_event_dic=json.loads(message_event, encoding="utf-8")
+        logging.info("message_type:"+message_event_dic["message_type"])
+        if message_event_dic["message_type"]=="like":
+            return Like_Post_Message_Proccessor(message_event_dic)
+
+        if message_event_dic["message_type"]=="share":
+            return Share_Post_Message_Proccessor(message_event_dic)
+
+        if message_event_dic["message_type"]=="send":
+            return New_Post_Message_Proccessor(message_event_dic)
+
+        if message_event_dic["message_type"]=="activity_want":
+            return Activity_want_Message_Proccessor(message_event_dic)
+
+        if message_event_dic["message_type"]=="activity_post":
+            return New_Activity_Message_Proccessor(message_event_dic)
+
+        if message_event_dic["message_type"]=="comment":
+            return Post_Comment_Message_Proccessor(message_event_dic)
+
+        if message_event_dic["message_type"]=="activity_comment":
+            return Activity_Comment_Message_Proccessor(message_event_dic)
+
+        if message_event_dic["message_type"] == "article_comment":
+            return Article_Comment_Message_Proccessor(message_event_dic)
+
+        if message_event_dic["message_type"]=="reply":
+            return Post_Reply_Message_Proccessor(message_event_dic)
+
+        if message_event_dic["message_type"]=="activity_reply":
+            return Activity_Reply_Message_Proccessor(message_event_dic)
+
+        if message_event_dic["message_type"]=="follow":
+            return User_Follow_Message_Proccessor(message_event_dic)
+
+        if message_event_dic["message_type"]=="boutique":
+            return Boutique_Message_Proccessor(message_event_dic)
+
+        if message_event_dic["message_type"]=="activity_boutique":
+            return Activity_Boutique_Message_Proccessor(message_event_dic)
+
+        if message_event_dic["message_type"]=="article_boutique":
+            return Article_Boutique_Message_Proccessor(message_event_dic)
+
+        if message_event_dic["message_type"]=="activity_near":
+            return Activity_Near_Message_Proccessor(message_event_dic)
+        if message_event_dic["message_type"]=="reward":
+            return Reward_Post_Message_Proccessor(message_event_dic)
+        if message_event_dic["message_type"] == "activity_order":
+            return Order_Message_Proccessor(message_event_dic)
+        if message_event_dic["message_type"] == "activity_share":
+            return Activity_Share_Message_Proccessor(message_event_dic)
+
+        if message_event_dic["message_type"] == "article_share":
+            return Article_Share_Message_Proccessor(message_event_dic)
+
+        # 攻略消息推送
+        if message_event_dic["message_type"] == "article_expert":
+            return Article_Expert_Message_Proccessor(message_event_dic)
+
+        # 活动审核通过给商家发短信/精品活动发信息
+        if message_event_dic["message_type"] == "activity_check_pass":
+            return Activity_Check_Message_Proccessor(message_event_dic)
+
+        if message_event_dic["message_type"]=="goods_boutique":
+            return Goods_Boutique_Message_Proccessor(message_event_dic)
+
+        if message_event_dic["message_type"]=="offical_recommend":
+            return Offical_Recommend_Message_Proccessor(message_event_dic)
+
+        if message_event_dic["message_type"]=="group":
+            return Group_MProccessor(message_event_dic)
+
+        if message_event_dic["message_type"]=="weather_push":
+            return Weather_Message_Proccessor(message_event_dic)
+        if message_event_dic.has_key("target"):
+            return Authority_MProccessor(message_event_dic)
+        else:
+            return None

@@ -1,0 +1,89 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# @Date    : 2015-05-18 17:41:52
+# @Author  : Your Name (you@example.org)
+# @Link    : http://example.org
+# @Version : $Id$
+from handler_baseHt import BaseHtHandler
+from log import get_logger
+import tornado.web
+from tornado.web import asynchronous
+from tornado.options import options
+import json
+import hashlib
+import datetime
+import hashlib
+from bson import ObjectId
+import random
+import time
+from log import get_logger
+from model.comment import Comment
+from model.activities import Activities
+import optionsSetting
+from utils.secret import *
+import traceback
+from utils.redis_client import RedisClient
+from utils.mongo_front import MongoFront
+from mongo_field_encoder import MongoFieldEncoder
+from model.user_following import UserFollowing
+from mongolog import MongoHandler
+from mongokit.helpers import totimestamp, fromtimestamp
+from utils.token_im import TokenService
+from tornado.httpclient import HTTPRequest
+from utils.mongo_client import MongoClient
+import pymongo
+from auth import requires_auth
+try:
+    from tornado.curl_httpclient import CurlAsyncHTTPClient as AsyncHTTPClient
+except ImportError:
+    from tornado.simple_httpclient import SimpleAsyncHTTPClient as AsyncHTTPClient
+log = get_logger()
+class FollowedListHandler(BaseHtHandler):
+    @requires_auth
+    @asynchronous
+    def get(self):
+        log.info("FollowedListHandler.post is called")
+
+        username_list = self.get_argument('username_list',None)
+
+        username_array=username_list.split(",")
+
+        lookup = {
+            "following":{"$in":username_array}
+        }
+        filter={
+            "_id":0,
+            "followed":1,
+            "following":1
+        }
+        # log.info("lookup:"+json.dumps(lookup,
+        #                   indent=2,
+        #                   ensure_ascii=False,
+        #                   cls=MongoFieldEncoder))
+        user_followed_cursor=options.dbconn.UserFollowing.find(lookup,filter)
+        user_followed_set={}
+        for user_followed in user_followed_cursor:
+            followed=user_followed["followed"]
+            following=user_followed["following"]
+            user_followed_array=user_followed_set.get(following,[])
+            user_followed_array.append(followed)
+            user_followed_set[following]=user_followed_array
+
+        response_array=[]
+        for key in  user_followed_set:
+            response_array.append(
+                {
+                    "username":key,
+                    "following_username":user_followed_set[key]
+                }
+            )
+
+        reponse_json={}
+        reponse_json["entities"]=response_array
+        response = json.dumps(reponse_json,
+                          indent=2,
+                          ensure_ascii=False,
+                          cls=MongoFieldEncoder)
+        # log.info("response:"+response)
+        self.write(response)
+        self.finish()

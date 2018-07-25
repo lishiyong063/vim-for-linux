@@ -1,0 +1,132 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# @Date    : 2015-05-18 17:41:52
+# @Author  : Your Name (you@example.org)
+# @Link    : http://example.org
+# @Version : $Id$
+from handler_baseHt import BaseHtHandler
+from log import get_logger
+import tornado.web
+from tornado.web import asynchronous
+from tornado.options import options
+import json
+import hashlib
+import datetime
+import hashlib
+import random
+import pymongo
+import time
+from log import get_logger
+from model.accounts_ht import Account_ht
+from model.posts import Post
+import optionsSetting
+from utils.secret import *
+import traceback
+from utils.redis_client import RedisClient
+from mongo_field_encoder import MongoFieldEncoder
+from mongolog import MongoHandler
+from mongokit.helpers import totimestamp, fromtimestamp
+from utils.token_im import TokenService
+from tornado.httpclient import HTTPRequest
+from utils.mongo_front import MongoFront
+from utils.mongo_im import MongoIm
+from utils.mongo_client import MongoClient
+from services.service_post import getPostList
+from services.service_activity import *
+from bson import ObjectId
+from auth import requires_auth
+try:
+    from tornado.curl_httpclient import CurlAsyncHTTPClient as AsyncHTTPClient
+except ImportError:
+    from tornado.simple_httpclient import SimpleAsyncHTTPClient as AsyncHTTPClient
+log = get_logger()
+class GroupSessionHandler(BaseHtHandler):
+    @asynchronous
+    @requires_auth
+    def get(self):
+        log.info("GroupSessionHandler.get is called")
+        condition_dic = json.loads(self.get_argument('condition',""),encoding="utf-8")
+
+        session_lookup={
+            "eventType" : "groupchat"
+        }
+        if condition_dic:
+            group_name = condition_dic.get("groupname", "")
+            to_array=[]
+            if group_name:
+                where={
+                    "groupname":group_name
+                }
+                group_cursor=MongoFront.find_all(where,"groups")
+                for group_obj in group_cursor:
+                    groupid=group_obj.get("groupid","")
+                    if groupid:
+                        to_array.append(groupid)
+
+            if to_array:
+                session_lookup["to"]={"$in":to_array}
+
+
+        # log.info("session_lookup:"+str(session_lookup))
+        # sort = [('status',pymongo.DESCENDING),('created', pymongo.DESCENDING)]
+        sort = [('created', pymongo.DESCENDING)]
+
+        curr = self.get_argument('curr',"")
+        limit=20
+        if curr=="":
+            session_cursor=MongoIm.find(session_lookup,"session_im",sort,0,limit)
+        else:
+            session_cursor=MongoIm.find(session_lookup,"session_im",sort,(int(curr)-1)*limit,limit)
+
+
+        log.info("session_cursor:"+str(session_cursor.count()))
+
+        session_array=[]
+        user_array=[]
+        group_id_array=[]
+        for session_obj in session_cursor:
+            from_username=session_obj["from"]
+            to_username=session_obj["to"]
+            user_array.append(from_username)
+            group_id_array.append(to_username)
+            session_array.append(session_obj)
+
+        where={
+            "username":{"$in":user_array}
+        }
+        user_list=MongoFront.find_all(where,"users")
+        user_dic={}
+        for user in user_list:
+            username=user["username"]
+            user_dic[username]=user
+
+        group_where = {
+            "groupid": {"$in": group_id_array}
+        }
+        group_list = MongoFront.find_all(group_where, "groups")
+        group_dic = {}
+        for group_obj in group_list:
+            groupid=group_obj.get("groupid","")
+            if groupid:
+                group_dic[groupid] = group_obj
+
+        session_user_list=[]
+        for session_obj in session_array:
+            from_username=session_obj["from"]
+            to_group=session_obj["to"]
+
+            if user_dic.has_key(from_username):
+                from_user=user_dic[from_username]
+                session_obj["from_user"]=from_user
+
+            if group_dic.has_key(to_group):
+                to_group_obj=group_dic[to_group]
+                session_obj["to_group"]=to_group_obj
+
+            session_user_list.append(session_obj)
+
+        response={}
+        response["entities"]=session_user_list
+        response["count"]=str(session_cursor.count())
+        self.write(json.dumps(response,indent=2, ensure_ascii=False,cls=MongoFieldEncoder))
+        self.finish()

@@ -1,0 +1,163 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# @Date    : 2014-12-05 15:45:20
+# @Author  : Your Name (you@example.org)
+# @Link    : http://example.org
+# @Version : $Id$
+
+from __future__ import division
+import tornado.web
+import urllib2
+import string
+from tornado.web import asynchronous
+from tornado.options import options
+import simplejson
+from services.service_buffer_ad import getBanner
+
+from mongokit import *
+from services.service_new_activities import *
+from mongokit.helpers import totimestamp, fromtimestamp
+import pymongo
+from utils.mongo_client import MongoClient
+from mongo_field_encoder import MongoFieldEncoder
+from handler_base import BaseHandler
+from auth import requires_auth
+from services.service_activity import *
+import traceback
+import json
+import bson
+from bson import ObjectId
+import datetime
+import time
+import random
+from log import get_logger
+from utils.redis_client import RedisClient
+from utils.gps_info import *
+from paramAuth import param_auth
+from distutils.version import LooseVersion
+import copy
+from services.service_ip_address import *
+log = get_logger()
+
+
+class ActivityCitysHandler(BaseHandler):
+    """
+        去哪儿钓城市列表
+    """
+    def __init__(self, application, request, **kwargs):
+        super(ActivityCitysHandler, self).__init__(application, request, **kwargs)
+
+    @asynchronous
+    @gen.coroutine
+    def get(self):
+        self.set_header('Content-Type', 'application/json; charset=UTF-8')
+        # 城市 图文 url
+        ip = self.get_argument("ip", self.getAddressIP)
+        loc_info = yield self.getCurrLoc()
+        center = [loc_info.get("lon"), loc_info.get("lat")]
+        citys = self.get_citys(center)
+        # 国内 or 海外
+        domestic_and_abpoad = self.get_domestic_and_abpoad()
+        response_dic = {"citys": citys,
+                        "banner": self.get_banner(),
+                        "domestic_and_abpoad": domestic_and_abpoad}
+        response = json.dumps(response_dic,
+                              indent=2,
+                              ensure_ascii=False,
+                              cls=MongoFieldEncoder)
+        self.write(response)
+        self.finish()
+
+    def get_citys(self, center):
+        """ 城市列表
+            根据距离(经纬度 LBS)来显示
+        """
+        limit = 10
+        where = {"type": "city", "activity_count": {"$gt": 0}}
+        where["location"] = {"$near": {"$geometry": {
+                                       "type": "Point",
+                                       "coordinates": center
+                                      },
+                            }}
+        city_list = []
+        try:
+            city_search = list(MongoClient.find_all(where, "activity_area").limit(limit)) or []
+        except Exception as e:
+            log.info('NewActivityListHandler.get Exception:%s' % e.message)
+            log.error(traceback.format_exc())
+            city_search = []
+
+        for city in city_search:
+            city_info = {}
+            city_info["thumbnail_image_url"] = city["thumbnail_image_url"]
+            city_info["name"] = city["area_name"]
+            city_info["id"] = str(city["_id"])
+            city_info["full_name"] = city["full_name"]
+            city_info["redirect_url"] = options.activity_detail_domain + "/activity_area/"+str(city["_id"])
+            city_list.append(city_info)
+
+        return city_list
+
+
+
+    def get_domestic_and_abpoad(self):
+        """ 海内外资料
+        """
+        result = [
+            {"url": options.activity_detail_domain + "/activity_province",
+             "name": "国内",
+             "inc": "DOMESTIC",
+            },
+            {"url": options.activity_detail_domain + "/activity_country",
+             "name": "海外",
+             "inc": "ABPOAD",
+            },
+        ]
+        return result
+
+
+
+    ####获取客户端经纬度：如果传过来经纬度，则使用传过来的经纬度
+    #######如果没有传入，则通过ip地址获取，如果再没有，则默认青岛
+    @gen.coroutine
+    def getCurrLoc(self):
+        try:
+            lon = self.get_argument("lon", "")
+            lat = self.get_argument("lat", "")
+
+            if lon =="" or  lat=="":
+                ip = self.getAddressIP()
+                if ip:
+                    loc = yield ipAddaressBelonge(ip)
+                    if loc:
+                        location = loc.get("location", {})
+                        if location:
+                            lng_tmp = location.get("lng", 0)
+                            lat_tmp = location.get("lat", 0)
+                            if lng_tmp and lat_tmp:
+                                lon, lat = lng_tmp, lat_tmp
+
+
+            ####如果根据IP地址无法获取经纬度，
+            ####则使用默认青岛的经纬度来查询数据
+            if lon == "" or lat == "":
+                lat=36.06623
+                lon=120.38299
+        except Exception as e:
+            log.info('Exception:%s' % e.message)
+            log.error(traceback.format_exc())
+        result = {
+            "lon": float(lon),
+            "lat": float(lat)
+        }
+        # log.info("result:"+str(result))
+        raise gen.Return(result)
+
+    def get_banner(self):
+        os, version = self.getClientVersion()
+        banner_ad_array = getBanner("activity_citys")
+        for banner_ad in banner_ad_array:
+            ziya_url = banner_ad.get("ziya_url", "")
+            if ziya_url and version and version >= "2.1.7":
+                banner_ad["onclick_url"] = ziya_url
+        return banner_ad_array

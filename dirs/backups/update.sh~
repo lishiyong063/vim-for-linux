@@ -1,0 +1,23 @@
+#!/bin/bash
+# 备份-删除30天以前的数据-更新项目代码-重启
+project_path=$(cd `dirname $0`; pwd)
+Prefix="${project_path##*/}"		    # 依靠当前目录名做备份前缀      
+Backups_dir="/mnt/app_backup/${Prefix}" #保存备份文件的目录
+Backup_dir='./'                         #获用户输入的源目录（需要备份的目录）
+Backup_date=`date +"%Y%m%d_%H%M%S"`     #获取当前时间作为备份文件名
+find $Backups_dir -mtime +30 -type f | xargs rm -f   # 删除30天之前的文件
+ls ${Backups_dir}
+if [ $? -ne 0 ];then
+    mkdir -p ${project_path}/${project_name} ${Backups_dir}/${Backup_date}
+    echo "正在创建备份目录......"
+fi
+cp -R ${project_path}/${project_name} ${Backups_dir}/${Backup_date}                                            # 复制目录不打包
+#tar zcvf ${Backups_dir}${Prefix}${Backup_date}.tar.gz * > /dev/null #打包压缩备份文件
+if [ $? -eq 0 ];then
+    echo "cp -r ${project_path}/${project_name} ${Backups_dir}/${Backup_date}   备份成功"                              
+else 
+    echo "cp -r ${project_path}/${project_name} ${Backups_dir}/${Backup_date}   备份失败"                              
+fi
+#echo "${Backups_dir}${Prefix}${Backup_date}.tar.gz" > ${Backups_dir}/backups.log #将备份文件位置目录写入日志文件
+svn up
+sh restart.sh

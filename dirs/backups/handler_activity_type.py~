@@ -1,0 +1,107 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# @Date    : 2015-05-18 17:41:52
+# @Author  : Your Name (you@example.org)
+# @Link    : http://example.org
+# @Version : $Id$
+from handler_baseHt import BaseHtHandler
+from log import get_logger
+import tornado.web
+from tornado.web import asynchronous
+from tornado.options import options
+import json
+import hashlib
+import datetime
+import hashlib
+from bson import ObjectId
+import random
+import time
+from log import get_logger
+from auth import requires_auth
+from model.advices import Advice
+from model.permissions_ht import Permissions_ht
+import optionsSetting
+from utils.secret import *
+import traceback
+from utils.redis_client import RedisClient
+from utils.mongo_front import MongoFront
+from mongo_field_encoder import MongoFieldEncoder
+from mongolog import MongoHandler
+from mongokit.helpers import totimestamp, fromtimestamp
+from utils.token_im import TokenService
+from tornado.httpclient import HTTPRequest
+from utils.mongo_client import MongoClient
+import pymongo
+
+try:
+    from tornado.curl_httpclient import CurlAsyncHTTPClient as AsyncHTTPClient
+except ImportError:
+    from tornado.simple_httpclient import SimpleAsyncHTTPClient as AsyncHTTPClient
+log = get_logger()
+class ActivityTypeHandler(BaseHtHandler):
+    @asynchronous
+    @requires_auth
+    def put(self):
+        log.info("ActivityTypeHandler.put:"+self.request.body)
+
+        body_dic = json.loads(self.request.body,encoding="utf-8")
+        activity_id = body_dic.get("activity_id",None)
+
+        response={}
+        if activity_id:
+            set_update_result={}
+            un_set_update_result={}
+
+            is_hot=body_dic.get("is_hot",None)
+            if is_hot:
+                set_update_result["hot"]=1
+            else:
+                un_set_update_result["hot"]=''
+
+            is_deepSea=body_dic.get("is_deepSea",None)
+            if is_deepSea:
+                set_update_result["deepSea"]=1
+            else:
+                un_set_update_result["deepSea"]=''
+
+            is_awaySea=body_dic.get("is_awaySea",None)
+            if is_awaySea:
+                set_update_result["awaySea"]=1
+            else:
+                un_set_update_result["awaySea"]=''
+
+            is_nearSea=body_dic.get("is_nearSea",None)
+            if is_nearSea:
+                set_update_result["nearSea"]=1
+            else:
+                un_set_update_result["nearSea"]=''
+
+            updated_value={}
+            if set_update_result:
+                updated_value["$set"]=set_update_result
+
+            if un_set_update_result:
+                updated_value["$unset"]=un_set_update_result
+
+            if updated_value:
+                where={
+                    "_id":ObjectId(activity_id)
+                }
+                activity=MongoFront.find_and_modify(where,updated_value,"activities")
+                response["entities"]=[activity]
+
+        self.write(json.dumps(response, indent=2, ensure_ascii=False,
+                              cls=MongoFieldEncoder))
+        self.finish()
+
+
+    def fire_response_bad_response(self):
+        """
+        返回登录请求错误响应
+        """
+        self.set_status(400)
+        response = {}
+        response["error"] = "invalid_grant"
+        response["error_description"] = "invalid username or password"
+        self.write(json.dumps(response, indent=2, ensure_ascii=False))
+        self.finish()

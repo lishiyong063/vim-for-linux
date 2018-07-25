@@ -1,0 +1,6 @@
+#!/bin/bash
+#!/bin/bash
+svn up
+lsof -i:8010 | grep LISTEN |awk '{print "kill -9 " $2}' | sh
+nohup python run_local.py &
+tail -f nohup.out

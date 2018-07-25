@@ -1,0 +1,73 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
+from __future__ import division
+from access_track import access_log
+import tornado.web
+from tornado.web import asynchronous
+from tornado.options import options
+
+from mongokit import *
+from mongokit.helpers import totimestamp, fromtimestamp
+import pymongo
+from mongo_field_encoder import MongoFieldEncoder
+from handler_base import BaseHandler
+from services.service_post import *
+from auth import requires_auth
+import traceback
+import json
+import bson
+from bson import ObjectId
+import datetime
+import time
+import random
+from log import get_logger
+from utils.mongo_client import MongoClient
+from model.posts import Post
+from model.user_collect_post import User_collect_post
+from utils.redis_client import RedisClient
+from services.service_activity import *
+from services.service_fishing_place import getPlaceList
+log = get_logger()
+
+class MyPlacePostHandler(BaseHandler):
+    """
+        我的钓场收藏处理类
+    """
+    def __init__(self, application, request, **kwargs):
+        super(MyPlacePostHandler, self).__init__(application, request, **kwargs)
+
+    @asynchronous
+    @access_log
+    @requires_auth
+    def get(self):
+        """
+            type 我上传的钓场
+        """
+        log.info('MyPlacePostHandler.get is called'+str(self.request.arguments))
+        username = self.username
+
+        lookup = {
+            'username': username,
+        }
+
+        request_cursor = self.get_argument('cursor', '')
+        lookup["status"] = 1
+        # 时间
+        if request_cursor != '':
+            timestamp = fromtimestamp(int(request_cursor))
+            lookup["created"] = {'$lt': timestamp}
+
+        fishing_place_array, place_cursor = getPlaceList(lookup, sort_key='created')
+
+        response_dic = {}
+        response_dic["entities"] = fishing_place_array
+
+        if cursor:
+            response_dic["cursor"] = place_cursor
+        response = json.dumps(response_dic,
+                              indent=2,
+                              ensure_ascii=False,
+                              cls=MongoFieldEncoder)
+        self.write(response)
+        self.finish()

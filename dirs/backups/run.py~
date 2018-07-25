@@ -1,0 +1,437 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# @Date    : 2015-14-16 20:26:41
+# @Author  : Your Name (you@example.org)
+# @Link    : http://example.org
+# @Version : $Id$
+
+import tornado.ioloop
+import tornado.web
+import tornado.httpserver
+import optionsSetting
+from tornado.options import options
+tornado.options.parse_command_line()
+from services.country_code import *
+from services.service_credit import *
+from handler_permission import PermissionHandler
+from utils.redis_client import RedisClient
+from utils.mongo_client import MongoClient
+from utils.mongo_slave_client import MongoSlaveClient
+from utils.mongo_weather_client import MongoWeatherClient
+
+from role.reload_role import *
+from utils.token_im import get_management_token
+from handler_login import LoginHandler
+from handler_register import RegisterHandler
+from handler_deleteUser import DeleteUserHandler
+from handler_loginByPlatform import LoginByPlatformHandler
+from handler_registerCode import RegisterCodeHandler
+from handler_updatePWDByOldPWD import UpdatePWDByOldPWDHandler
+from handler_updatePWDByCheckCode import UpdatePWDByCheckCodeHandler
+from handler_gps import GPSHandler
+from handler_mobileExist import MobileExistCheckHandler
+from handler_following import FollowingHandler
+from handler_FollowingExist import FollowingExistHandler
+from handler_inform import InformHandler
+from handler_user import UserHandler
+from handler_posts import PostHandler
+from handler_comment import CommentHandler
+from handler_reply import ReplyHandler
+from handler_great_posts import GreatPostsHandler
+from handler_user_posts import UserPostsHandler
+from handler_like_posts import PostLikeHandler
+from handler_collect_posts import PostCollectHandler
+from handler_user_join_posts import UserJoinPostHandler
+from handler_share_posts import PostShareHandler
+from handler_share_activity import ActivityShareHandler
+from handler_counter import CounterHandler
+from handler_user_pic import UserPicHandler
+from handler_appClient import AppClientHandler
+from handler_noReadMessages import NoReadMessagesHandler
+from handler_userSearch import UserSearchHandler
+from handler_advice import AdviceHandler
+from handler_shared_post import SharedPostHandler
+from handler_versions import VersionsHandler
+from handler_test import TestHandler
+from handler_activity import ActivityHandler
+from handler_activity_list import ActivityListHandler
+from handler_want import WantGoHandler
+from handler_user_activities import UserActivitiesHandler
+from handler_geocoder import GeocoderHandler
+from handler_post_activity import PostsActHandler
+from handler_post_activity_ad import PostsActADHandler
+from handler_great_post_activity import GreatPostsActHandler
+from handler_coordinate import CoordinateHandler
+from handler_sms_batch import SMSBatchHandler
+from handler_user_device import UserDeviceHandler
+from handler_search_Keyword import SearchByKeywordHandler
+from handler_search_LBS import SearchByLBSHandler
+from handler_user_near import UserNearHandler
+from handler_post_near import PostNearHandler
+from handler_batch_register import BatchRegisterHandler
+from handler_address_favorite import AddressFavoriteHandler
+from handler_im_deactivate import ImDeactivateHandler
+from handler_geocoder_by_gaode import GeocoderByGaodeHandler
+from handler_geocoder_by_gaode2 import GeocoderByGaode2Handler
+from handler_display_posts import PostDisplayHandler
+from handler_startup import StartUpHandler
+from handler_articles import ArticlesHandler
+from handler_user_articles import UserArticlesHandler
+from handler_article import ArticleHandler
+from handler_report_error import ReportErrorHandler
+from handler_look_activities import LookActivitiesHandler
+from handler_create_join_activities import CreateJoinActivitiesHandler
+
+from handler_article_inform import ArticleInformHandler
+from handler_activity_display import ActivityDisplayHandler
+from handler_display_paging import DisplayPagingHandler
+from handler_reward import RewardHandler
+from handler_credits_history import CreditsHistoryHandler
+from handler_score_history import ScoreHistoryHandler
+from handler_rich import RickHandler
+from handler_posts_video import PostsVideoHandler
+from handler_share_info import ShareInfoHandler
+from handler_loginByPlatform_mobile import LoginByPlatformMobileHandler
+from handler_registerByPlatform import RegisterByPlatformHandler
+from handler_friend_recommend import FriendRecommendHandler
+from handler_post_recommend import PostRecommendHandler
+from handler_tools import ToolHandler
+from handler_user_tools import UserToolsHandler
+from handler_collect_tools import CollectToolsHandler
+from handler_activities import ActivitiesHandler
+from handler_mobile_binding import MobileBindingHandler
+from handler_register_code_audio import RegisterCodeAudioHandler
+from handler_my_wallet import MyWalletHandler
+from handler_my_tickets import MyTicketsHandler
+from handler_refresh_banner import RefreshBannerHandler
+from handler_app_icon import AppIconHandler
+from handler_wechat_signature import WeixinSignatureHandler
+from handler_activity_apply import ActivityApplyHandler
+from utils.banner import *
+from services.service_post_list_place_property import *
+from services.service_tool_list_place_property import *
+from services.service_article_list_place_property import *
+from log import get_logger
+from handler_token_user import TokenUserHandler
+import os
+from handler_new_activity_list import NewActivityListHandler
+from handler_new_activities import NewActivitiesHandler
+from services.activity_area import *
+from handler_collect_articles import CollectArticlesHandler
+from handler_post_type_order import PostTypeOrderHandler
+from handler_new_articles import NewArticlesHandler
+from handler_new_tools import NewToolHandler
+from handler_my_article import MyArticleHandler
+from handler_follow_recommend import FollowRecommendHandler
+from handler_tool_category import ToolsCategoryHandler
+from handler_commen_inform import InformCommonHandler
+from handler_score_task import ScoreTaskHandler
+from handler_user_rank import RankIndexHandler
+from handler_post_url import PostURLHandler
+from handler_tool_url import ToolURLHandler
+from handler_product_url_detail import ProductURLDetailHandler
+from handler_release_ad import ReleaseAdHandler
+from handler_new_app_icon import NewAppIconHandler
+from handler_collect_activity import CollectActivityHandler
+from handler_recently_interact_users import RecentlyInteractUsersHandler
+from handler_create_scan_activities import CreateScanActivitiesHandler
+from handler_new_advice import NewAdviceHandler
+from handler_new_startup import NewStartUpHandler
+from handler_taobo_product_search import TaobaoProductSearchHandler
+from handler_post_list import PostListHandler
+from handler_tool_list import  ToolListHandler
+from handler_at_list_posts import  AtListHandler
+from services.area_meta_info import *
+from handler_search import SearchHandler
+from handler_FaceU import FaceUHandler
+from handler_MVResource import MVResourceHandler
+from handler_MusicResource import MusicResourceHandler
+from handler_CloudMusicResource import CloudMusicResourceHandler
+from handler_getzimu3 import GetZiMu3Handler
+from handler_getcaption2 import GetCapTion2
+from handler_getfont3 import GetFont3
+from handler_user_act import UserActHandler
+from handler_user_act_message import UserActMessageHandler
+from utils.biz_user_input import *
+from services.article_global_continent import initContinent
+from handler_appeal import AppealHandler
+from handler_fishing_place import FishingPlaceHandler
+from handler_video_time import VideoTimeHandler
+from handler_phone_click import PhoneClickHandler
+from handler_article_send import ArticleSendHandler
+from handler_fishing_shop import FishingShopHandler
+from handler_city import CityHandler
+from services.city_location import *
+from handler_guanzhu_list import GuanZhuListHandler
+from handler_tansuo_list import TanSuoListHandler
+from handler_jingcai_list import JingCaiListHandler
+from handler_local_post_list import LocalPostListHandler
+from handler_recommend_follow import RecommendFollowHandler
+from handler_refresh_sort_post import RefreshSortPostHandler
+from handler_tansuo_user_list import TansuoUserListHandler
+from utils.sort_post import get_sort_posts
+from handler_user_interest import UserInterestHandler
+from handler_new_jingcai_list import NewJingCaiListHandler
+from handler_new_tansuo_list import NewTanSuoListHandler
+from handler_tansuo_post import TanSuoPostHandler
+from handler_tansuo_route import TanSuoRouteHandler
+from handler_qiniu_notify import QiniuNotifyHandler
+from handler_recommend import RecommendHandler
+from handler_fishing_friend import FishingFriendHandler
+from handler_fishing_top import FishingTopHandler
+from handler_fishing_port import FishingPortHandler
+from handler_fishing_map import  FishingMapHandler
+from handler_fishing_tg import FishingTgHandler
+from handler_collect_shop import ShopCollectHandler
+from handler_collect_place import PlaceCollectHandler
+from handler_my_post_place import MyPlacePostHandler
+from handler_my_post_shop import MyShopPostHandler
+from handler_contactlist import ContactListHandler
+from handler_fishing_post_list import FishingPostListHandler
+from handler_fishing_place_upimg import FishingPlaceUpImgHandler
+from handler_fishing_place_comment import FishingPlaceComment
+from handler_fishing_shop_comment import FishingShopComment
+from handler_fishing_follow_list import FishingFollowListHandler
+from handler_fishing_article_list import FishingArticleListHandler
+
+log = get_logger()
+
+
+def main():
+
+    handlers = [
+         (r"/test", TestHandler),
+         (r"/management/permissions", PermissionHandler),        ##权限管理
+         (r"/register", RegisterHandler),  ##用户注册
+         (r"/login", LoginHandler),
+         (r"/loginByPlatform",LoginByPlatformHandler),   ##第三方登录
+         (r"/sms/register/codes", RegisterCodeHandler),      ##验证码发送、校验
+         (r"/updatePWDByOldPWD",UpdatePWDByOldPWDHandler),   ##通过用户的旧密码重置密码
+         (r"/updatePWDByCheckCode",UpdatePWDByCheckCodeHandler) ,  ##通过通过手机验证码重置密码
+         (r"/user/gps", GPSHandler),         ##上传gps
+         (r"/user/mobile_exist", MobileExistCheckHandler), ##检查手机号是否注册
+         (r"/following",FollowingHandler),      #关注
+         (r"/isFollowing",FollowingExistHandler),      #判断是否存在关注关系
+         (r"/inform", InformHandler),     #举报
+         (r"/inform_common", InformCommonHandler),  # 举报
+         (r"/users(/.*)?", UserHandler),     #用户接口
+         (r"/posts(/.*)?", PostHandler),     ##发渔获，获取渔获详情
+         (r"/comment", CommentHandler),     ##评论
+         (r"/reply", ReplyHandler),     ##批量回复
+         (r"/like", PostLikeHandler),     #帖子点赞
+         (r"/collect", PostCollectHandler),     #帖子收藏,取消收藏，收藏列表
+         (r"/place_collect", PlaceCollectHandler),     #钓场收藏,取消收藏，收藏列表
+         (r"/shop_collect", ShopCollectHandler),     #渔具店收藏,取消收藏，收藏列表
+         (r"/great_posts", GreatPostsHandler),     #精华贴列表
+         (r"/userPosts",UserPostsHandler),          ##获取指定用户的渔获
+         (r"/join_posts",UserJoinPostHandler),       ##用户参与的帖子的列表
+         (r"/post_share",PostShareHandler) ,         ##用户分享帖子
+         (r"/counter",CounterHandler),          ##计数器接口
+         (r"/user_pic", UserPicHandler),     #用户相册列表
+         (r"/advices", AdviceHandler),     #意见反馈
+         (r"/appClientInfos",AppClientHandler),   ##客户端ID 绑定或解绑
+         (r"/noReadMessages",NoReadMessagesHandler),   ##客户端ID 绑定解绑
+         (r"/user/search",UserSearchHandler ),     #用户搜索
+         (r"/sharedpost(/.*)?", SharedPostHandler),     #获取分享的帖子内容接口
+         (r"/activity", ActivityHandler),     #活动接口
+         (r"/want_go", WantGoHandler),     #活动想去接口
+         (r"/versions(/.*)?", VersionsHandler),     #获取某个版本是否可用
+         (r"/userActivities", UserActivitiesHandler),     #用户活动列表
+         (r"/geocoder",GeocoderHandler),        #逆地址解析
+         (r"/posts_act", PostsActHandler),     #改版最新渔获接口
+         (r"/great_posts_act",GreatPostsActHandler),        #改版精品渔获接口
+         (r"/coordinate",CoordinateHandler),        #改版上传gps接口
+         (r"/sms_batch", SMSBatchHandler),      #批量发短信
+         (r"/user_device", UserDeviceHandler),      #上传用户设备信息
+         (r"/searchByKeyword", SearchByKeywordHandler),      #根据关键词搜索地名
+         (r"/searchByLBS", SearchByLBSHandler),      #根据经纬度搜索周边地点
+         (r"/user_near", UserNearHandler),      #根据经纬度搜索附近的钓友
+         (r"/post_near", PostNearHandler),     #根据经纬度搜索附近的渔获
+         (r"/batch_register", BatchRegisterHandler),
+         (r"/address_favorite", AddressFavoriteHandler),  ####天气地址收藏
+         (r"/im_deactivate", ImDeactivateHandler), #post环信禁用，put环信解禁
+         (r"/geocoder1",GeocoderByGaodeHandler),        #逆地址解析
+         (r"/display",PostDisplayHandler),        #获取活动浏览用户
+         (r"/startup",StartUpHandler),        #启动页
+         # (r"/articles(/.*)?", ArticlesHandler),     ##发攻略，获取攻略详情
+         (r"/articles(/.*)?", NewArticlesHandler),     ##发攻略，获取攻略详情
+         (r"/userArticles",UserArticlesHandler),          ##获取指定用户的渔获
+         (r"/article(/.*)?",ArticleHandler),   ##文章
+         (r"/lookActivities", LookActivitiesHandler),     #用户活动列表,创建的和看过的
+         (r"/article_inform", ArticleInformHandler),     #文章通知
+         (r"/activity_display", ActivityDisplayHandler),     #活动新接口
+         (r"/display_paging", DisplayPagingHandler),     #活动新接口
+         (r"/reward", RewardHandler),     #打赏接口
+         (r"/credits_history", CreditsHistoryHandler),
+         (r"/score_history", ScoreHistoryHandler),
+         (r"/rich", RickHandler),#土豪接口
+         (r"/posts_video", PostsVideoHandler),#发渔获视频
+         (r"/share_info", ShareInfoHandler),#分享信息
+         (r"/geocoder2",GeocoderByGaode2Handler),        #逆地址解析,和高德返回的不同是，address是由province,city,area拼的
+         (r"/loginByPlatform_mobile", LoginByPlatformMobileHandler), ##新版第三方登录接口
+         (r"/registerByPlatform", RegisterByPlatformHandler), ##新版第三方注册接口
+         (r"/friend_recommend", FriendRecommendHandler),
+         (r"/tools", ToolHandler),  # 装备
+         (r"/new_tools", NewToolHandler),  # 新版装备（用户筛选编辑）
+         (r"/user_tools", UserToolsHandler),  #用户的装备
+         (r"/collect_tools", CollectToolsHandler),  #用户的装备
+         (r"/activities(/.*)?", ActivitiesHandler), #热门，深海，远海活动
+         (r"/post_recommend", PostRecommendHandler), #渔获推荐
+         (r"/activity_list", ActivityListHandler),
+         (r"/activity_share",ActivityShareHandler),  ##活动分享回调
+         (r"/mobile_binding",MobileBindingHandler),  ##绑定手机号
+         (r"/register_code_audio", RegisterCodeAudioHandler),   ###语音验证码
+         (r"/my_wallet", MyWalletHandler),     ##我的钱包
+         (r"/my_tickets", MyTicketsHandler),     ##我的钓鱼券
+         (r"/refresh_banner", RefreshBannerHandler),     ##banner刷新
+         (r"/createAndJoinActivities", CreateJoinActivitiesHandler),     #用户活动列表,创建的和报名的
+         (r"/appicon", AppIconHandler),     #app 底部5个按钮图片配置
+         (r"/weixin_sign", WeixinSignatureHandler), # 通过 request_url 参数, 来获取微信的签名信息
+         (r"/token_user", TokenUserHandler), # 根据token获取用户详细信息
+         (r"/new_activity_list", NewActivityListHandler),  ###新版活动列表
+         (r"/new_activities(/.*)?", NewActivitiesHandler), #新版活动列表:热门，深海，远海活动
+         (r"/activity_apply", ActivityApplyHandler),  # 活动接口
+         (r"/posts_with_act_ad", PostsActADHandler),  # 插入广告、活动的渔获列表接口
+         (r"/post_list_custom", PostsActADHandler),  # 可以根据用户选择优先渔获类型返回渔获列表接口
+         (r"/activity_list_custom", NewActivityListHandler),  # ##可以根据用户选择优先活动类型返回活动列表接口
+         (r"/collect_articles(/.*)?", CollectArticlesHandler),  # 收藏攻略
+         (r"/filter_order", PostTypeOrderHandler),  # 渔获类别排序
+         (r"/my_article(/.*)?",ArticleSendHandler),  # app端文章发布接口
+         (r"/follow_recommend",FollowRecommendHandler),  ###关注推荐接口
+         (r"/tools/category",ToolsCategoryHandler),     ###获取装备分类列表
+         (r"/score_task", ScoreTaskHandler),  ###贡献
+         (r"/rank_index", RankIndexHandler),  ###获取榜单
+         (r"/product_url_in_post",PostURLHandler),  ####当前用户发渔获是否能带链接
+         (r"/product_url_in_tool", ToolURLHandler),  ####当前用户发渔获是否能带链接
+         (r"/product_url_detail", ProductURLDetailHandler),  ####商品链接解析类
+         (r"/ad", ReleaseAdHandler),  ###发布页广告
+         (r"/new_app_icon", NewAppIconHandler),  ###新版APP按钮样式
+         (r"/collect_activity(/.*)?", CollectActivityHandler),  # 收藏活动
+         (r"/recently_users", RecentlyInteractUsersHandler),  ###最近联系人接口
+         (r"/createAndScanActivities", CreateScanActivitiesHandler),  # 用户活动列表,创建的和浏览的
+         (r"/new_advice", NewAdviceHandler),    #新用户反馈
+         (r"/new_startup", NewStartUpHandler),  #新启动页广告
+         (r"/taobaoProductSearch", TaobaoProductSearchHandler),  # 淘宝商品搜索
+         (r"/post_list", PostListHandler),  # 渔获列表
+         (r"/tool_list", ToolListHandler),  # 装备列表
+         (r"/at_list", AtListHandler),   #at列表
+         (r"/search", SearchHandler),   #搜索服务
+         (r"/FaceU", FaceUHandler),  #FaceU
+         (r"/MVResource", MVResourceHandler),  #MVResource
+         (r"/MusicResource", MusicResourceHandler),  #MusicResource
+         (r"/CloudMusicResource", CloudMusicResourceHandler),  #CloudMusicResource
+         (r"/getzimu3", GetZiMu3Handler),  #GetZiMu3Handler
+         (r"/getcaption2", GetCapTion2),  #GetCapTion2
+         (r"/getfont3", GetFont3),  #GetFont3
+         (r"/user_act", UserActHandler),  #行为接口
+         (r"/user_act_message", UserActMessageHandler),  #获取消息弹框列表
+         (r"/appeal", AppealHandler),  #用户申诉
+         (r"/fishing_place(/.*)?", FishingPlaceHandler),  #钓场列表
+         (r"/video_time", VideoTimeHandler),  #攻略视频时长控制
+         (r"/phone_click", PhoneClickHandler),  ##记录用户点击电话信息
+         (r"/fishing_shop(/.*)?", FishingShopHandler),  # 渔具店列表
+         (r"/jingcai", JingCaiListHandler),  # 精彩列表
+         (r"/tansuo", TanSuoListHandler),    # 探索列表
+         (r"/guanzhu", GuanZhuListHandler),  # 关注列表
+         (r"/localPostList", LocalPostListHandler),  # 90天本地渔获
+         (r"/recommend_follow", RecommendFollowHandler),  # 推荐用户
+         (r"/city", CityHandler), ##同城
+         (r"/refresh_sort_post", RefreshSortPostHandler), ##新版post排序
+         (r"/tansuo_user_list", TansuoUserListHandler), ##探索用户列表
+         (r"/user_interest", UserInterestHandler), ##用户兴趣
+         (r"/new_jingcai", NewJingCaiListHandler), ###新精彩接口
+         (r"/new_tansuo", NewTanSuoListHandler),  ###新探索接口
+         (r"/tansuo_post", TanSuoPostHandler),  ###探索渔获接口
+         (r"/tansuo_list", TanSuoRouteHandler),  ###探索路由
+         (r"/qiniu_notify", QiniuNotifyHandler),  ###七牛回调
+         (r"/recommend", RecommendHandler),  ###推荐
+         (r"/report_error", ReportErrorHandler),  ###渔具店钓场报错
+         (r"/my_post_place", MyPlacePostHandler),  ###我上传的钓场
+         (r"/my_post_shop", MyShopPostHandler),  ###我上传的渔具店
+         (r"/fishing_friend", FishingFriendHandler),  ###附近钓友
+         (r"/fishing_top", FishingTopHandler),  ###附近钓友 贡献值排行
+         (r"/fishing_port", FishingPortHandler),  ###附近港口
+         (r"/fishing_map", FishingMapHandler),  ###探索地图
+         (r"/tg", FishingTgHandler),  ###ADHUB广告
+         (r"/cl", ContactListHandler),  ###保存通讯录
+         (r"/fishing_post_list", FishingPostListHandler),  ###新版渔获列表
+         (r"/place_img", FishingPlaceUpImgHandler),  ###上传钓场图片
+         (r"/place_comment", FishingPlaceComment),  ###上传钓场评论
+         (r"/shop_comment", FishingShopComment),  ###上传渔具店评论
+         (r"/fishing_follow_list", FishingFollowListHandler),  ###新版关注列表
+         (r"/fishing_article_list", FishingArticleListHandler),  ###新攻略列表
+    ]
+    loadCountryCode()
+    loadCountryCodeCountryNameMap()
+
+    initAreaCode()
+
+    #mongo初始化
+    MongoClient.init()
+    MongoSlaveClient.init()
+    MongoWeatherClient.init()
+
+    ##redis 初始化
+    log.info("init redis client")
+    RedisClient.setex("hello",15,"helloworld")
+    str1=RedisClient.get("hello")
+    log.info("init redis success:"+str1)
+    log.info("options.port:"+str(options.port))
+
+      ##初始化权限数据
+    reloadRoles()
+
+    loadBizUser()
+
+    # 获取管理员token
+    get_management_token()
+
+    # 金币商城规则初始化
+    credtis_rule_init()
+
+    #banner初始化
+    get_banner()
+
+    #新版sort post初始化
+    get_sort_posts()
+
+    # 加载渔获筛选列表filter
+    loadPostListPlaceProperty()
+
+    # 加载装备筛选列表filter
+    loadToolListPlaceProperty()
+
+    # 加载攻略筛选列表filter
+    loadArticleListPlaceProperty()
+
+    ###加载活动片区
+    initActivityArea()
+
+    ###加载环球钓的洲信息
+    initContinent()
+
+     # 初始化经纬度对应城市
+    initCityLocation()
+
+    setting = dict(
+    template_path=os.path.join(os.path.dirname(__file__), "templates"),
+    static_path=os.path.join(os.path.dirname(__file__),"static"),
+    #  autoscaping=None,
+    # debug=True
+      )
+    app = tornado.web.Application(handlers=handlers,**setting)
+    # for h in app.handlers:
+    #     print("h:"+str(h))
+    #     for e in h[1]:
+    #         print(e._path, e.handler_class)
+    #         print("e:"+str(e))
+    #         # print("e-target:" + str(e.target))
+
+    http_server = tornado.httpserver.HTTPServer(app,xheaders=True)
+    http_server.listen(options.port)
+    tornado.ioloop.IOLoop.instance().start()
+
+
+if __name__ == '__main__':
+    main()
+

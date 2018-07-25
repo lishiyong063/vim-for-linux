@@ -1,0 +1,195 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# @Date    : 2015-05-18 17:41:52
+# @Author  : Your Name (you@example.org)
+# @Link    : http://example.org
+# @Version : $Id$
+from handler_baseHt import BaseHtHandler
+from log import get_logger
+import tornado.web
+from tornado.web import asynchronous
+from tornado.options import options
+import json
+import hashlib
+import datetime
+import hashlib
+from bson import ObjectId
+import random
+import time
+from log import get_logger
+from model.advices import Advice
+from model.permissions_ht import Permissions_ht
+import optionsSetting
+from services.service_activity import *
+from utils.secret import *
+import traceback
+from utils.redis_client import RedisClient
+from utils.mongo_front import MongoFront
+from mongo_field_encoder import MongoFieldEncoder
+from mongolog import MongoHandler
+from mongokit.helpers import totimestamp, fromtimestamp
+from utils.token_im import TokenService
+from tornado.httpclient import HTTPRequest
+from utils.mongo_client import MongoClient
+import pymongo
+from auth import requires_auth
+from services.service_xcx import refresh_front_xcx
+
+try:
+    from tornado.curl_httpclient import CurlAsyncHTTPClient as AsyncHTTPClient
+except ImportError:
+    from tornado.simple_httpclient import SimpleAsyncHTTPClient as AsyncHTTPClient
+log = get_logger()
+class NewDeleteActivityHandler(BaseHtHandler):
+    '''
+    撤销删除
+    '''
+    @requires_auth
+    @asynchronous
+    def put(self):
+        log.info("NewDeleteActivityHandler.put")
+        try:
+            body_dic = json.loads(self.request.body,encoding="utf-8")
+            post_id = body_dic.get("post_id")
+            lookup = {"_id": ObjectId(post_id)}
+            updated={
+                "$unset":{
+                    "pre_delete": '',
+                    "pre_delete_content":'',
+                    "deleted":'',
+                    "pre_delete_history":""
+                },
+                "$set":{
+                  "status":1
+                }
+            }
+            MongoFront.update(lookup,updated,"activities")
+            self.finish()
+        except Exception as e:
+            log.info('DeleteActivityHandler.put Exception:%s' % e.message)
+            log.error(traceback.format_exc())
+            self.fire_response_bad_request(key_required=e.message)
+            return
+
+    '''
+    申请删除，在活动列表页面
+    '''
+    @requires_auth
+    @asynchronous
+    def post(self):
+        log.info("NewDeleteActivityHandler.post:"+self.request.body)
+        try:
+            body_dic = json.loads(self.request.body,encoding="utf-8")
+            post_id = body_dic.get("post_id")
+            pre_delete_content =  body_dic.get("pre_delete_content")
+            lookup = {"_id": ObjectId(post_id)}
+            pre_delete_history = [{"act":"apply","actor":self.username,"created":datetime.datetime.utcnow()}]
+            option = {'$set':{'pre_delete':True,'pre_delete_content':pre_delete_content,"pre_delete_history":pre_delete_history}}
+            MongoFront.update(lookup, option, 'activities')
+            self.finish()
+        except Exception as e:
+            log.info('DeleteActivityHandler.delete Exception:%s' % e.message)
+            log.error(traceback.format_exc())
+            self.fire_response_bad_request(key_required=e.message)
+            return
+
+            
+        
+        
+        
+    '''
+    删除，在删除页面
+    '''
+    @requires_auth
+    @asynchronous
+    def delete(self):
+        log.info("NewDeleteActivityHandler.delete")
+        is_success=False
+        post_id = ""
+        lookup_want = {}
+        content = ""
+        post_id_ary = []
+        lookup = {}
+        try:
+            content = self.get_argument('content',"")
+            post_id = self.get_argument("post_id")
+            post_id_ary = post_id.split(",")
+            delete_ary = [ObjectId(x)  for x in post_id_ary]
+            option = {'$set':{'deleted':True,'status':4},
+                      "$push":{
+                        "pre_delete_history":{"act":"operate","actor":self.username,"created":datetime.datetime.utcnow()}
+                        }
+                      }
+            lookup = {'_id': {'$in':delete_ary}}
+            lookup_want = {"post_id":{"$in":post_id_ary}}
+            MongoFront.update(lookup, option, 'activities')
+            self.finish()
+            is_success=True
+        except Exception as e:
+            log.info('DeleteActivityHandler.delete Exception:%s' % e.message)
+            log.error(traceback.format_exc())
+            self.fire_response_bad_request(key_required=e.message)
+            return
+
+        if is_success:
+            option = {'$set':{'deleted':True}}
+            MongoFront.update(lookup_want,option,"user_go_activity")
+            
+             #消息推送
+            if content!=None:
+                post_ary = self.getPosts(lookup)
+                for post in post_ary:
+                    to_usernames = [post["actor"]["username"]]
+                    message_event = {}
+                    message_event["message_type"] = "activity_delete"
+                    message_event["target"] = "apoint"
+                    message_event["content"] = content
+                    message_event["to_usernames"] = to_usernames
+                    message_event = json.dumps(message_event,
+                                      indent=2,
+                                      ensure_ascii=False,
+                                      cls=MongoFieldEncoder)
+                    queue_name=options.redis_queue_message_event
+                    log.info("insert queue:%s"%queue_name)
+                    log.info("insert message_event:%s"%message_event)
+                    result =RedisClient.rpush(queue_name,message_event)
+
+        #删除小程序的活动
+        self.check_is_expired_mina(post_id)
+
+                    
+                    
+                    
+                    
+                    
+    def getPost(self,id):
+        lookup = {"_id":ObjectId(id)}
+        filters = {"page":1,"content":1,"actor":1,"_id":0}
+        post = MongoFront.find_one(lookup,"activities",filters)
+        return post
+
+    def getPosts(self,lookup):
+        filters = {"page":1,"content":1,"actor":1,"_id":0}
+        posts = MongoFront.finds(lookup,"activities",filters)
+        posts_ary = []
+        for post in posts:
+            posts_ary.append(post)
+        return posts_ary
+
+    def check_is_expired_mina(self, activity_id):
+        result_num = 0
+        mina_result = list(MongoFront.find_all({}, "xcx_activiy_list_congfig"))
+        for mina in mina_result:
+            activity_id_list = mina.get("activity_array", [])
+            if activity_id in activity_id_list:
+                activity_id_list.remove(activity_id)
+                result_num += 1
+                update_where = {
+                    "_id": ObjectId(mina["_id"])
+                }
+                update = {
+                    "$set": {"activity_array": activity_id_list}
+                }
+                MongoFront.update(update_where, update, "xcx_activiy_list_congfig")
+        if result_num > 0:
+            refresh_front_xcx()

@@ -1,0 +1,240 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# @Date    : 2015-05-18 17:41:52
+# @Author  : Your Name (you@example.org)
+# @Link    : http://example.org
+# @Version : $Id$
+from handler_baseHt import BaseHtHandler
+from log import get_logger
+import tornado.web
+from tornado.web import asynchronous
+from tornado.options import options
+import json
+import hashlib
+import datetime
+from bson import ObjectId
+import hashlib
+import random
+import pymongo
+import time
+from log import get_logger
+from model.accounts_ht import Account_ht
+from model.users import Users
+import optionsSetting
+import datetime
+import  time
+from utils.secret import *
+import traceback
+from utils.redis_client import RedisClient
+from mongo_field_encoder import MongoFieldEncoder
+from mongolog import MongoHandler
+from mongokit.helpers import totimestamp, fromtimestamp
+from utils.token_im import TokenService
+from tornado.httpclient import HTTPRequest
+from utils.mongo_client import MongoClient
+from utils.mongo_front import MongoFront
+from auth import requires_auth
+import re
+import urlparse
+import urllib
+from services.service_fishing_place import get_image_info
+
+try:
+    from tornado.curl_httpclient import CurlAsyncHTTPClient as AsyncHTTPClient
+except ImportError:
+    from tornado.simple_httpclient import SimpleAsyncHTTPClient as AsyncHTTPClient
+log = get_logger()
+
+
+class VideoProgramsManagementHandler(BaseHtHandler):
+    @asynchronous
+    @requires_auth
+    def get(self):
+        log.info("VideoProgramsManagementHandler.get")
+        program_name = self.get_argument("program_name", None)
+        channel = self.get_argument("channel", None)
+        program_id = self.get_argument("id", None)
+        if program_name and channel:
+            self.fetch_program(program_name, channel)
+        elif program_name:
+            self.fetch_program(program_name)
+        elif channel:
+            self.fetch_program(None, channel)
+        elif program_id:
+            self.fetch_program_id(program_id)
+        else:
+            self.fetch_programs()
+
+
+    def fetch_program(self, program_name=None, channel=None):
+        where = {
+            "status": {"$in": [1, 0]}
+        }
+        if program_name and channel:
+            where["name"] = program_name
+            where["channel_id"] = channel
+        elif program_name:
+            where["name"] = program_name
+        elif channel:
+            where["channel_id"] = channel
+        curr = self.get_argument('curr', "") #分页
+        limit = 10
+        if curr == "":
+            programs = MongoFront.find_all(where,"video_programs").sort([("status", -1), ("created", -1)]).limit(limit)
+        else:
+            programs = MongoFront.find_all(where,"video_programs").sort([("status", -1), ("created", -1)]).skip((int(curr)-1)*limit).limit(limit)
+        result = self.assemble_video_programs(programs)
+        response={}
+        response["entities"] = result
+        response["count"] = str(programs.count())
+        self.write(json.dumps(response,indent=2, ensure_ascii=False,cls=MongoFieldEncoder))
+        self.finish()
+
+    def fetch_programs(self):
+        where = {
+            "status": {"$in": [1, 0]}
+        }
+        curr = self.get_argument('curr', "") #分页
+        limit = 10
+        if curr=="":
+            fetch_programs = MongoFront.find_all(where, "video_programs").sort([("status", -1), ("created", -1)]).limit(limit)
+        else:
+            fetch_programs = MongoFront.find_all(where, "video_programs").sort([("status", -1), ("created", -1)]).skip((int(curr)-1)*limit).limit(limit)
+        result = self.assemble_video_programs(fetch_programs)
+        response={}
+        response["entities"] = result
+        response["count"] = str(fetch_programs.count())
+        self.write(json.dumps(response,indent=2, ensure_ascii=False,cls=MongoFieldEncoder))
+        self.finish()
+
+    def fetch_program_id(self, id):
+        where = {
+            "_id": ObjectId(id)
+        }
+        progarm = MongoFront.find_one(where, "video_programs")
+        response={}
+        response["entities"]=progarm
+        # response["count"]=str(advs.count())
+        self.write(json.dumps(response,indent=2, ensure_ascii=False,cls=MongoFieldEncoder))
+        self.finish()
+
+
+    @asynchronous
+    @requires_auth
+    def post(self):
+        log.info("VideoProgramsManagementHandler.post:"+self.request.body)
+        body = json.loads(self.request.body,encoding="utf-8")
+        name = body.get("name", "")
+        channel_id = body.get("channel_id", "")
+        video_url = body.get("video_url", "")
+        if not name or not channel_id or not video_url:
+            status = 2
+            response_dic = {"status": status}
+            response = json.dumps(response_dic,
+                                      indent=2,
+                                      ensure_ascii=False,
+                                      cls=MongoFieldEncoder)
+            self.write(response)
+            self.finish()
+            return
+
+        #按相应的规则排序存库
+        now = datetime.datetime.utcnow()
+        body["created"] = now
+        body["status"] = 1
+        status = 0
+        #添加
+        self.mongo_update("post", body)
+
+        response_dic = {"status": status}
+        response = json.dumps(response_dic,
+                                  indent=2,
+                                  ensure_ascii=False,
+                                  cls=MongoFieldEncoder)
+        self.write(response)
+        self.finish()
+
+
+    @asynchronous
+    @requires_auth
+    def put(self):
+        log.info("VideoProgramsManagementHandler.put")
+        body = json.loads(self.request.body, encoding="utf-8")
+
+       #修改
+        self.mongo_update("put", body)
+
+        response = json.dumps({"result": "ok"},
+                                  indent=2,
+                                  ensure_ascii=False,
+                                  cls=MongoFieldEncoder)
+        self.write(response)
+        self.finish()
+
+
+    def  return_error_status(self, num):
+        status = num
+        response_dic = {"status": status}
+        response = json.dumps(response_dic,
+                                  indent=2,
+                                  ensure_ascii=False,
+                                  cls=MongoFieldEncoder)
+        self.write(response)
+        self.finish()
+
+    def mongo_update(self, flag, body):
+        if body.get("image_url", ""):
+            result = self.edit_images(body.get("image_url", ""))
+            if result:
+                body["cover"] = result
+
+        if flag == "post":
+            MongoFront.insert(body, "video_programs")
+
+        if flag == "put":
+            id = body["id"]
+            body.pop("id", "")
+            where = {
+                "_id": ObjectId(id)
+            }
+            update = {
+                "$set": body
+            }
+            where_data = {
+                "belong_program_id": str(id)
+            }
+            update_data = {
+                "$set": body
+            }
+            MongoFront.update(where, update, "video_programs")
+            MongoFront.find_and_modify(where_data, update_data, "user_video_programs_check")
+
+
+    def assemble_video_programs(self, video_programs):
+        channel_list = []
+        if video_programs:
+            channel_dic = {}
+            where = {
+            }
+            filter = {
+                "name": 1,
+                "_id": 1
+            }
+            channel_result  = MongoFront.find_all(where, "video_channels", filter)
+            if channel_result:
+                for channel in channel_result:
+                    channel_dic[str(channel["_id"])] = channel["name"]
+            for video_program in video_programs:
+                video_program["channel"] = channel_dic[video_program["channel_id"]]
+                channel_list.append(video_program)
+        return channel_list
+
+    @staticmethod
+    def edit_images(image_url):
+        cover = {}
+        if image_url:
+            image_url1 = re.sub("[?].+", "", image_url)
+            cover, flag = get_image_info(image_url1)
+            if flag:
+                cover["image_url"] = image_url
+        return cover

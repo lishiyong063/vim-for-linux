@@ -1,0 +1,150 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# @Date    : 2015-04-21 15:19:40
+# @Author  : Your Name (you@example.org)
+# @Link    : http://example.org
+# @Version : $Id$
+
+import tornado.web
+from tornado.web import asynchronous
+from tornado.httpclient import HTTPRequest
+from tornado.options import options
+from mongo_field_encoder import MongoFieldEncoder
+import json
+from tornado import gen
+from log import get_logger
+try:
+    from tornado.curl_httpclient import CurlAsyncHTTPClient as AsyncHTTPClient
+except ImportError:
+    from tornado.simple_httpclient import SimpleAsyncHTTPClient as AsyncHTTPClient
+
+log = get_logger()
+
+
+class Platform_info:
+
+    @classmethod
+    @gen.coroutine
+    def http_get(self,url):
+        response = yield AsyncHTTPClient().fetch(url)
+        raise gen.Return(response)
+
+    @classmethod
+    @gen.coroutine
+    def request_post_json(self, url,data={},token=None,headers = {}):
+
+      
+        request = HTTPRequest(url=url,\
+                          method="POST", \
+                          headers=headers, \
+                          body=json.dumps(data,indent=2, ensure_ascii=False,cls=MongoFieldEncoder),\
+                          follow_redirects=False,\
+                          request_timeout=3000)
+
+
+        response=yield gen.Task(AsyncHTTPClient().fetch,request)
+        log.info("response.code:"+str(response.code))
+
+        raise gen.Return(response)
+
+     
+
+    @classmethod
+    @gen.coroutine
+    def getSecretByWinxin(self,code,appid=None):
+        if appid:
+            request_app_id=appid
+        else:
+            request_app_id=options.xiaochengxu_appid
+        secret=options.appid_scret_dic[request_app_id]
+        # 小程序获取open_id
+        url = "https://api.weixin.qq.com/sns/jscode2session?appid=%s&secret=%s&js_code=%s&grant_type=authorization_code"\
+            %(request_app_id,secret,code)
+
+        response = yield self.http_get(url)
+        if response.code!=200:
+            log.info("bad response:"+str(url))
+            raise gen.Return(None)
+        response_dic=json.loads(response.body,encoding="utf-8")
+        log.info("response_dic"+str(response_dic))
+        openid=response_dic["openid"]
+        session_key=response_dic["session_key"]
+
+        login_info = {
+            "session_key":session_key,
+            "openid":openid,
+            "grant_type": "client_credential",
+            "platform":"weixin"
+        }
+        raise gen.Return(login_info)
+
+
+    @classmethod
+    @gen.coroutine
+    def getAccessTokenByQQ(self,code):
+        url = "https://graph.qq.com/oauth2.0/token?grant_type=authorization_code&client_id=%s&client_secret=%s&code=%s&redirect_uri=%s"\
+            %(options.qq_appid,options.qq_appsecret,code,options.redirect_uri)
+        log.info("url:"+url)
+        response = yield self.http_get(url)
+        log.info(response)
+        
+        log.info("response:"+response.body)
+        access_token = self.getMiddleStr(response.body,"access_token=","&")
+        
+        #根据access_token获取openid
+        url = "https://graph.qq.com/oauth2.0/me?access_token="+access_token
+        log.info("openid url:"+url)
+        response = yield self.http_get(url)
+        log.info("response:"+response.body)
+        if response.code!=200:
+            log.info("bad response:"+str(response.body))
+            raise gen.Return(None)
+     
+        openid = self.getMiddleStr(response.body,'openid":"','"}')
+        login_info={
+                    "grant_type":"client_credential",
+                    "platform":"qq_weibo",
+                    "openid":openid,
+                    "access_token":access_token,
+                    "source":"weibo"
+            }
+        raise gen.Return(login_info)
+    
+    @classmethod
+    def getMiddleStr(self,content,startStr,endStr):
+      startIndex = content.index(startStr)
+      if startIndex>=0:
+        startIndex += len(startStr)
+      endIndex = content.index(endStr)
+      return content[startIndex:endIndex]
+
+
+    @classmethod
+    @gen.coroutine
+    def getAccessTokenBySina(self,code):
+        url = "https://api.weibo.com/oauth2/access_token?client_id=%s&client_secret=%s&grant_type=authorization_code&code=%s&redirect_uri=%s"\
+            %(options.sina_appid,options.sina_appsecret,code,options.redirect_uri)
+        log.info("url:"+url)
+        response = yield self.request_post_json(url)
+        if response.code!=200:
+            log.info("bad response:"+str(url))
+            raise gen.Return(None)
+        response_dic=json.loads(response.body,encoding="utf-8")
+        openid=response_dic["uid"]
+        access_token=response_dic["access_token"]
+
+        login_info={
+                    "grant_type":"client_credential",
+                    "platform":'sina',
+                    "openid":openid,
+                    "access_token":access_token,
+                    "source":"weibo"
+            }
+        raise gen.Return(login_info)
+
+
+
+                
+                
+    
+    

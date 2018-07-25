@@ -1,0 +1,101 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# @Date    : 2015-05-18 17:41:52
+# @Author  : Your Name (you@example.org)
+# @Link    : http://example.org
+# @Version : $Id$
+from handler_baseHt import BaseHtHandler
+from log import get_logger
+import tornado.web
+from tornado.web import asynchronous
+from tornado.options import options
+import json
+import hashlib
+import datetime
+import hashlib
+from bson import ObjectId
+import random
+import time
+from log import get_logger
+from model.advices import Advice
+from model.permissions_ht import Permissions_ht
+import optionsSetting
+from services.service_activity import *
+from utils.secret import *
+import traceback
+from utils.redis_client import RedisClient
+from utils.mongo_front import MongoFront
+from mongo_field_encoder import MongoFieldEncoder
+from mongolog import MongoHandler
+from mongokit.helpers import totimestamp, fromtimestamp
+from utils.token_im import TokenService
+from tornado.httpclient import HTTPRequest
+from utils.mongo_client import MongoClient
+import pymongo
+from auth import requires_auth
+from services.service_xcx import refresh_front_xcx
+
+try:
+    from tornado.curl_httpclient import CurlAsyncHTTPClient as AsyncHTTPClient
+except ImportError:
+    from tornado.simple_httpclient import SimpleAsyncHTTPClient as AsyncHTTPClient
+log = get_logger()
+
+
+class DeleteUserCommentHandler(BaseHtHandler):   
+    
+    '''
+    删除用户评论
+    '''
+    @requires_auth
+    @asynchronous
+    def delete(self, comment_id):
+        log.info("DeleteUserCommentHandler.delete")
+        try:
+            comment_id = comment_id[1:]
+            comment_id_list = comment_id.split(",")
+
+            spam_id = self.get_argument("spam_id", "")
+            for comment_id in comment_id_list:
+                where = {
+                    "_id": ObjectId(comment_id)
+                }
+                comment_result = MongoFront.find_one(where, "comments")
+                if comment_result:
+                    comment_type = comment_result.get("type", "")
+                    if comment_type == "comments":
+                        to_post_id = comment_result.get("to_post_id", "")
+                        if to_post_id:
+                            where = {
+                                "_id": ObjectId(to_post_id)
+                            }
+                            update = {
+                                "$inc": {
+                                    "comment_count": -1
+                                }
+                            }
+                            MongoFront.update(where, update, "posts")
+
+                    where = {
+                        "$or": [
+                            {"_id": ObjectId(comment_id)},
+                            {"to_comment_id": comment_id}
+                        ]
+                    }
+                    MongoFront.delete(where, "comments")
+
+            where = {
+                "_id": ObjectId(spam_id)
+            }
+            update = {
+                "$set": {
+                    "status": 1
+                }
+            }
+            MongoFront.update(where, update,  "content_check")
+            self.finish()
+        except Exception as e:
+            log.info('DeleteUserCommentHandler.delete Exception:%s' % e.message)
+            log.error(traceback.format_exc())
+            self.fire_response_bad_request(key_required=e.message)
+            return

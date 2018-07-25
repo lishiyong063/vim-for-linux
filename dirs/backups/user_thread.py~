@@ -1,0 +1,166 @@
+# -*- coding: utf-8 -*-
+# Created Time: 2017-07-19 13:47:52
+import requests
+import json
+from lxml import etree
+from multiprocessing import Pool
+from selenium import webdriver
+from selenium.webdriver import DesiredCapabilities
+from mongo_client import mongo
+from selenium.webdriver.common.action_chains import ActionChains
+from concurrent import futures
+
+def get_json(url):
+    headers = {
+            'Accept': '*/*',
+            'Accept-Language': 'en-CN',
+            'Host': 'rutilus.fishbrain.com',
+            'If-None-Match': 'W/"8a530dba8a3e222bf2046d9f25fd338d"',
+            'Authorization': 'Token token="6sK38KFc2GoG8n1hCh-wj3TN3JmdnFbtRJ3VRJuWTOH2imukhEaTXfuq0s13"',
+            'User-Agent': 'Fishbrain/6.0 (iPhone; iOS 12.0; Scale/2.00)',
+            'Connection': 'keep-alive'}
+
+    respone = requests.get(url, timeout=10, headers=headers)
+    if respone.status_code == 200:
+        content = json.loads(respone.content)
+        return content
+    else:
+        return {}
+
+def get_img(image_info, index=None):
+    result = []
+    if not image_info:return ''
+    if image_info.get("sizes"):
+        result = [info.get("url") for info in image_info.get("sizes")]
+    if not result:
+        return ''
+
+    if index:
+        try:
+            return result[index]
+        except:
+            return result[0]
+    else:
+        return result
+
+def get_following_from_user(user_info):
+    """ 获取关注用户的人
+    """
+    max_length = 50
+    user_id = user_info.get("user_id")
+    url = "https://rutilus.fishbrain.com/users/{user_id}/followings/fishing_waters?page={page}&per_page={max_length}&verbosity=verbose"
+    counts = user_info.get("followings_counters")
+    if not counts: return []
+    pages = counts // max_length
+
+    if pages > 1:
+        pages += 2
+    else:
+        pages = 2
+
+    followings_user_id_list = []
+    for i in range(1, pages):
+        _url = url.format(user_id=user_id, page=i, max_length=max_length)
+        print(_url)
+        content = get_json(_url)
+        if not content:
+            break
+        page_list = [c.get("id") for c in content]
+        followings_user_id_list.extend(page_list)
+    return followings_user_id_list
+
+
+def get_followers_from_user(user_info):
+    """ 获取用户关注的人
+    """
+    counts = user_info.get("catches_count")
+    if not counts: return []
+    max_length = 50
+    user_id = user_info.get("user_id")
+    url = "https://rutilus.fishbrain.com/users/{user_id}/followers?page={page}&per_page={max_length}"
+    if not counts: return
+    pages = counts // max_length
+
+    if pages > 1:
+        pages += 2
+    else:
+        pages = 2
+
+    followers_user_id_list = []
+    for i in range(1, pages):
+        _url = url.format(user_id=user_id, page=i, max_length=max_length)
+        content = get_json(_url)
+        if not content:
+            break
+        page_list = [c.get("id") for c in content] 
+        followers_user_id_list.extend(page_list)
+
+    return followers_user_id_list
+
+
+def get_all_user(user_id):
+    """ 获取所有用户数据
+    """
+    user_info = get_user_info(user_id)
+    if not user_info:
+        return []
+
+    mongo.upsert({"user_id": user_id}, user_info, "users")
+    followers_user_id_list = get_followers_from_user(user_info) 
+    followings_user_id_list = get_following_from_user(user_info)
+    return followings_user_id_list + followers_user_id_list
+
+
+def main(user_id):
+    # 获取过的不再关注
+    if mongo.find_one({"user_id": user_id}, "fishibrain_all_user"):
+        return
+    else:
+        # 获取用户的所有关注者和被关注者
+        all_user_id = get_all_user(user_id)
+        for uid in all_user_id:
+            mongo.upsert({"user_id": user_id}, {"user_list": all_user_id}, "fishibrain_all_user")
+            main(uid)
+
+
+def get_user_info(user_id):
+    """ 获取用户关注数 和 被关注数 鱼获总数
+    """
+    url = "https://rutilus.fishbrain.com/users/%s?expand=profile" % user_id
+    print url
+    content = get_json(url)
+    if not content:
+        return
+    try:
+
+        nickname = content.get("nickname")
+        firstname = content.get("first_name")
+        lastname = content.get("last_name")
+        user_id = content.get("id")
+        followers_count = content.get("followers_count")
+        followings_counters = content.get("followings_counters").get("users")
+        catches_count = content.get("catches_count")
+        country_code = content.get("country_code")
+        avatar_img = get_img(content.get("avatar"))
+
+        user_info = {"user_id": user_id,
+                     "nickname": nickname,
+                     "firstname": firstname,
+                     "lastname": lastname,
+                     "followings_counters": followings_counters,
+                     "followers_count": followers_count,
+                     "country_code": country_code,
+                     "avatar_img": avatar_img,
+                     "catches_count": catches_count}
+        print user_info,'xxxxxxxxxxxxxx'
+        return user_info
+    except:
+        return
+
+
+if __name__ == "__main__":
+    main('')
+    works = 4
+    with futures.ThreadPoolExecutor(works) as excutor:
+       futs = {excutor.submit(main(i)) for i in ['2133658', '5011480', '4499136', "4786169"]}
+

@@ -1,0 +1,199 @@
+# -*- coding: utf-8 -*-
+# Created Time: 2018-05-30 15:40:23
+
+import globalConfig
+"""
+    消息队列抽象类
+    有新的消息类型 创建相应的工厂类就可以
+"""
+
+class BaseMessage(object):
+    def __init__(self):
+
+        if globalConfig.is_debug==1:
+            # 【内网地址】
+            self.activity_target_url = "http://192.168.103.222:8088/activity_mobile/%s"
+            self.tool_target_url = "http://192.168.103.222:8088/tools/%s"
+            self.article_target_url = "http://192.168.103.222:8088/new_articles/%s"
+            self.ziya_into_url = "ziya://exec/?action=webview&id="
+            self.ziya_shop_url = "http://shop.ziyadiaoyu.com/goods.php?id=%s"
+            self.ziya_program_url = "http://192.168.103.222:8088/video/programs/%s?program_id=%s"
+
+            ###内网官方账号
+            self.office_account = ["a41979ec661911e78f70000c29160262", "b16bc3de661911e78f70000c29160262"]
+        else:
+            # 【外网地址】
+            self.activity_target_url="https://www.ziyadiaoyu.com/activity_mobile/%s"
+            self.tool_target_url = "https://www.ziyadiaoyu.com/tools/%s"
+            self.article_target_url = "https://www.ziyadiaoyu.com/new_articles/%s"
+            self.ziya_into_url = "ziya://exec/?action=webview&id="
+            self.ziya_shop_url = "http://shop.ziyadiaoyu.com/goods.php?id=%s"
+            self.ziya_program_url = "http://www.ziyadiaoyu.com/video/programs/%s?program_id=%s"
+
+            ###外网官方账号
+            self.office_account = ["19118354703611e788e600163e0044d9","93a73780703611e788e600163e0044d9"]
+
+        def createMessage(self):
+            """ 构建消息体 利用反射机制 减少判断
+            """
+            pass
+
+
+class CommentMessage(BaseMessage):
+    """ 评论工厂
+    """
+    def createMessage(self):
+        """ 构建消息体 利用反射机制 减少判断
+        """
+        try:
+            logging.info("Article_Comment_Message_Proccessor createdMessages.message_event_dic:"+str(self.message_event_dic))
+            ##1,获取评论id
+            comment_id = self.message_event_dic["_id"]
+            self.message = []
+            ##2,根据 留言id获取留言
+            mes = self.message_event_dic
+            if mes is None:
+                return
+
+            tmp_result = {"type": "article_comment"}
+            ##构造from_user   push_info  post_info  to_user这四个dic
+            ##先查询user,构造from_user
+            tmp_result["from_user"] = mes["from_user"]
+
+            image_role = self.user_role_flg(tmp_result["from_user"]["username"])
+            if image_role:
+                tmp_result["from_user"]["actor_role_image"] = image_role
+
+            ##构造article_info
+            article_id = mes["to_article_id"]
+
+            type = mes["message_type"]
+            tmp_result["type"] = type
+            article = self.getArticle(article_id)
+
+            pt = "article_comment"
+
+
+            tmp_result["redirect_url"] = self.article_target_url % (article_id)
+
+            tmp_result["post_info"] = {
+                "content": article["title"],
+                "post_id": article_id,
+                "image_url": article["image_url"]
+            }
+
+            user_set = set([])
+
+            # ##评论了
+            article_user = self.getUser(article["actor"]["username"])  # 也评需要获取发帖人的昵称
+            self.article_nick = article_user.get("nick", "")
+
+
+            title_type = "article_comment"
+            navigation_url = "ziya://exec/?action=articlepush&title_type=" + title_type
+
+            tmp_result["navigation_url"] = navigation_url
+
+            tmp_result["object_type"] = "article"
+            message_entities = self.createMessageEntities(tmp_result, title_type, [article_user], user_set, mes)
+
+            entities = message_entities["entities"]
+            if len(entities) > 0:
+                self.message_group.append(message_entities)
+
+            ####也评了
+            comments = self.getAllComment(article_id)
+            push_username = []
+            for comment in comments:
+                username = comment["actor"]["username"]
+                push_username.append(username)
+
+            where = {
+                "username": {"$in": push_username}
+            }
+
+            user_cursor = MongoClient.find_all(where, "users")
+            user_array = []
+            for userObj in user_cursor:
+                user_array.append(userObj)
+
+            title_type1 = "article_comment_too"
+            tmp_result["object_type"] = "article"
+            navigation_url = "ziya://exec/?action=articlepush&title_type=" + title_type1
+
+            tmp_result["navigation_url"] = navigation_url
+            message_entities = self.createMessageEntities(tmp_result, title_type1, user_array, user_set, mes)
+
+            entities = message_entities["entities"]
+            if len(entities) > 0:
+                # logging.info("entities1:"+json.dumps(message_entities,indent=2, ensure_ascii=False,cls=MongoFieldEncoder))
+                self.message_group.append(message_entities)
+
+        except Exception as e:
+            logging.error(traceback.format_exc())
+            logging.error('Exception:%s' % e.message)
+
+
+    def createMessage(self):
+        """ 创造消息
+        """
+        pass
+
+    def saveMessage(self):
+        """ 存储消息
+        """
+        pass
+
+    def sendMessage(self):
+        """ 发送消息
+        """
+        pass
+
+ 
+class PushMessage():
+    """ 简单工厂模式
+    """
+    def __init__(self, message_type):
+        self.push_chnanel_obj = eval(message_type+"Message")
+
+    def createMessage(self):
+        """ 创造消息
+        """
+        return self.push_chnanel_obj.createMessage()
+
+    def saveMessage(self):
+        """ 存储消息
+        """
+        pass
+
+
+    def sendMessage(self):
+        """ 发送消息
+        """
+        pass
+
+
+    @classmethod
+    def push(cls, message_type):
+        """ 开始推送消息
+        """
+        message_obj =  
+        push_obj = cls()
+        message = push_obj.createMessage()
+        push_obj.saveMessage()
+        push_obj.sendMessage()
+
+def main():
+    while True:
+        logging.info("q_fish_message_event_expect begin")
+        # 依次取出消息 没有消息时 阻塞
+        result = RedisWeiboClient.blpop(globalConfig.redis_queue_message_event_expect)
+        message_type = result[1]
+        # 处理消息
+        PushMessage.push(message_type)
+        logging.info(" message is end ")
+
+
+
+
+def __name__ == "__main__":

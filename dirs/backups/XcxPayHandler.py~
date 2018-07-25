@@ -1,0 +1,91 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
+import textwrap
+from urllib import quote
+
+import tornado.httpserver
+import tornado.ioloop
+import tornado.options
+import tornado.web
+import os
+import json
+import time
+import traceback
+from utils.secret import *
+
+from pip._vendor.requests.packages.urllib3 import request
+from tornado.template import Template
+
+from tornado.options import define, options
+
+from XcxConf_pub import JsApi_pub
+from WxPayConf_pub import WxPayConf_pub
+from XcxConf_pub import UnifiedOrder_pub
+from auth import requires_auth
+from log import get_logger
+log = get_logger()
+'''
+
+'''
+class XiaoChengXuPayHandler(tornado.web.RequestHandler):
+    def data_received(self, chunk):
+        pass
+
+    @requires_auth
+    @tornado.web.asynchronous
+    def post(self, *args, **kwargs):
+        log.info("XiaoChengXuPayHandler post"+str(self.request.body))
+        body = json.loads(self.request.body, encoding="utf-8")
+        title = body.get("title", "").encode("utf-8")
+        # prepayid = body.get("prepayid", "")
+        order_id = body.get("order_id", "")
+        openid = body.get("openid", "")
+        log.info("order_id:" + order_id)
+
+        # # *代表尾款支付,重新申请prepayid
+        # if "_" in order_id:
+        #     prepayid = ""
+        # log.info("prepayid:" + prepayid)
+        price = int(body.get("price", 0))*100
+        # title = unicodedata.normalize('NFKD',title).encode('ascii','ignore')#unicode转str
+        # log.info(type(title))
+<<<<<<< .mine
+
+        unifiedOrder = UnifiedOrder_pub(app_id)
+||||||| .r12379
+
+        unifiedOrder = UnifiedOrder_pub()
+=======
+        app_id = body.get("app_id","")
+        unifiedOrder = UnifiedOrder_pub(app_id)
+>>>>>>> .r12381
+        unifiedOrder.setParameter("body", WxPayConf_pub.ACTIVITY_TITLE)  # 商品描述
+        timeStamp = time.time()
+
+        # out_trade_no = "{0}{1}".format(WxPayConf_pub.APPID, int(timeStamp * 100))
+        unifiedOrder.setParameter("out_trade_no", order_id)  # 商户订单号
+        unifiedOrder.setParameter("openid", openid)  # openid, trade_type 为 jsapi 此参数为必传
+        unifiedOrder.setParameter("total_fee", str(price))  # 总金额
+
+        notify_url = "http://pay.ziyadiaoyu.com/xcxPayCallBack"
+        unifiedOrder.setParameter("notify_url", notify_url)  # 通知地址
+        unifiedOrder.setParameter("trade_type", "JSAPI")  # 交易类型
+        log.info("unifiedOrder="+str(unifiedOrder))
+
+        try:
+            prepayid = unifiedOrder.getPrepayId()
+            log.info("XiaoChengXuPayHandler_prepayid"+prepayid)
+            log.info(type(prepayid))
+            js_pub = JsApi_pub()
+            js_pub.setPrepayId(prepayid)
+            params = js_pub.getParameters()
+            # self.render("Xcx_pay.html", params=params)
+            log.info("XiaoChengXuPayHandler_response="+params)
+            self.write(params)
+            self.finish()
+        except Exception as e:
+            log.info('Exception:%s' % e.message)
+            log.error(traceback.format_exc())
+            self.write("{'key':'falied'}")
+            self.finish()

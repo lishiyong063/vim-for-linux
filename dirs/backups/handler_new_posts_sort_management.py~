@@ -1,0 +1,155 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# @Date    : 2015-05-18 17:41:52
+# @Author  : Your Name (you@example.org)
+# @Link    : http://example.org
+# @Version : $Id$
+from handler_baseHt import BaseHtHandler
+from log import get_logger
+import tornado.web
+from tornado.web import asynchronous
+from tornado.options import options
+import json
+import hashlib
+from bson import ObjectId
+import hashlib
+import random
+import pymongo
+import time
+from log import get_logger
+from model.accounts_ht import Account_ht
+from model.users import Users
+import optionsSetting
+import datetime
+import  time
+from utils.secret import *
+import traceback
+from utils.redis_client import RedisClient
+from mongo_field_encoder import MongoFieldEncoder
+from mongolog import MongoHandler
+from mongokit.helpers import totimestamp, fromtimestamp
+from utils.token_im import TokenService
+from tornado.httpclient import HTTPRequest
+from utils.mongo_client import MongoClient
+from utils.mongo_front import MongoFront
+from auth import requires_auth
+import re
+import urlparse
+import urllib
+try:
+    from tornado.curl_httpclient import CurlAsyncHTTPClient as AsyncHTTPClient
+except ImportError:
+    from tornado.simple_httpclient import SimpleAsyncHTTPClient as AsyncHTTPClient
+log = get_logger()
+
+
+class NewPostsSortManagementHandler(BaseHtHandler):
+    @asynchronous
+    @requires_auth
+    def get(self):
+        log.info("NewPostsSortManagementHandler.get")
+        response = {}
+        column = self.get_argument('column', "")
+        where = {
+            "status": 1
+        }
+        if column:
+            column = int(column)
+            where["column"] = column
+        curr = self.get_argument('curr', "") #分页
+        limit = 10
+        if curr == "":
+            data = MongoFront.find_all(
+                    where, "sort_data_for_new_posts").sort([("page", 1), ("position", 1)]).limit(limit)
+        else:
+            data = MongoFront.find_all(
+                    where, "sort_data_for_new_posts").sort([("page", 1), ("position", 1)])\
+                .skip((int(curr)-1)*limit).limit(limit)
+
+        response["entities"] = list(data)
+        response["count"] = str(data.count())
+        response = json.dumps(response, indent=2, ensure_ascii=False, cls=MongoFieldEncoder)
+        self.write(response)
+        self.finish()
+
+
+    @asynchronous
+    @requires_auth
+    def post(self):
+        log.info("NewPostsSortManagementHandler.post:"+self.request.body)
+        body = json.loads(self.request.body, encoding="utf-8")
+        now = datetime.datetime.utcnow()
+        model = body.get("model", "")
+        if model:
+            actor = body.get("actor", {})
+            if actor:
+                nick = actor.get("nick", "")
+                avatar_url = actor.get("avatar_url", "")
+                if not nick:
+                    # if model in ["shop", "tg"]:
+                        self.return_error_status(0)
+                        return
+
+                if not avatar_url:
+                    # if model in ["shop", "tg"]:
+                        self.return_error_status(0)
+                        return
+
+            else:
+                # if model in ["shop", "tg"]:
+                    self.return_error_status(0)
+                    return
+
+            body["created"] = now
+            body["status"] = 1
+            body["column"] = int(body["column"])
+            body["position"] = int(body["position"])
+            body["page"] = int(body["page"])
+            if body.get("time", ""):
+                body["time"] = int(body["time"])
+            # where = {
+            #     "position": body["position"],
+            #     "page": body["page"],
+            #     "column": body["column"],
+            #     "status": 1
+            # }
+            # result = MongoFront.find_one(where, "sort_data_for_new_posts")
+            # if result:
+            #     self.return_error_status(1)
+            #     return
+            MongoFront.insert(body, "sort_data_for_new_posts")
+        response = json.dumps({"result": "ok"},
+                                  indent=2,
+                                  ensure_ascii=False,
+                                  cls=MongoFieldEncoder)
+        self.write(response)
+        self.finish()
+
+    @asynchronous
+    @requires_auth
+    def put(self):
+        log.info("NewPostsSortManagementHandler.put")
+        body = json.loads(self.request.body, encoding="utf-8")
+        id = body.get("id", "")
+        if id:
+            where = {
+                "_id": ObjectId(id)
+            }
+            MongoFront.delete(where, "sort_data_for_new_posts")
+        response = json.dumps({"result": "ok"},
+                                  indent=2,
+                                  ensure_ascii=False,
+                                  cls=MongoFieldEncoder)
+        self.write(response)
+        self.finish()
+
+
+    def return_error_status(self, num):
+        status = num
+        response_dic = {"status": status}
+        response = json.dumps(response_dic,
+                                  indent=2,
+                                  ensure_ascii=False,
+                                  cls=MongoFieldEncoder)
+        self.write(response)
+        self.finish()

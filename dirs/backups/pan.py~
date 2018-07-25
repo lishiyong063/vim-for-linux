@@ -1,0 +1,44 @@
+# -*- coding: utf-8 -*-
+# Created Time: 2018-06-09 13:41:12
+"""
+    python 操作百度云盘
+"""
+
+
+class 
+
+
+class BaiduYun(object):
+    def __init__(self, user, passwd):
+        self.user = user
+        self.passwd = passwd
+        self.baiduyun = baidu(user, passwd) 
+
+
+    def upload(self, resource, target, new=1):
+        """ 上传资源
+            resource 资源
+            target   目标文件夹
+            new = 1 如果不存在 创建新的
+        """
+        pass
+
+
+    def down(self, target, name, file="./"):
+        """ 下载资源
+            target 资源路径
+            name 资源名称
+            file 存储路劲
+        """
+        pass
+
+    def share(self, target, passwd):
+        """ 分享 target 分享资源
+            passwd 密码
+        """
+        pass
+
+    def cat_list(self, dir_name):
+        """ 查看 目录下有哪些资源
+        """
+        pass

@@ -1,0 +1,316 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# @Date    : 2015-14-16 20:26:41
+# @Author  : Your Name (you@example.org)
+# @Link    : http://example.org
+# @Version : $Id$
+
+import tornado.ioloop
+import tornado.web
+import tornado.httpserver
+import optionsSetting
+from tornado.options import options
+
+tornado.options.parse_command_line()
+
+from utils.redis_client import RedisClient
+from utils.mongo_im_client import MongoIMClient
+from utils.mongo_client import MongoClient
+from utils.token_im import get_management_token
+from handler_registerCode import RegisterCodeHandler
+from handler_image_upload import ImageUploadHandler
+from handler_login import LoginHandler
+from handler_loginByPlatform import LoginByPlatformHandler
+from handler_articles import ArticlesHandler
+from handler_article import ArticleHandler
+from handler_index import IndexHandler
+from handler_skill import SkillHandler
+from handler_new_posts import NewPostsHandler
+from handler_new_activity_demo import NewActivityDemo
+
+from handler_user_articles import UserArticlesHandler
+from handler_biz_order_manager import BizOrderManageHandler
+from handler_biz_order_confirm import BizOrderConfirmHandler
+from handler_biz_order_cancle import BizOrderCancleHandler
+from handler_activity_income import ActivityIncomeHandler
+from handler_boutique import BoutiqueHandler
+
+from handler_article_inform import ArticleInformHandler
+from handler_new_activity_list import NewActivityListHandler
+from handler_recommend import RecommendHandler
+from handler_loading_others import LoadOthersHandler
+from handler_loading_other_posts import LoadOtherPostsHandler
+from handler_password_update import PasswordUpdateHandler
+from handler_proxy_server import ProxyServerHandler
+from handler_curr_user import CurrUserHandler
+from handler_upload import UploadHandler
+from handler_spread import SpreadHandler
+from handler_recommend_user import RecommendUserHandler
+from handler_address_list import AddressListHandler
+from handler_local_address_list import LocalAddressListHandler
+from handler_address_list_check_register import AddressListCheckRegisterHandler
+from handler_address_list_recommend import AddressListRecommendHandler
+from handler_recommend_share_index import RecommendShareIndexHandler
+from handler_recommend_award import RecommendAwardHandler
+from handler_feedback import FeedbackHandler
+from handler_recommend_user_share import RecommendUserShareHandler
+from handler_business import BusinessHandler
+from log import get_logger
+from utils.token_im import get_management_token
+
+import os
+from handler_register import RegisterHandler
+from handler_businessCode import BusinessCodeHandler
+from handler_activity import ActivityHandler
+from handler_activity_copy import ActivityCopyHandler
+from handler_activity_stock import ActivityStockHandler
+from handler_activity_mobile import ActivityMobileHandler
+from handler_activity_join import ActivityJoinHandler
+from handler_activity_code import ActivityCodeHandler
+from handler_activity_order import ActivityOrderHandler
+from handler_activity_pay import ActivityPayHandler
+from handler_activity_pay1 import ActivityPayHandler1
+from handler_user_order_cancel import UserOrderCancelHandler
+from handler_manager_home import ManagerHomeHandler
+from handler_confirm_provider import ConfirmProviderHandler
+from handler_test import TestHandler
+from handler_main import MainHandler
+from handler_backstage import BackstageHandler
+from handler_activity_payment_result import ActivityPaymentResultHandler
+from handler_activity_inform import ActivityInformHandler
+from handler_manager_entrance import ManagerEntranceHandler
+from handler_activity_item_delay import ActivityItemDelayHandler
+from handler_order_consume_scan_list import OrderConsumeCodeScanListHandler
+from handler_biz_employee import BizEmployeeHandler
+from handler_my_order_home import MyOrderHomeHandler
+from handler_check_ticket import CheckTicketHandler
+from handler_city_location_remind import *
+from location_fuzzy_search import *
+from handler_share_activity import ActivityShareHandler
+from handler_biz_order_accept_query import BizOrderAcceptQueryHandler
+from handler_phote_online import PhotoOnlineHandler
+from handler_phone_click import PhoneClickHandler
+from handler_following import FollowingHandler
+from handler_collect_articles import CollectArticlesHandler
+from handler_new_articles import NewArticlesHandler
+from handler_share_article import ArticleShareHandler
+from handler_share_post import PostShareHandler
+from services.service_credit import *
+from handler_article_comment import ArticleCommentHandler
+from handler_app_down_load import AppDownloadHandler
+from handler_strategy import StrategyHandler
+from handler_article_send import ArticleSendHandler
+from handler_tools_detail import ToolsDetailHandler
+from handler_post_comment import PostCommentHandler
+from handler_post_reply import PostReplyHandler
+from handler_post_like import PostLikeHandler
+from handler_post_collect import PostCollectHandler
+from handler_user_group import UserGroupHandler
+from handler_activity_im import ActivityIMHandler
+from handler_renzheng import RenzhengHandler
+from handler_root import RootHandler
+from handler_ad_business import AdBusinessHandler
+from handler_share_sign import ShareSignHandler
+from handler_collect_activity import CollectActivityHandler
+from handler_count_share_activity import CountActivityShareHandler
+from services.service_buffer_ad import *
+from handler_code_image import CodeImageHandler
+from handler_user_show import UserShowHandler
+from handler_info_ad import InfoAdHandler
+from handlelr_refresh_ad import RefreshAdHandler
+from handler_activity_by_code import ActivityByCodeHandler
+from handler_video_channels import  VideoChannelsHandler
+from handler_video_programs import VideoProgramsHandler
+from handler_video_channels_curr import VideoChannelsCurrHandler
+from handler_video_programs_curr import VideoProgramsCurrHandler
+from handler_video_live import VideoLiveHandler
+from handler_activity_list import ActivityListHandler
+from handler_activity_list_asyn import ActivityListAsynHandler
+from handler_activity_customized import ActivityCustomizedHandler
+# from handler_video_upload import VideoUploadHandler
+from handler_user_video_channel import UserVideoChannelHandler
+from handler_user_video_program import UserVideoProgramHandler
+from handler_user_act_message import UserActMessageHandler
+from handler_biz_im_list import BizImListHandler
+from handler_biz_im_message import BizImMessageHandler
+from handler_recruit import RecruitHandler
+from handler_goods_detail import GoodDetailHandler
+from handler_count_share_article import CountArticleShareHandler
+from utils.redis_weibo_client import RedisWeiboClient
+from handler_picture_change import PictureChangeHandler
+from handler_user_article_history import UserArticleHistoryHandler
+from handler_activity_recommend import ActivityRecommendHandler
+log = get_logger()
+
+
+def main():
+
+
+    handlers = [
+        (r"/MP_verify_3kU0UkjipkF7SuMd.txt",RenzhengHandler),
+        (r"/root.txt", RootHandler),
+        (r"/", IndexHandler),  ####网站首页---默认是最新
+        (r"/app_download", AppDownloadHandler),  ####网站首页--技巧
+        (r"/skill", SkillHandler),  ####网站首页--技巧
+        (r"/recommend", RecommendHandler),  ####网站首页---推荐
+        (r"/new_posts", NewPostsHandler),  ####网站首页---最新
+        (r"/boutique", BoutiqueHandler),  ####网站首页---精品
+        (r"/update_password", PasswordUpdateHandler),  ####使用旧密码更新新密码
+        (r"/upload", UploadHandler),  # 文章通知
+        (r"/loadOthers", LoadOthersHandler),  ####网站首页---技巧和收藏上翻/下翻
+        (r"/loadOthersPost", LoadOtherPostsHandler),  ####网站首页---最新和精品上翻/下翻
+        (r"/test", TestHandler),
+        (r"/login", LoginHandler),  ####登录
+        (r"/register_check_code", RegisterCodeHandler),  ##验证码发送、校验
+        (r"/register", RegisterHandler),  ##用户注册
+        (r"/image_upload", ImageUploadHandler),  ##base64图片上传
+        (r"/loginByPlatform", LoginByPlatformHandler),  ##第三方登录
+        (r"/articles(/.*)?", ArticlesHandler),  ##文章
+        (r"/article(/.*)?", ArticleHandler),  ##文章
+        (r"/proxy_server", ProxyServerHandler),
+        (r"/curr_user", CurrUserHandler),
+        (r"/userArticles", UserArticlesHandler),  ##获取指定用户的渔获
+        (r"/article_inform", ArticleInformHandler),  # 文章通知
+        (r"/t(/.*)?", SpreadHandler),
+        (r"/recommend_user", RecommendUserHandler),
+        (r"/recommend_user_share", RecommendUserShareHandler),
+        (r"/recommend_share_index", RecommendShareIndexHandler),
+        (r"/recommend_award_list", RecommendAwardHandler),
+        (r"/recommend_user_tuiguang", RecommendUserHandler),
+        (r"/address_list", AddressListHandler),
+        (r"/local_address_list", LocalAddressListHandler),
+        (r"/address_list_check_register", AddressListCheckRegisterHandler),
+        (r"/recommend_address_list", AddressListRecommendHandler),
+        (r"/feedback", FeedbackHandler),  # 网站投诉建议接口
+        (r"/publish", FeedbackHandler),  # 网站投诉建议接口
+        (r"/manage/(.*)", MainHandler), # 用户发布后台接口
+        (r"/backstage/(.*)", BackstageHandler), # 用户发布后台接口
+        (r"/business", BusinessHandler), # 商家入注接口
+        (r"/business_code", BusinessCodeHandler),  ##验证码发送、校验
+        (r"/activity_list", NewActivityListHandler),  ## 去哪儿钓
+        (r"/activity_citys", NewActivityCitysHandler),  ## 城市列表
+        (r"/activity(/.*)?", ActivityHandler),  ##活动发布
+        (r"/activity_copy", ActivityCopyHandler),  ##活动复制
+        (r"/activity_stock(/.*)?", ActivityStockHandler),  ##活动入库
+        (r"/new_activity_demo",NewActivityDemo),
+        (r"/business_code", BusinessCodeHandler),  ##验证码发送、校验
+        (r"/activity_join(/.*)?", ActivityJoinHandler),  ##get活动日程，post活动申请
+        (r"/activity_join(/.*)?", ActivityJoinHandler),  ##get活动日程，post活动申请
+        (r"/activity_mobile(/.*)?", ActivityMobileHandler),
+        (r"/activity_code", ActivityCodeHandler),  ##验证码发送、校验
+        (r"/biz_order_manager",BizOrderManageHandler),   ###商家订单管理
+        (r"/biz_order_confirm",BizOrderConfirmHandler),   ###商家确认订单
+        (r"/biz_order_cancel",BizOrderCancleHandler),   ###商家取消订单
+        (r"/activity_order(/.*)?", ActivityOrderHandler),     ##我的订单
+        (r"/activity_pay", ActivityPayHandler),     ##订单支付
+        (r"/activity_pay1", ActivityPayHandler1),     ##订单支付(带流程提醒)
+        (r"/user_order_cancel", UserOrderCancelHandler),     ##用户发起订单取消并退款
+        (r"/activity_income_list(/.*)?", ActivityIncomeHandler),     ##结算中心
+        (r"/manageHome", ManagerHomeHandler),     ##管理后台跳转
+        (r"/confirm_provider", ConfirmProviderHandler),     ##我的钓鱼
+        (r"/payment_result", ActivityPaymentResultHandler),  ##支付结果
+        (r"/activity_inform", ActivityInformHandler),  # 活动通知
+        (r"/manageEntrance", ManagerEntranceHandler),  # 商家入口
+        (r"/activity_item_delay",ActivityItemDelayHandler), ###団期延期
+        (r"/check_ticket",CheckTicketHandler),  # 检票
+        (r"/biz_employee",BizEmployeeHandler),     ##商家子账号
+        (r"/order_consume_code_scan_list",OrderConsumeCodeScanListHandler),     ##验票历史
+        (r"/my_order_home",MyOrderHomeHandler),     ##订单管理
+        (r"/city_location_remind",CityLocationRemindHandler),     ##城市提醒
+        (r"/activity_share", ActivityShareHandler),  ##活动分享回调
+        (r"/biz_order_accept_query", BizOrderAcceptQueryHandler),  ##商家APP端接单接口
+        (r"/photo_online", PhotoOnlineHandler),  ##在线图库接口
+        (r"/phone_click", PhoneClickHandler),  ##记录用户点击商家电话信息
+        (r"/following", FollowingHandler),  ##关注用户
+        (r"/collect_articles", CollectArticlesHandler),  ##收藏文章
+        (r"/new_articles(/.*)?", NewArticlesHandler),  ##文章新接口，带历史文章
+        (r"/article_share",ArticleShareHandler),        # 用户分享攻略
+        (r"/article_comment", ArticleCommentHandler),    # 文章评论
+        (r"/post_share", PostShareHandler),        # 用户分享渔获
+        (r"/article_new", StrategyHandler),          # 20170225版攻略接口
+        (r"/article_send(/.*)?",ArticleSendHandler),        # pc发布攻略新接口
+        (r"/tools(/.*)?", ToolsDetailHandler),  # 渔获详情页
+        (r"/post_comment",PostCommentHandler),  ##渔获评论
+        (r"/post_reply", PostReplyHandler),     ##渔获回复
+        (r"/post_like", PostLikeHandler),  ##渔获点赞ziyafish_api
+        (r"/post_collect", PostCollectHandler),  ##渔获收藏
+        (r"/usr_group",UserGroupHandler),###用户创建的帮派
+        (r"/activity_im",ActivityIMHandler),  ####活动im咨询接口
+        (r"/ad_business",AdBusinessHandler),  ####ad商家接口
+        (r"/share_sign", ShareSignHandler),
+        (r"/collect_activity(/.*)", CollectActivityHandler),  ##收藏活动
+        (r"/count_share_activity", CountActivityShareHandler),  ###运营工作统计
+        (r"/code_image", CodeImageHandler),  ###图像二维码
+        (r"/user_show", UserShowHandler),   ###展示个人信息
+        (r"/info_ad", InfoAdHandler),  ###攻略详情插入广告
+        (r"/refresh_info_ad", RefreshAdHandler),  ###刷新广告列表
+        (r"/activity_by_code", ActivityByCodeHandler),  ###根据活动编号查活动
+        (r"/video/channels", VideoChannelsHandler),  ##频道主页面
+        (r"/video/channels_curr", VideoChannelsCurrHandler),  ##频道主页面 下拉
+        (r"/video/programs(/.*)?", VideoProgramsHandler),  ##节目主页面
+        (r"/video/programs_curr(/.*)", VideoProgramsCurrHandler),  ##节目主页面 下拉
+        (r"/video/live", VideoLiveHandler),  ##节目 直播
+        (r"/activity_list_custom", ActivityListHandler),  ##活动（大鱼专线、商务团建）
+        (r"/activity_list_asyn", ActivityListAsynHandler),  ##活动（大鱼专线、商务团建）
+        (r"/activity_customized",  ActivityCustomizedHandler), ## 活动 （私人定制）
+        # (r"/video_upload",  VideoUploadHandler), ##视频上传
+        (r"/user_channel",  UserVideoChannelHandler), ##用户频道
+        (r"/user_program",  UserVideoProgramHandler), ##用户节目
+        (r"/user_act_message", UserActMessageHandler),  # 获取消息弹框列表
+        (r"/biz_im_list", BizImListHandler),  # 商家聊天列表
+        (r"/biz_im_message", BizImMessageHandler),  # 商家聊天记录
+        (r"/recruit", RecruitHandler),  # 招聘
+        (r"/goods_detail", GoodDetailHandler),  ####获取商品信息
+        (r"/count_share_article", CountArticleShareHandler),  ###攻略分享统计
+        (r"/picture_change", PictureChangeHandler),  ####修改相片信息
+        (r"/user_article_history", UserArticleHistoryHandler),  ####用户历史攻略列表
+        (r"/activity_recommend", ActivityRecommendHandler),  ####新电商活动推荐
+    ]
+
+    # mongo初始化
+    MongoClient.init()
+    MongoIMClient.init()
+
+    # 获取管理员token
+    get_management_token()
+
+    ##redis 初始化
+    log.info("init redis client")
+
+    # 地理位置初始化
+    location_init()
+
+    # 金币商城规则初始化
+    credtis_rule_init()
+
+    # 广告初始化
+    get_ad()
+
+
+    RedisClient.setex("hello", 15, "helloworld")
+    str1 = RedisClient.get("hello")
+    log.info("init redis success:" + str1)
+    log.info("options.port:" + str(options.port))
+
+    RedisWeiboClient.setex("hello", 15, "helloworld")
+    str_value = RedisWeiboClient.get("hello")
+    log.info("init redis2 success:" + str_value)
+
+
+    setting = dict(
+        static_path=os.path.join(os.path.dirname(__file__), "static"),
+        template_path=os.path.join(os.path.dirname(__file__), "template"),
+ 
+        autoscaping=None,
+        # debug=True
+    )
+
+
+    app = tornado.web.Application(handlers=handlers, **setting)
+    http_server = tornado.httpserver.HTTPServer(app, xheaders=True)
+    http_server.listen(options.port)
+    tornado.ioloop.IOLoop.instance().start()
+
+
+if __name__ == '__main__':
+    main()

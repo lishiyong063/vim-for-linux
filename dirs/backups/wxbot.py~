@@ -1,0 +1,40 @@
+# -*- coding: utf-8 -*-
+# Created Time: 2018-05-24 16:09:02
+import os.path
+import tornado.httpserver
+import tornado.ioloop
+import tornado.web
+from tornado.web import gen
+from tornado.web import asynchronous
+import tornado.options
+from wxpy import *
+from pyecharts import Pie
+
+
+
+class WxBotHandler(tornado.web.RequestHandler):
+    def __init__(self, *args, **kwargs):
+        super(WxBotHandler, self).__init__(*args, **kwargs)
+        self.bot = ''
+
+    @asynchronous
+    def get(self):
+        self.wxbotlogin()
+
+
+    @asynchronous
+    def wxbotlogin(self):
+        #Bot(console_qr=2, qr_path='/home/vincent/work/robot/static/c.png', login_callback=None, qr_callback=self.getQr())
+        n = 1
+        while n < 10:
+            n+=1
+            self.write(str(n))
+    
+    
+    @asynchronous
+    def getQr(self):
+        print("xxxxx")
+        img = {"img": "/static/c.png"}
+        self.render("wx_login.html", **img)
+
+        

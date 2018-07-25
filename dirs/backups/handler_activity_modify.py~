@@ -1,0 +1,97 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# @Date    : 2015-05-18 17:41:52
+# @Author  : Your Name (you@example.org)
+# @Link    : http://example.org
+# @Version : $Id$
+from handler_baseHt import BaseHtHandler
+from log import get_logger
+import tornado.web
+from tornado.web import asynchronous
+from tornado.options import options
+import json
+import hashlib
+import datetime
+import hashlib
+from bson import ObjectId
+import random
+import time
+from log import get_logger
+from model.comment import Comment
+from model.activities import Activities
+import optionsSetting
+from utils.secret import *
+import traceback
+from utils.redis_client import RedisClient
+from utils.mongo_front import MongoFront
+from mongo_field_encoder import MongoFieldEncoder
+from model.posts import Post
+from mongolog import MongoHandler
+from mongokit.helpers import totimestamp, fromtimestamp
+from utils.token_im import TokenService
+from tornado.httpclient import HTTPRequest
+from utils.mongo_client import MongoClient
+import pymongo
+from auth import requires_auth
+try:
+    from tornado.curl_httpclient import CurlAsyncHTTPClient as AsyncHTTPClient
+except ImportError:
+    from tornado.simple_httpclient import SimpleAsyncHTTPClient as AsyncHTTPClient
+log = get_logger()
+class ActivityModifyHandler(BaseHtHandler):
+
+    # 修改活动信息
+
+    @asynchronous
+    @requires_auth
+    def post(self):
+        log.info("ActivityModifyHandler.post:"+self.request.body)
+        try:
+            body_dic = json.loads(self.request.body,encoding="utf-8")
+            key = body_dic.get("key",None)
+            activity_ids = body_dic.get("activity_id",None)
+            if activity_ids is None:
+                self.fire_response_error_info("None","None")
+            id_split = activity_ids.split(",")
+            id_array = list(map(ObjectId, id_split))
+            where = {
+                "_id":{"$in":id_array}
+            }
+            if key == "display_count":
+                display_count = int(body_dic.get("display_count",0))
+                type = body_dic.get("type","")
+                update_val = {
+                    "display_count": display_count
+                }
+                if type =="inc":
+                    update_val["ex"] = display_count
+                    update = {"$inc": update_val}
+                    MongoFront.update(where, update, "activities")
+                else:
+
+                    update = {"$set":update_val}
+                    orginal_data = MongoFront.find_one(where, "activities")
+                    if orginal_data:
+                        orginal_count = orginal_data.get("display_count", 0)
+                        if orginal_count:
+                            inc_count = display_count - orginal_count
+                            inc_dic = {"ex": inc_count}
+                            update["$inc"] = inc_dic
+                    MongoFront.update(where,update,"activities")
+            if key=="sales_count":
+                sales_count = int(body_dic.get("sales_count", 0))
+                update_val = {
+                    "$set":{"sales_count": sales_count}
+                }
+                MongoFront.update(where, update_val, "activities")
+
+            response={}
+            response["entities"]="ok"
+            self.write(json.dumps(response,indent=2, ensure_ascii=False,cls=MongoFieldEncoder))
+            self.finish()
+        except Exception as e:
+            log.info('ActivityModifyHandler.psot Exception:%s' % e.message)
+            log.error(traceback.format_exc())
+            self.fire_response_bad_response()
+            return
+

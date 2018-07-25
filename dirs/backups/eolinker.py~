@@ -1,0 +1,17 @@
+# -*- coding: utf-8 -*-
+# Created Time: 2018-05-19 14:47:27
+""" 将makerdown 文件转为 eolinker 格式
+"""
+
+eolinker_data = {
+        "baseInfo":{
+            "apiName": "{}",
+            "apiURI": "\{}",
+            # get 1 post 0
+            "apiProtocol": 0,
+            "apiSuccessMock": "         \n\t\\{apiName}\\"
+            
+            
+            
+            }
+}

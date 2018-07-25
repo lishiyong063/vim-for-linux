@@ -1,0 +1,307 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# @Date    : 2015-05-18 17:41:52
+# @Author  : Your Name (you@example.org)
+# @Link    : http://example.org
+# @Version : $Id$
+from handler_baseHt import BaseHtHandler
+from log import get_logger
+import tornado.web
+from tornado.web import asynchronous
+from tornado.options import options
+import json
+import hashlib
+import datetime
+import hashlib
+import random
+import pymongo
+import time
+from log import get_logger
+from model.users import Users
+from model.accounts import Account
+from model.posts import Post
+from model.activities import Activities
+import optionsSetting
+from utils.secret import *
+import traceback
+from utils.redis_client import RedisClient
+from mongo_field_encoder import MongoFieldEncoder
+from mongolog import MongoHandler
+from mongokit.helpers import totimestamp, fromtimestamp
+from utils.token_im import TokenService
+from tornado.httpclient import HTTPRequest
+from utils.mongo_front import MongoFront
+from services.service_post import getPostList
+from services.service_activity import *
+from bson import ObjectId
+from tornado import gen
+from auth import requires_auth
+from services.service_admin_log import save_log
+try:
+    from tornado.curl_httpclient import CurlAsyncHTTPClient as AsyncHTTPClient
+except ImportError:
+    from tornado.simple_httpclient import SimpleAsyncHTTPClient as AsyncHTTPClient
+log = get_logger()
+class UserFreezeHandler(BaseHtHandler):
+    ###封号申请
+    @requires_auth
+    @asynchronous
+    def post(self):
+        log.info("UserFreezeHandler.post:"+self.request.body)
+        body_dic = json.loads(self.request.body,encoding="utf-8")
+        freeze_reason = body_dic.get("freeze_reason",None)
+        username = body_dic.get("username",None)
+        if freeze_reason is None or freeze_reason =="" or username is None or username =="":
+            self.fire_response_bad_request("freeze_reason and username")
+            return
+
+        lookup={
+            "username":username
+        }
+
+        now = datetime.datetime.utcnow()
+        freeze_history = [{"act":"apply","actor":self.username,"created":now}]
+        updated_value={
+            "$set":{
+                "freeze_reason":freeze_reason,
+                "freeze_status":"1",   ###冻结状态：1：申请
+                "freeze_date":datetime.datetime.utcnow(),
+                "freeze_history":freeze_history
+            }
+        }
+
+        detail_content = body_dic.get("detail_content", None)
+        if detail_content is not None:
+            updated_value["$set"]["detail_content"]=detail_content
+
+        freeze_days = body_dic.get("freeze_days", None)
+        if freeze_days is not None:
+            updated_value["$set"]["freeze_days"]=freeze_days
+
+
+        options.dbconn.Users.find_and_modify(lookup,updated_value)
+        self.write(json.dumps({},indent=2, ensure_ascii=False,cls=MongoFieldEncoder))
+        self.finish()
+
+        act = "apply_freeze"
+        save_log(act,username,self.username)
+
+
+
+
+
+    ####封号审批
+    @asynchronous
+    @tornado.gen.engine
+    def put(self):
+        log.info("UserFreezeHandler.put:"+self.request.body)
+        body_dic = json.loads(self.request.body,encoding="utf-8")
+        username = body_dic.get("username",None)
+        freeze=body_dic.get("freeze",None)
+        if freeze is None or freeze =="" or username is None or username =="":
+            self.fire_response_bad_request("freeze and username")
+            return
+        username_array=username.split(",")
+
+        delete_comment = body_dic.get("delete_comment", "0")
+
+        lookup={
+            "username":{"$in":username_array}
+        }
+        if freeze=="1":
+            updated_value={
+                "$set":{
+                    # "status":"1",         ###用户状态："1":冻结
+                    "freeze_status":"2" ,  ###冻结状态：2：审批通过
+                    "freeze_date":datetime.datetime.utcnow(),
+                },
+                "$push":{
+                    "freeze_history":{"act":"operate","actor":self.username,"created":datetime.datetime.utcnow()}
+                }
+            }
+            MongoFront.update(lookup, updated_value, 'users')
+
+            ###用户账号设置为不可用
+            updated_value={
+                "$set":{
+                    "activated":False
+                }
+            }
+
+            MongoFront.update(lookup, updated_value, 'accounts')
+
+            user_cursor=MongoFront.find_all(lookup,"users")
+
+            for user_obj in user_cursor:
+                freeze_days=user_obj.get("freeze_days",0)
+                username=user_obj["username"]
+                if freeze_days>0:
+                    insert_value={
+                        "username":username,
+                        "freeze_cancel_date":datetime.datetime.utcnow()+datetime.timedelta(days=freeze_days),
+                        "created":datetime.datetime.utcnow()
+                    }
+                    MongoFront.insert(insert_value,"freeze_cancel_task")
+
+            # 贡献值相关操作
+            contribution_json = {
+                "username": username,
+                "act": "frozen_sanction"
+            }
+            message_event = json.dumps(contribution_json,
+                                       indent=2,
+                                       ensure_ascii=False,
+                                       cls=MongoFieldEncoder)
+            queue_name = options.contribution_redis
+            log.info("insert queue:%s" % queue_name)
+            log.info("insert message_event:%s" % message_event)
+            result = RedisClient.rpush(queue_name, message_event)
+
+            if delete_comment=="1":
+                ####删除用户评论信息
+                where={
+                    "actor.username":username
+                }
+                comment_cursor=MongoFront.find_all(where,"comments")
+                delete_comment_id_array=[]
+                for comment_obj in comment_cursor:
+                    comment_type=comment_obj.get("type","")
+                    delete_comment_id_array.append(comment_obj["_id"])
+
+                    if comment_type=="comments":
+                        to_post_id=comment_obj.get("to_post_id","")
+                        if to_post_id:
+                            where={
+                                "_id":ObjectId(to_post_id),
+                                "comment_count":{"$gt":0}
+                            }
+                            updated_value={
+                                "$inc": {
+                                    "comment_count": -1
+                                }
+                            }
+                            MongoFront.update(where,updated_value,"posts")
+
+                if delete_comment_id_array:
+                    where = {
+                        "_id": {"$in":delete_comment_id_array}
+                    }
+                    MongoFront.remove(where,"comments")
+
+                ###删除攻略评论
+                where = {
+                    "actor.username": username
+                }
+                MongoFront.remove(where, "article_comments")
+
+            # ###用户的帖子设置为删除
+            # lookup={
+            #     "actor.username":{"$in":username_array}
+            # }
+            # updated_value={
+            #     "$set":{
+            #         "deleted":True
+            #     }
+            # }
+            # MongoFront.update(lookup, updated_value, 'posts')
+            #
+            # ###用户的活动设置为删除
+            # lookup={
+            #     "actor.username":{"$in":username_array}
+            # }
+            # updated_value={
+            #     "$set":{
+            #         "deleted":True
+            #     }
+            # }
+            # MongoFront.update(lookup, updated_value, 'activities')
+
+        if freeze=="2":
+            ###删除冻结申请相关的字段
+            updated_value={
+                "$unset":{
+                    "freeze_reason":"",
+                    "freeze_status":"",
+                    "freeze_date":"",
+                    "freeze_history":""
+                }
+            }
+
+            MongoFront.update(lookup, updated_value, 'users')
+
+        self.write(json.dumps({},indent=2, ensure_ascii=False,cls=MongoFieldEncoder))
+        self.finish()
+
+        if freeze=="2":
+            for username in username_array:
+                act = "back_freeze"
+                save_log(act,username,self.username)
+        elif freeze=="1":
+            for username in username_array:
+                act = "freeze"
+                save_log(act,username,self.username)
+                
+                body = {"username":username}
+
+                body = json.dumps(body, indent=2, ensure_ascii=False)
+                server_url = self.get_argument('fishing_front_Url',"")+"/im_deactivate"
+                request = HTTPRequest(url=server_url,\
+                                      method="POST", \
+                                      headers={},\
+                                      body=body, \
+                                      follow_redirects=False)
+
+                response=yield gen.Task(AsyncHTTPClient().fetch,request)
+                if response.body:
+                    log.info("response.body:"+response.body+"  code:"+str(response.code))
+
+
+
+
+
+    ####解冻
+    @asynchronous
+    @tornado.gen.engine
+    def delete(self):
+        log.info("UserFreezeHandler.delete is called")
+        username = self.get_argument('username','')
+        lookup = {
+            'username': username
+        }
+
+        ###清空删除冻结字段
+        updated_value={
+            "$unset":{
+                "freeze_reason":"",
+                "freeze_status":""
+            }
+        }
+        MongoFront.update(lookup, updated_value, 'users')
+
+        ###用户账号设置为可用
+        updated_value={
+            "$set":{
+                "activated":True
+            }
+        }
+
+        MongoFront.update(lookup, updated_value, 'accounts')
+
+        self.write(json.dumps({},indent=2, ensure_ascii=False,cls=MongoFieldEncoder))
+        self.finish()
+        body = {"username":username}
+        body = json.dumps(body, indent=2, ensure_ascii=False)
+        server_url = self.get_argument('fishing_front_Url',"")+"/im_deactivate"
+        request = HTTPRequest(url=server_url,\
+                              method="PUT", \
+                              headers={},\
+                              body=body, \
+                              follow_redirects=False)
+
+        response=yield gen.Task(AsyncHTTPClient().fetch,request)
+        if response.body:
+            log.info("response.body:"+response.body+"  code:"+str(response.code))
+
+
+
+

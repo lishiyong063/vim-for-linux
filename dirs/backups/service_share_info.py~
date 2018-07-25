@@ -1,0 +1,309 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# @Date    : 2014-10-10 10:19:40
+# @Author  : Your Name (you@example.org)
+# @Link    : http://example.org
+# @Version : $Id$
+from mongokit import *
+from mongokit.helpers import totimestamp, fromtimestamp
+from utils.mongo_client import MongoClient
+from log import get_logger
+import traceback
+import json
+from tornado.options import options
+from tornado import gen
+from bson import ObjectId
+import bson
+from mongo_field_encoder import MongoFieldEncoder
+from services.service_user import *
+from model.articles import Article
+import datetime
+#
+import pymongo
+import math
+import re
+import weixin_token
+
+log = get_logger()
+
+
+# 获取渔获详情信息
+def get_post_with_id(post_id):
+    where = {
+        "_id": ObjectId(post_id)
+    }
+    post_filter = {
+        "page": 1,
+        "content": 1,
+        "_id": 0
+    }
+    post = MongoClient.find_one(where, "posts", post_filter)
+    return post
+
+
+# 获取渔获信息, 所有平台的分享内容
+@gen.coroutine
+def get_all_post_share_info(post_id, ziya_code="", ziya_url=""):
+    post_info = get_post_with_id(post_id)
+    sina_info = getPostShare(post_id, "sinaWeibo", post_info, ziya_code)
+    qq_info = getPostShare(post_id, "QQ", post_info, ziya_code)
+    qzone_info = getPostShare(post_id, "QQSpace", post_info, ziya_code)
+    wechat_moment_info = getPostShare(post_id, "wechatMoment", post_info, ziya_code)
+    wechat_session_info = getPostShare(post_id, "wechat", post_info, ziya_code)
+    if len(ziya_url) == 0:
+        ziya_url = wechat_session_info['share_url']
+    wechat_sign_info = yield weixin_token.getWeiXinInfo(ziya_url)
+    share_info = {
+        "sinaWeibo": sina_info,
+        "QQ": qq_info,
+        "QQSpace": qzone_info,
+        "wechatMoment": wechat_moment_info,
+        "wechat": wechat_session_info,
+        "wechat_sign":wechat_sign_info
+    }
+    raise gen.Return(share_info)
+
+
+# 获取渔获的分享信息
+def getPostShare(id, channel, post=None, ziyacode="",actor_username=None):
+    if post is None:
+        post = get_post_with_id(id)
+    image_url = "http://7xjbxf.com2.z0.glb.qiniucdn.com/ShareLogo%402x.png"
+    content = ""
+    if post!=None:
+        # content = post.get("content","子牙钓鱼是最好用的钓鱼APP，推荐你来用")
+        content = post.get("content", " 我一直用子牙钓鱼看天气、找钓点、发渔获、快来一起体验下")
+        if post.has_key("page"):
+            pages = post["page"]
+            if len(pages)>0 and pages[0].has_key("image_url"):
+                image_url=pages[0]["image_url"]
+
+    ###截取content 0-90
+    if len(content) > 90:
+        tmp1 = content[89]
+        tmp2 = content[90]
+        pattern = re.compile(u'[\uD800-\uDBFF]|[\uDC00-\uDFFF]')
+        # body_dic["nick"] = nick[:8]
+        if pattern.match(tmp1) and pattern.match(tmp2):
+            # body_dic["nick"] = nick[:9]
+            content = content.decode('utf8')[0:91].encode('utf8')
+        else:
+            content = content.decode('utf8')[0:90].encode('utf8')
+
+    url = options.new_share_url
+    # share_url = url+"/fish.html?id="+id+"&ziyacode="+ziyacode
+    # url="http://www.ziyadiaoyu.com"
+    share_url = url + "/post_share?id=" + id
+    if actor_username:
+        share_url=share_url+"&actor_username="+actor_username+"&f=1"
+
+    # title="快来约我吧，一起爆钓野性的美"
+    title="Hi，兄弟！我在用子牙钓鱼，快来一起约钓吧"
+    if channel=="sinaWeibo":
+        content=content+share_url
+    elif channel=="wechatMoment":
+        title=content  #朋友圈content与title一样
+
+    image_url=image_url+"?imageView2/1/w/120/h/120"
+    share_info={
+            "share_url":share_url,
+            "title":title,
+            "content":content,
+            "image_url":image_url
+        }
+
+    return share_info
+
+
+# 获取活动详情信息
+def get_activity_with_id(activity_id):
+    where = {
+        "_id": ObjectId(activity_id)
+    }
+    activity_filter = {
+        "page": 1,
+        "fish_address": 1,
+        "content": 1,
+        "_id": 0
+    }
+    activity = MongoClient.find_one(where, "activities", activity_filter)
+    return activity
+
+
+# 获取活动信息, 所有平台的分享内容
+@gen.coroutine
+def get_all_activity_share_info(post_id, ziya_code="", ziya_url=""):
+    activity_info = get_activity_with_id(post_id)
+    sina_info = getActivityShare(post_id, "sinaWeibo", activity_info, ziya_code)
+    qq_info = getActivityShare(post_id, "QQ", activity_info, ziya_code)
+    qzone_info = getActivityShare(post_id, "QQSpace", activity_info, ziya_code)
+    wechat_moment_info = getActivityShare(post_id, "wechatMoment", activity_info, ziya_code)
+    wechat_session_info = getActivityShare(post_id, "wechat", activity_info, ziya_code)
+    if len(ziya_url) == 0:
+        ziya_url = wechat_session_info['share_url']
+    wechat_sign_info = yield weixin_token.getWeiXinInfo(ziya_url)
+    share_info = {
+        "sinaWeibo": sina_info,
+        "QQ": qq_info,
+        "QQSpace": qzone_info,
+        "wechatMoment": wechat_moment_info,
+        "wechat": wechat_session_info,
+        "wechat_sign": wechat_sign_info
+    }
+    raise gen.Return(share_info)
+
+
+def getActivityShare(id,channel,post=None,ziyacode=""):
+    if post==None:
+        post = get_activity_with_id(id)
+    image_url = "http://7xjbxf.com2.z0.glb.qiniucdn.com/ShareLogo%402x.png"
+    content = ""
+    title = ""
+
+    if post!=None:
+        content = post.get("content","")
+        title = post.get("fish_address","")
+        if post.has_key("page"):
+            pages = post["page"]
+            if len(pages)>0 and pages[0].has_key("image_url"):
+                image_url=pages[0]["image_url"]
+
+    url = options.share_url
+    share_url = url+"/activity.html?post_id="+id+"&ziyacode="+ziyacode
+
+    if channel=="sinaWeibo":
+        content=content+share_url
+    elif channel=="wechatMoment":
+        content=title  #朋友圈content与title一样
+
+    image_url=image_url+"?imageView2/1/w/120/h/120"
+    share_info={
+            "share_url":share_url,
+            "title":title,
+            "content":content,
+            "image_url":image_url
+        }
+
+    return share_info
+
+
+# 获取视频的详情信息
+def get_video_with_id(video_id):
+    where = {
+        "_id": ObjectId(video_id)
+    }
+    video_filter = {
+        "page": 1,
+        "content": 1,
+        "_id": 0
+    }
+    video = MongoClient.find_one(where, "posts", video_filter)
+    return video
+
+
+# 获取视频渔获信息, 所有平台的分享内容
+@gen.coroutine
+def get_all_video_share_info(post_id, ziya_code="", ziya_url=""):
+    video_info = get_video_with_id(post_id)
+    sina_info = getVideoShare(post_id, "sinaWeibo", video_info, ziya_code)
+    qq_info = getVideoShare(post_id, "QQ", video_info, ziya_code)
+    qzone_info = getVideoShare(post_id, "QQSpace", video_info, ziya_code)
+    wechat_moment_info = getVideoShare(post_id, "wechatMoment", video_info, ziya_code)
+    wechat_session_info = getVideoShare(post_id, "wechat", video_info, ziya_code)
+    if len(ziya_url) == 0:
+        ziya_url = wechat_session_info['share_url']
+    wechat_sign_info = yield weixin_token.getWeiXinInfo(ziya_url)
+    share_info = {
+        "sinaWeibo": sina_info,
+        "QQ": qq_info,
+        "QQSpace": qzone_info,
+        "wechatMoment": wechat_moment_info,
+        "wechat": wechat_session_info,
+        "wechat_sign": wechat_sign_info
+    }
+    raise gen.Return(share_info)
+
+
+def getVideoShare(id,channel, post=None, ziyacode="", actor_username=None):
+
+    if post==None:
+        post = get_video_with_id(id)
+    image_url = "http://7xjbxf.com2.z0.glb.qiniucdn.com/ShareLogo%402x.png"
+    content = ""
+    if post!=None:
+        content = post.get("content","子牙钓鱼是最好用的钓鱼APP，推荐你来用")
+        if post.has_key("page"):
+            pages = post["page"]
+            if len(pages)>0:
+                page = pages[0]
+                if page.has_key("image_url"):
+                    image_url=page["image_url"]
+
+    url = options.new_share_url
+    # share_url = url+"/video.html?id="+id+"&ziyacode="+ziyacode
+    share_url = url + "/post_share?id=" + id
+    if actor_username:
+        share_url = share_url+"&actor_username="+actor_username
+
+    title="快来约我吧，一起爆钓野性的美"
+    if channel=="sinaWeibo":
+        content=content+share_url
+    elif channel=="wechatMoment":
+        title=content  #朋友圈content与title一样
+
+
+    image_url=image_url+"?imageView2/1/w/120/h/120"
+
+    share_info={
+            "share_url":share_url,
+            "title":title,
+            "content":content,
+            "image_url":image_url
+        }
+
+    return share_info
+
+
+# 获取渔获信息, 所有平台的分享内容
+@gen.coroutine
+def get_all_app_share_info(ziya_code="", ziya_url=""):
+    sina_info = getAppShare("sinaWeibo", ziya_code)
+    qq_info = getAppShare("QQ", ziya_code)
+    qzone_info = getAppShare("QQSpace", ziya_code)
+    wechat_moment_info = getAppShare("wechatMoment", ziya_code)
+    wechat_session_info = getAppShare("wechat", ziya_code)
+    if len(ziya_url) == 0:
+        ziya_url = wechat_session_info['share_url']
+    wechat_sign_info = yield weixin_token.getWeiXinInfo(ziya_url)
+    share_info = {
+        "sinaWeibo": sina_info,
+        "QQ": qq_info,
+        "QQSpace": qzone_info,
+        "wechatMoment": wechat_moment_info,
+        "wechat": wechat_session_info,
+        "wechat_sign": wechat_sign_info
+    }
+    raise gen.Return(share_info)
+
+
+def getAppShare(channel,ziyacode=""):
+    title = "Hi，兄弟！我在用子牙钓鱼，快来一起约钓吧"
+    # content = "子牙钓鱼是最好用的钓鱼APP，推荐你来用"
+    content = " 我一直用子牙钓鱼看天气、找钓点、发渔获、快来一起体验下"
+    share_url = "http://www.ziyadiaoyu.com?ziyacode="+ziyacode
+    image_url = "http://7xjbxf.com2.z0.glb.qiniucdn.com/ShareLogo%402x.png"
+
+    if channel=="sinaWeibo":
+        content=content+share_url
+    elif channel=="wechatMoment":
+        title="子牙钓鱼是最好用的钓鱼APP，推荐你来用"
+        content=title  #朋友圈content与title一样
+
+    image_url=image_url+"?imageView2/1/w/120/h/120"
+    share_info={
+            "share_url":share_url,
+            "title":title,
+            "content":content,
+            "image_url":image_url
+        }
+    return share_info

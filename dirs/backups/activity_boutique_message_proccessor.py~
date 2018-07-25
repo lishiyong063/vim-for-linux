@@ -1,0 +1,219 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# @Date    : 2014-08-15 17:04:53
+# @Author  : Your Name (you@example.org)
+# @Link    : http://example.org
+# @Version : $Id$
+
+
+import ConfigParser
+import datetime
+import json
+import logging
+import logging
+import string
+import sys
+import math
+import traceback
+from urllib import quote
+import urllib2
+import uuid
+from mongokit.helpers import totimestamp, fromtimestamp
+import globalConfig
+from iget_client import *
+from mongo_field_encoder import MongoFieldEncoder
+from proccessor.baseMessageProccessor import BaseMessageProccessor
+from proccessor.token_service import TokenService
+from utils.mongo_client import MongoClient
+from utils.redis_client import RedisClient
+import copy
+try:
+    from pymongo.objectid import ObjectId
+except ImportError:
+    from bson.objectid import ObjectId
+
+reload(sys)
+sys.setdefaultencoding('utf-8')
+
+####精品活动消息发送处理类
+class Activity_Boutique_Message_Proccessor(BaseMessageProccessor):
+    def __init__(self,message_event_dic):
+        super(Activity_Boutique_Message_Proccessor, self).__init__(message_event_dic)
+
+        self.message_event_dic=message_event_dic
+        self.message_group=[]
+
+        if globalConfig.is_debug == 1:
+            # 【内网地址】
+            self.ziya_xiaolingdui_nick = "子牙小领队"
+            self.ziya_xiaocanmou_username = "a41979ec661911e78f70000c29160262"
+            self.ziya_xiaocanmou_avatar_url = "http://7xjbxf.com2.z0.glb.qiniucdn.com/a13b03c6661911e79de8000c29160262.jpeg"
+        else:
+            # 【外网地址】
+            self.ziya_xiaolingdui_nick = "子牙小领队"
+            self.ziya_xiaocanmou_username = "93a73780703611e788e600163e0044d9"
+            self.ziya_xiaocanmou_avatar_url = "http://7xjbxf.com2.z0.glb.qiniucdn.com/095defc8976f11e7a39b00163e000cb8.png"
+
+        self.activity_boutique_icon = "http://s.ziyadiaoyu.com/rm.png"
+
+
+
+    def createMessages(self):
+        logging.info("activity_boutique createdMessages")
+        '''
+        {
+            "type":"activity_boutique",
+            "from_user":{
+                "username":"",
+                "nick":"",
+                "avatar_url":""
+            },
+            "post_info":{
+                "post_id":"",
+                "image_url":""
+            }
+
+        }
+        '''
+        try:
+            self.message=[]
+            ##2,根据 留言id获取留言
+            mes = self.message_event_dic
+            mes["created"] = datetime.datetime.utcnow()
+            tmp_result = {}
+            logging.info("self.message_event_dic:"+str(self.message_event_dic))
+            title_type = "activity_boutique"
+
+
+            tmp_result["type"] = mes["message_type"]
+
+            post_id = mes["post_id"]
+            # navigation_url = "ziya://exec/?action=harvestpush&pt=1&title_type="+title_type
+            navigation_url = self.activity_target_url%(post_id)
+            url_tmp = self.activity_target_url%(post_id)
+            navigation_url = self.ziya_into_url+url_tmp
+            tmp_result["navigation_url"] = navigation_url
+
+            tmp_result["redirect_url"] = self.activity_target_url%(post_id)
+
+            tmp_result["object_type"] = "activity"
+            # 从数据库中取出数据 并丢弃不符合条件的鱼获
+            post = self.getPost(post_id,"activities")
+            
+            mes["data_obj"] = post
+            tmp_result["post_info"] = {
+                         "content":post["content"],
+                         "post_id":post_id,
+                         "image_url":post["image_url"]
+                         }
+
+            username = post["actor"]["username"]
+            # user = self.getUser(username)
+            # tmp_result["from_user"] = {
+            #     "username":username,
+            #     "nick":user["nick"],
+            #     "avatar_url":user["avatar_url"]
+            #
+            # }
+            #替换成官方的子牙小领队
+            tmp_result["from_user"] = {
+                    "username":self.ziya_xiaocanmou_username,
+                    "nick":self.ziya_xiaolingdui_nick,
+                    "avatar_url":self.ziya_xiaocanmou_avatar_url
+            }
+            # username 如果时官方的 替换image_role
+            image_role = self.user_role_flg(tmp_result["from_user"]["username"])
+            if image_role:
+                tmp_result["from_user"]["actor_role_image"] = image_role
+
+
+
+            user_set=set([])
+            # tmp_result 帖子内容  mec redis 中原生数据 title_type 热门活动 post 帖子内容
+            message_entities = self.createMessagesToTarget(tmp_result,title_type,mes,user_set,post)
+            entities=message_entities["entities"]
+            if len(entities)>0:
+                self.message_group.append(message_entities)
+
+            logging.info("activity_boutique createdMessages success")
+        except Exception as e:
+            logging.error(traceback.format_exc())
+            logging.info('Exception:%s' % e.message)
+
+
+    def createMessagesToTarget(self,tmp_result,title_type,mes,user_set,post):
+        # 获取推送目标
+        target = mes["user_target"]
+        users_ary = []
+        # 附近的 
+        if target == "near":
+            # 获取周边用户通过 post 鱼获发送位置获得 周边用户信息
+            users_ary = self.getNearUser(0,100,post)
+        # 同城
+        elif target == "city":
+            cities = mes["cities"]
+            users_ary = self.get_usernamesBycity(cities)
+        # 全部的
+        elif target == "all":
+            if mes.has_key("days"):
+                days=mes["days"]
+                users_ary = self.get_recently_login_username(days)
+            else:
+                users_ary = self.get_all_users()
+
+        #   app版本小于2.3.3才推
+        if users_ary:
+            gt_flag = False
+            version_temp = "2.3.3"
+            push_user = self.user_push_array(users_ary, version_temp, gt_flag)
+
+
+        mes["fish_address"]=post.get("fish_address","")
+        message_entities=self.createMessageEntities(tmp_result,title_type,push_user,user_set,mes,m_type="activity_post")
+        return message_entities
+
+
+    def get_usernamesBycity(self,cities):
+        users_ary = []
+        if cities!=None and len(cities)>0:
+             lookup = {"status":0,"gps_info.city":{"$in":cities}}
+             users=MongoClient.find_all(lookup,"users")
+             if users!=None:
+                 for user in users:
+                     users_ary.append(user)
+        return users_ary
+
+    def get_all_users(self):
+         users_ary = []
+         lookup = {"status":0,"user_type":{"$ne":"2"}}
+         users=MongoClient.find_all(lookup,"users")
+         if users!=None:
+            for user in users:
+                if user.has_key("username"):
+                    users_ary.append(user)
+         return users_ary
+
+    def get_recently_login_username(self,login_days):
+        users_ary = []
+        logging.info("最近天数"+str(login_days))
+        if login_days!=None and type(login_days)==int:
+             now = datetime.datetime.utcnow()
+             comp_time = now - datetime.timedelta(days=login_days)
+
+             lookup = {"status":0,"last_login":{"$gte":comp_time}}
+             logging.info("lookup:"+str(lookup))
+             users=MongoClient.find_all(lookup,"users")
+             if users!=None:
+                 for user in users:
+                    if user.has_key("username"):
+                        users_ary.append(user)
+                        if user.get("invite_code","")=="306091":
+                            logging.info("invite_code:306091 is exist")
+        logging.info("users_ary:"+str(len(users_ary)))
+        return users_ary
+
+    def sendMessages(self):
+        self.sendMessagesList()
+
+    def getPushInfoIcon(self,mes):
+        return self.activity_boutique_icon

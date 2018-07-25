@@ -1,0 +1,681 @@
+/**
+ * Created by jiangjianfeng on 15-5-22.
+ */
+ var fishing_admin_Url = 'http://houtai.ziyadiaoyu.com';
+ var fishing_front_Url = 'http://api.ziyadiaoyu.com';
+ var group_url = 'http://group.ziyadiaoyu.com';
+ var weibo_url='http://www.ziyadiaoyu.com';
+
+//var fishing_admin_Url = 'http://localhost:8010';
+//var fishing_front_Url = 'http://localhost:8090';
+//var group_url = 'http://192.168.1.222:11000';
+//var weibo_url='http://192.168.1.222:8088'
+
+// var fishing_admin_Url = 'http://192.168.1.222:8010';
+// var fishing_front_Url = 'http://192.168.1.222:8090';
+// var group_url = 'http://192.168.1.222:11000';
+// var weibo_url='http://192.168.1.222:8088'
+
+var chat_connect_info="ws://182.92.184.209:8089/websocket"
+var chat_server="http://api.nbchat.com:8089"
+
+var icomet_server = "http://api.nbchat.com:8330/sign";
+var icomet_fornt = "http://api.nbchat.com:8331/sub";
+var xiaobian_username = "05dad6fca88411e6892400163e0044d9"
+
+
+
+
+
+Date.prototype.pattern=function(fmt) {
+    var o = {
+        "M+" : this.getMonth()+1, //月份
+        "d+" : this.getDate(), //日
+        "h+" : this.getHours()%12 == 0 ? 12 : this.getHours()%12, //小时
+        "H+" : this.getHours(), //小时
+        "m+" : this.getMinutes(), //分
+        "s+" : this.getSeconds(), //秒
+        "q+" : Math.floor((this.getMonth()+3)/3), //季度
+        "S" : this.getMilliseconds() //毫秒
+    };
+    var week = {
+        "0" : "/u65e5",
+        "1" : "/u4e00",
+        "2" : "/u4e8c",
+        "3" : "/u4e09",
+        "4" : "/u56db",
+        "5" : "/u4e94",
+        "6" : "/u516d"
+    };
+    if(/(y+)/.test(fmt)){
+        fmt=fmt.replace(RegExp.$1, (this.getFullYear()+"").substr(4 - RegExp.$1.length));
+    }
+    if(/(E+)/.test(fmt)){
+        fmt=fmt.replace(RegExp.$1, ((RegExp.$1.length>1) ? (RegExp.$1.length>2 ? "/u661f/u671f" : "/u5468") : "")+week[this.getDay()+""]);
+    }
+    for(var k in o){
+        if(new RegExp("("+ k +")").test(fmt)){
+            fmt = fmt.replace(RegExp.$1, (RegExp.$1.length==1) ? (o[k]) : (("00"+ o[k]).substr((""+ o[k]).length)));
+        }
+    }
+    return fmt;
+}
+
+
+function queryString(qs){
+    var s = location.href;
+    s = s.replace("?","?&").split("&");
+    var re = "";
+    for(i=1;i<s.length;i++)
+        if(s[i].indexOf(qs+"=")==0)
+            re = s[i].replace(qs+"=","");
+    return re;
+}
+
+function getRequest(requestURL,d,type,token,msg) {
+
+    var result="";
+    $.ajax({
+        url:requestURL,
+        type:type,
+        async:false,
+        headers: {
+            "Authorization" : "Bearer "+token
+        },
+        dataType: 'json',
+        contentType: "application/json; charset=utf-8",
+        data:JSON.stringify(d),
+        success: function(data, textStatus, jqXHR) {
+ 			//alert(JSON.stringify(data));
+            if(msg&&msg!=""&&msg!="undefined"){
+                alert(msg);
+            }
+            result=data;
+        }
+    });
+    return result
+
+}
+var admin_city_arry = new Map();
+function loadManagers(){
+    $.ajax({
+        url:fishing_admin_Url+'/admin_users?limit=1000',
+        type:'GET',
+        dataType:'json',
+        error: function(jqXHR, textStatus, errorThrown) {
+            alert('访问服务器失败，请重试');
+        },
+        success: function(data, textStatus, jqXHR) {
+            var template='<option value="{model_name}">{display_model_name}</option>';
+
+            //alert("data:"+JSON.stringify(data))
+            entities=data["entities"];
+            if (entities.length>0) {
+                amdin_user_list_html = '<option value="0" selected>全部</option>'
+                for (index in entities) {
+                    var city_array = new Array()
+                    amdin_user = entities[index];
+                    amdin_user_list_html = amdin_user_list_html + '<option value="' + amdin_user.username + '">' + amdin_user.real_name + '</option>'
+                    province_array = amdin_user.province_city_array
+                    for (index in province_array) {
+                        city_array = city_array.concat(province_array[index].citys.split(","))
+                    }
+                    username = amdin_user.username
+                    admin_city_arry.put(username,city_array)
+                }
+
+                $('#admin_user_select').html(amdin_user_list_html);
+            }
+        }
+    });
+
+}
+
+String.prototype.replaceAll = function (s1, s2) {
+    return this.replace(new RegExp(s1,"gm"),s2);
+}
+
+
+String.prototype.endWith=function(s){
+  if(s==null||s==""||this.length==0||s.length>this.length)
+     return false;
+  if(this.substring(this.length-s.length)==s)
+     return true;
+  else
+     return false;
+  return true;
+ }
+
+ String.prototype.startWith=function(s){
+  if(s==null||s==""||this.length==0||s.length>this.length)
+   return false;
+  if(this.substr(0,s.length)==s)
+     return true;
+  else
+     return false;
+  return true;
+ }
+
+///获得两个日期的间隔日期
+function getIntervalDate(value1,value2){
+    var result_array = new Array();
+    var getDate=function(str){
+        var tempDate=new Date();
+        var list=str.split("-");
+        tempDate.setFullYear(list[0]);
+        tempDate.setMonth(list[1]-1);
+        tempDate.setDate(list[2]);
+        return tempDate;
+    }
+    var date1=getDate(value1);
+    var date2=getDate(value2);
+    if(date1>date2){
+        var tempDate=date1;
+        date1=date2;
+        date2=tempDate;
+    }
+    result_array.push(date1.getFullYear()+"-"+(date1.getMonth()+1)+"-"+date1.getDate());
+    date1.setDate(date1.getDate()+1);
+
+    while(!(date1.getFullYear()==date2.getFullYear()&&date1.getMonth()==date2.getMonth()&&date1.getDate()==date2.getDate())){
+        result_array.push(date1.getFullYear()+"-"+(date1.getMonth()+1)+"-"+date1.getDate())
+        //document.write("<div style='display:block'>"+date1.getFullYear()+"-"+(date1.getMonth()+1)+"-"+date1.getDate()+"</div>");
+        //alert(date1.getFullYear()+"-"+(date1.getMonth()+1)+"-"+date1.getDate())
+        date1.setDate(date1.getDate()+1);
+    }
+    return result_array
+}
+
+
+function closeAlertPage(){
+    var index = parent.layer.getFrameIndex(window.name);
+    parent.layer.close(index);
+}
+
+
+function ShowDialog(w,h,url) {
+    var iWidth=w; //窗口宽度
+    var iHeight=h;//窗口高度
+    var iTop=(window.screen.height-iHeight)/2;
+    var iLeft=(window.screen.width-iWidth)/2;
+    window.open(url,window,"dialogHeight: "+iHeight+"px; dialogWidth: "+iWidth+"px;dialogTop: "+iTop+"; dialogLeft: "+iLeft+"; resizable: no; status: no;scroll:no");
+}
+
+/**
+ * 获取按指定条件检索的用户数据
+ * @param condition_json
+ * @returns {*}
+ */
+function searchUsersByCondition(condition_json){
+
+    var entitys
+    condition=JSON.stringify(condition_json)
+
+    var requestURL = fishing_admin_Url+"/users?condition="+condition
+    $.ajax({
+        url:requestURL,
+        type:'GET',
+        dataType:'json',
+        async:false,
+        error: function(jqXHR, textStatus, errorThrown) {
+            alert('访问服务器失败，请重试');
+            //alert("error:"+jqXHR.readyState+"  请求状态:"+jqXHR.status+" response:"+jqXHR.responseText)
+            //alert("textStatus:"+textStatus)
+        },
+        success: function(data, textStatus, jqXHR) {
+
+            //alert("data:"+JSON.stringify(data))
+
+            entities=data["entities"];
+
+        }
+    });
+    return entities;
+}
+
+/**
+ * 获取按指定条件检索的帖子数据
+ * @param condition_json
+ * @returns {*}
+ */
+function searchPostsByCondition(condition_json){
+
+    var entitys
+    condition=JSON.stringify(condition_json)
+
+    var requestURL = fishing_admin_Url+"/fishing_location?condition="+condition
+    $.ajax({
+        url:requestURL,
+        type:'GET',
+        dataType:'json',
+        async:false,
+        error: function(jqXHR, textStatus, errorThrown) {
+            alert('访问服务器失败，请重试');
+            //alert("error:"+jqXHR.readyState+"  请求状态:"+jqXHR.status+" response:"+jqXHR.responseText)
+            //alert("textStatus:"+textStatus)
+        },
+        success: function(data, textStatus, jqXHR) {
+            //alert("data:"+JSON.stringify(data))
+
+            entities=data["entities"];
+
+        }
+    });
+    return entities;
+}
+
+/**
+ * 获取按指定条件检索的活动数据
+ * @param condition_json
+ * @returns {*}
+ */
+function searchActivitiesByCondition(condition_json){
+
+    var entitys
+    condition=JSON.stringify(condition_json)
+
+    var requestURL = fishing_admin_Url+"/activity?condition="+condition
+    $.ajax({
+        url:requestURL,
+        type:'GET',
+        dataType:'json',
+        async:false,
+        error: function(jqXHR, textStatus, errorThrown) {
+            alert('访问服务器失败，请重试');
+            //alert("error:"+jqXHR.readyState+"  请求状态:"+jqXHR.status+" response:"+jqXHR.responseText)
+            //alert("textStatus:"+textStatus)
+        },
+        success: function(data, textStatus, jqXHR) {
+            //alert("data:"+JSON.stringify(data))
+
+            entities=data["entities"];
+
+        }
+    });
+    return entities;
+}
+
+/**
+ * 获取按指定条件检索的订单数据
+ * @param condition_json
+ * @returns {*}
+ */
+function searchOrdersByCondition(condition_json){
+
+    var entitys
+    condition=JSON.stringify(condition_json)
+
+    var requestURL = fishing_admin_Url+"/activity_order?condition="+condition
+    $.ajax({
+        url:requestURL,
+        type:'GET',
+        dataType:'json',
+        async:false,
+        error: function(jqXHR, textStatus, errorThrown) {
+            alert('访问服务器失败，请重试');
+            //alert("error:"+jqXHR.readyState+"  请求状态:"+jqXHR.status+" response:"+jqXHR.responseText)
+            //alert("textStatus:"+textStatus)
+        },
+        success: function(data, textStatus, jqXHR) {
+            //alert("data:"+JSON.stringify(data))
+
+            entities=data["entities"];
+
+        }
+    });
+    return entities;
+}
+
+function setHtmlContent(id,html){
+    $(id).replaceWith(html)
+}
+
+function pageRelead(){
+    location.reload()
+}
+
+
+
+function loadChargeCity() {
+    //alert("user_info"+JSON.stringify(user_info))
+    var city_list_html = ""
+    if (chargeCity.length > 0) {///员工用户
+
+        sort_charge_city_array = sort_by_coastal(chargeCity)
+
+        city_list_html = '<select size="1" name="city" datatype="*" nullmsg="全部" id="city"><option value="" selected>全部城市</option>'
+        for (index in sort_charge_city_array) {
+            city = sort_charge_city_array[index];
+            city_list_html = city_list_html + '<option value="' + city + '">' + city + '</option>'
+        }
+        city_list_html = city_list_html + "</select>"
+        $('#city_select').html(city_list_html);
+    } else {      //主管用户
+        city_list_html = '<div id="province_sel" width="100" style="Float:left"></div>'
+        $('#city_select').html(city_list_html);
+        $("#province_sel").ProvinceCity();
+    }
+}
+
+
+var myvest_array=new Array()
+function myVests(){
+
+    request_url=fishing_admin_Url+"/myVests"
+    result=getRequest(request_url,'','GET','')
+    vests = result.entities
+    for(i in vests) {
+        vest = vests[i]
+        city=""
+        if (vest.gps_info && vest.gps_info.city){
+            city="  ("+vest.gps_info.city+")"
+        }
+        //$("#myVests").append('<option value='+vest.mobile+'>'+vest.nick+city+'</option>')
+        //$("#myVests_select").append('<option value='+vest.mobile+'>'+vest.nick+city+'</option>')
+
+
+        $("#myVests").append('<option value='+vest.mobile+'>'+vest.nick+city+'</option>')
+        $("#myVests_select").append('<option username="'+vest.username+'" value='+vest.mobile+'>'+vest.nick+city+'</option>')
+        myvest_array.push(vest)
+    }
+
+}
+
+function isOfficeAccount(input_username){
+    var is_office_account=false;
+    if (input_username=="e1c7d92b0fe311e5acdd34363b6f45fc" ||input_username=="0f3d707e70b311e58b9200163e0044d9" ||
+        input_username=="75014290feed11e681df00163e0044d9" ||input_username=="05dad6fca88411e6892400163e0044d9" ){
+        is_office_account=true;
+    }
+    return is_office_account;
+}
+
+
+function getOfficeAccountHtml(){
+    var officeAccountHtml='<option value="e1c7d92b0fe311e5acdd34363b6f45fc" mobile="00000000"  style="color: red">子牙团队</option>'
+                        +'<option value="0f3d707e70b311e58b9200163e0044d9" mobile="1444635006" style="color: red">子牙客服</option>'
+                        +'<option value="75014290feed11e681df00163e0044d9" mobile="1488420650" style="color: red">子牙客户关怀部</option>'
+                        +'<option value="05dad6fca88411e6892400163e0044d9" mobile="1478919566875" style="color: red">子牙小编</option>'
+			+'<option value="57d9a468ce8c11e7917200163e0044d9" mobile="1511248782" style="color: red">子牙小编2</option>'
+			+'<option value="b3c2818ed89e11e78de500163e0044d9" mobile="1512356179" style="color: red">子牙商城支持</option>';
+    return officeAccountHtml;
+}
+
+function loadMyVests(myvest_array,coordinates,is_group,act_temp){
+
+    var near_vest_array=new Array()
+    var no_distance_array=new Array()
+    for( i in myvest_array){
+        vest=myvest_array[i]
+        if (coordinates && vest.gps_info && vest.gps_info.country != "" && vest.gps_info.location && vest.gps_info.location.coordinates) {
+            vest_coordinates = vest.gps_info.location.coordinates
+            splice_near_array(coordinates, vest, near_vest_array)
+        } else {
+            no_distance_array.push(vest)
+        }
+    }
+    near_vest_array = near_vest_array.concat(no_distance_array)
+    $("#myVests_select").empty()
+
+
+    for (i in near_vest_array) {
+        vest = near_vest_array[i]
+        if (isOfficeAccount(vest.username)){
+            continue
+        }
+
+        city = ""
+        if (vest.gps_info && vest.gps_info.city) {
+            city = "  (" + vest.gps_info.city + ")"
+
+        }
+
+        comment_info = vest.nick + city
+        if (vest.post_count){
+            comment_info=comment_info+"  已发帖："+vest.post_count+"个 "
+        }
+        if (vest.last_post_date){
+            comment_info=comment_info+"  最近发帖时间："+new Date(vest.last_post_date).pattern("yyyy-MM-dd")
+        }
+
+        $("#myVests_select").append('<option mobile="' + vest.mobile+'" ' + 'value="'+ vest.username+'" >' + comment_info + '</option>')
+    }
+    if (act_temp=='chat'){
+        $("#myVests_select").prepend(getOfficeAccountHtml())
+    }else{
+        $("#myVests_select").append(getOfficeAccountHtml())
+    }
+    $("#myVests_select").prepend('<option  value="-1">请选择小号</option>')
+}
+
+function loadMyGroupVests(myvest_array,coordinates){
+
+    var near_vest_array=new Array()
+    var no_distance_array=new Array()
+    for( i in myvest_array){
+        vest=myvest_array[i]
+        if (coordinates && vest.gps_info && vest.gps_info.country != "" && vest.gps_info.location && vest.gps_info.location.coordinates) {
+            vest_coordinates = vest.gps_info.location.coordinates
+            splice_near_array(coordinates, vest, near_vest_array)
+        } else {
+            no_distance_array.push(vest)
+        }
+    }
+    near_vest_array = near_vest_array.concat(no_distance_array)
+    $("#myVests_select").empty()
+
+    if (user_info.level!="staff"){
+        $("#myVests_select").append('<option username="e1c7d92b0fe311e5acdd34363b6f45fc" value="e1c7d92b0fe311e5acdd34363b6f45fc">子牙团队</option>')
+        $("#myVests_select").append('<option username="0f3d707e70b311e58b9200163e0044d9" value="0f3d707e70b311e58b9200163e0044d9">子牙客服</option>')
+
+    }
+    for (i in near_vest_array) {
+        vest = near_vest_array[i]
+        city = ""
+        if (vest.gps_info && vest.gps_info.city) {
+            city = "  (" + vest.gps_info.city + ")"
+
+        }
+        if(vest.username!="e1c7d92b0fe311e5acdd34363b6f45fc"&&vest.username!="0f3d707e70b311e58b9200163e0044d9") {
+
+            $("#myVests_select").append('<option value="' + vest.username + '" ' + 'username="' + vest.username + '" >' + vest.nick + city + '</option>')
+        }
+    }
+}
+
+function splice_near_array(coordinates,vest,near_vest_array){
+    var index=0
+    var vest_coordinates=vest.gps_info.location.coordinates
+    var distance=getDistance(coordinates,vest_coordinates)
+    for(var i=0;i<near_vest_array.length;i++){
+        vest_tmp=near_vest_array[i]
+        vest_tmp_coordinates=vest_tmp.gps_info.location.coordinates
+        var vest_tmp_distance=getDistance(coordinates,vest_tmp_coordinates)
+        if (distance<vest_tmp_distance) {
+            index = i
+            break;
+        }
+    }
+    near_vest_array.splice(index, 0, vest);
+}
+
+
+function getDistance(point1,point2) {
+    final = 6378137.0
+    flng = calcDegree(parseFloat(point1[0]))
+    flat = calcDegree(parseFloat(point1[1]))
+    tlng = calcDegree(parseFloat(point2[0]))
+    tlat = calcDegree(parseFloat(point2[1]))
+    result = Math.sin(flat) * Math.sin(tlat)
+    result += Math.cos(flat) * Math.cos(tlat) * Math.cos(flng - tlng)
+    return final * Math.acos(parseFloat(result))
+}
+function calcDegree(d) {
+    return d * Math.PI / 180.0
+}
+
+
+function remove_curr_tr(id) {
+    $('#tr_'+id).remove()
+}
+
+function loadArea(){
+    $.ajax({
+        url:fishing_admin_Url+'/activity_area_location',
+        type:'GET',
+        dataType:'json',
+        error: function(jqXHR, textStatus, errorThrown) {
+            alert('访问服务器失败，请重试');
+        },
+        success: function(data, textStatus, jqXHR) {
+            // var template='<option value="{model_name}">{display_model_name}</option>';
+
+            //alert("data:"+JSON.stringify(data))
+            entities=data["entities"];
+            if (entities.length>0) {
+                //admin_area = '<option value="0" selected>最新</option>'
+                admin_area = ''
+                for (var i=0;i<entities.length;i++) {
+		    activity_area_code = entities[i].code
+                    if (activity_area_code=="12"){
+
+                    }else{
+                        admin_area = admin_area+ '<option value="' + entities[i].code + '">' + entities[i].area + '</option>'
+                    }
+                
+                //    admin_area = admin_area+ '<option value="' + entities[i].code + '">' + entities[i].area + '</option>'
+
+                }
+                biz_area = admin_area.replace("最新","全部")
+                $('#admin_area').html(biz_area);
+                $('#belonge_area').html(admin_area);
+            }
+        }
+    });
+
+}
+
+function area_teansfer(area_code){
+    if (area_code=="1"){
+        return "辽宁"
+    }
+    if (area_code=="2"){
+        return "天津河北"
+    }
+
+    if (area_code=="3"){
+        return "山东"
+    }
+
+    if (area_code=="4"){
+        return "江浙沪"
+    }
+
+    //if (area_code=="5"){
+    //    return "浙江"
+    //}
+
+    if (area_code=="6"){
+        return "福建"
+    }
+
+    if (area_code=="7"){
+        return "广东"
+    }
+
+    //if (area_code=="8"){
+    //    return "广西"
+    //}
+
+    if (area_code=="9"){
+        return "海南广西"
+    }
+
+    if (area_code=="10"){
+        return "海外"
+    }
+
+    if (area_code=="11"){
+        return "其他"
+    }
+
+}
+
+function re_assemble(biz_user_list){
+    var o=document.getElementById(biz_user_list);
+    if (!o) return ;
+    var t=[],tt=o.options;
+    while(tt.length>0){
+        t[t.length]=tt[0].text;
+        tt.remove(0);
+    }
+    t.sort();
+    for(var i=0,c;c=t[i];i++){
+        tt.add(new Option(c));
+    }
+}
+
+
+var compare = function (obj1, obj2) {
+    var val1 = obj1.club_name;
+    var val2 = obj2.club_name;
+    if (val1 < val2) {
+        return -1;
+    } else if (val1 > val2) {
+        return 1;
+    } else {
+        return 0;
+    }
+}
+
+function loadBizUser(){
+    var biz_requestURL = fishing_admin_Url+'/biz_nick?s=s'
+    var admin_area = ""
+    if ($("#admin_area").val()!="全部"){
+        biz_requestURL=biz_requestURL+"&admin_area="+$("#admin_area").val()
+    }
+    $.ajax({
+		// url:fishing_admin_Url+'/activity_biz_user',
+        url:biz_requestURL,
+        type:'GET',
+        dataType:'json',
+        error: function(jqXHR, textStatus, errorThrown) {
+            alert('访问服务器失败，请重试');
+        },
+        success: function(data, textStatus, jqXHR) {
+			// var template='<option value="{model_name}">{display_model_name}</option>';
+
+            //alert("data:"+JSON.stringify(data))
+            var entities=data["entities"];
+            if (entities.length>0) {
+                for (index in entities) {
+                    var biz_user = entities[index];
+                    var club_name = biz_user.club_name
+                    var first_letter = makePy(club_name).toLowerCase()
+                    biz_user.club_name = first_letter +"&nbsp;"+ club_name
+                }
+            }
+            entities.sort(compare)
+            if (entities.length>0) {
+                biz_user_list = '<option value="0" selected>全部</option>'
+                for (index in entities) {
+                    var biz_user = entities[index];
+					// var club_name = biz_user.club_name
+                    // var first_letter = makePy(club_name)
+                    // club_name = first_letter +"&nbsp;"+ club_name
+                    biz_user_list = biz_user_list + '<option value="' + biz_user.username + '">' + biz_user.club_name + '</option>'
+                }
+
+                $('#biz_user_list').html(biz_user_list);
+            }
+        }
+    });
+
+}
+
+
+
+
+
+
+

@@ -1,0 +1,182 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# @Date    : 2015-05-18 17:41:52
+# @Author  : Your Name (you@example.org)
+# @Link    : http://example.org
+# @Version : $Id$
+from handler_baseHt import BaseHtHandler
+from log import get_logger
+import tornado.web
+from tornado.web import asynchronous
+from tornado.options import options
+import json
+import hashlib
+import datetime
+import hashlib
+from bson import ObjectId
+import random
+import time
+from log import get_logger
+from auth import requires_auth
+from model.extend_usr_record import ExtendUserRecord
+from model.permissions_ht import Permissions_ht
+import optionsSetting
+from utils.secret import *
+import traceback
+from utils.redis_client import RedisClient
+from utils.mongo_client import MongoClient
+from utils.mongo_front import MongoFront
+
+from mongo_field_encoder import MongoFieldEncoder
+from mongolog import MongoHandler
+from mongokit.helpers import totimestamp, fromtimestamp
+from utils.token_im import TokenService
+from tornado.httpclient import HTTPRequest
+import pymongo
+
+try:
+    from tornado.curl_httpclient import CurlAsyncHTTPClient as AsyncHTTPClient
+except ImportError:
+    from tornado.simple_httpclient import SimpleAsyncHTTPClient as AsyncHTTPClient
+log = get_logger()
+class JudgeAppliesHandler(BaseHtHandler):
+    @asynchronous
+    @requires_auth
+    def get(self):
+        log.info("JudgeAppliesHandler.get:"+self.request.body)
+        curr = self.get_argument('curr',"")
+
+        where={
+            "match":0
+        }
+        sort=[('created', pymongo.DESCENDING)]
+
+        limit=10
+        sort_by = 'created'
+        sort_value =  pymongo.DESCENDING
+
+        if curr=="":
+
+            judge_apply_list = options.dbconn.ExtendUserRecord.find(where).sort(sort_by, sort_value).limit(limit)
+        else:
+            judge_apply_list = options.dbconn.ExtendUserRecord.find(where).sort(sort_by, sort_value).skip((int(curr)-1)*limit).limit(limit)
+
+
+        # for judge_apply in judge_apply_list:
+        #     log.info(judge_apply["nick_apply"]+"---"+str(judge_apply["created"]))
+
+        # judge_apply_list=list(MongoClient.finds(where,"extend_user_record",orderby="created",asc=False)) or []
+
+        response={}
+
+        response["entities"]=list(judge_apply_list) or []
+        response["count"]=str(judge_apply_list.count())
+        self.write(json.dumps(response,indent=2, ensure_ascii=False,cls=MongoFieldEncoder))
+        self.finish()
+
+    @asynchronous
+    @requires_auth
+    def put(self):
+        log.info("JudgeAppliesHandler.put:"+self.request.body)
+        body_dic = json.loads(self.request.body,encoding="utf-8")
+        request_id=body_dic.get("id","")
+        request_pass=body_dic.get("pass","")
+        username=body_dic.get("username","")
+        response={}
+
+        if request_id and request_pass:
+            if request_pass=="1" and username=="":
+                self.fire_response_bad_response
+                return
+
+            if request_pass=="0":
+                #########申请驳回
+                lookup= {"_id": ObjectId(request_id)}
+                where={
+                    "$set":{
+                        "match":3
+                    }
+                }
+                options.dbconn.ExtendUserRecord.find_and_modify(lookup,where)
+                response["result"]="success"
+                self.write(json.dumps(response,indent=2, ensure_ascii=False,cls=MongoFieldEncoder))
+                self.finish()
+                return
+
+            if request_pass=="1":
+
+                where={
+                    "username":username
+                }
+                user=MongoFront.find_one(where,"users")
+                if user:
+
+
+                    where={
+                        "user_username":username
+                    }
+
+                    user_references=MongoClient.find_one(where,"user_references_record")
+
+                    if user_references:
+                        response["result"]="failed"
+                        response["desc"]="该用户已经被"+user_references["real_name"]+"关联,请选择其他用户"
+
+                        self.write(json.dumps(response,indent=2, ensure_ascii=False,cls=MongoFieldEncoder))
+                        self.finish()
+
+                    else:
+                        #####匹配成功
+                        lookup= {"_id": ObjectId(request_id)}
+                        where={
+                            "$set":{
+                                "match":2,
+                                "actor":{
+                                    "username":username,
+                                    "nick":user.get("nick",""),
+                                    "avatar_url":user.get("avatar_url",""),
+                                    "created":user.get("created",""),
+                                    "invite_code":user.get("invite_code","")
+                                }
+                            }
+                        }
+                        extend_user_record=options.dbconn.ExtendUserRecord.find_and_modify(lookup,where)
+                        response["result"]="success"
+
+                        self.write(json.dumps(response,indent=2, ensure_ascii=False,cls=MongoFieldEncoder))
+                        self.finish()
+
+
+                        if extend_user_record:
+                            user_references_record={
+                                "real_name":extend_user_record["real_name"],
+                                "admin":extend_user_record["admin"],
+                                "user_username":username,
+                                "create":datetime.datetime.utcnow(),
+                                "user_created":user["created"],
+                                "recodr_id":request_id
+                            }
+                            MongoClient.insert(user_references_record,"user_references_record")
+                else:
+                    self.fire_response_bad_response
+
+
+
+        else:
+            self.fire_response_bad_response
+
+
+
+
+
+
+    def fire_response_bad_response(self):
+        """
+        返回登录请求错误响应
+        """
+        self.set_status(400)
+        response = {}
+        response["error"] = "invalid_date"
+        response["error_description"] = "invalid date"
+        self.write(json.dumps(response, indent=2, ensure_ascii=False))
+        self.finish()

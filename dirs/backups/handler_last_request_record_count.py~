@@ -1,0 +1,528 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# @Date    : 2015-05-18 17:41:52
+# @Author  : Your Name (you@example.org)
+# @Link    : http://example.org
+# @Version : $Id$
+from handler_baseHt import BaseHtHandler
+from log import get_logger
+import tornado.web
+from tornado.web import asynchronous
+from tornado.options import options
+import json
+import hashlib
+import datetime
+import hashlib
+from bson import ObjectId
+import random
+import time
+from log import get_logger
+from auth import requires_auth
+import optionsSetting
+from utils.secret import *
+import traceback
+from utils.redis_client import RedisClient
+from utils.mongo_front import MongoFront
+from mongo_field_encoder import MongoFieldEncoder
+from mongolog import MongoHandler
+from mongokit.helpers import totimestamp, fromtimestamp
+from utils.token_im import TokenService
+from tornado.httpclient import HTTPRequest
+from utils.mongo_client import MongoClient
+import pymongo
+
+try:
+    from tornado.curl_httpclient import CurlAsyncHTTPClient as AsyncHTTPClient
+except ImportError:
+    from tornado.simple_httpclient import SimpleAsyncHTTPClient as AsyncHTTPClient
+log = get_logger()
+class LastRequestRecodCountHandler(BaseHtHandler):
+    @asynchronous
+    @requires_auth
+    def get(self):
+        # log.info("LastRequestRecodCountHandler.get:"+self.request.body)
+
+        condition = self.get_argument('condition',"")
+        condition_dic=json.loads(condition,encoding="utf-8")
+        # log.info("condition_dic:"+json.dumps(condition_dic,indent=2, ensure_ascii=False,cls=MongoFieldEncoder))
+        response_dic=self.get_record_count(condition_dic)
+        # response_dic={
+        #   "freeze-user-list":13,
+        #   "deleted_post":11,
+        #   "great_post":4,
+        #   "activity_check":5
+        # }
+        # log.info("response_dic:"+json.dumps(response_dic,indent=2, ensure_ascii=False,cls=MongoFieldEncoder))
+        self.write(json.dumps(response_dic,indent=2, ensure_ascii=False,cls=MongoFieldEncoder))
+        self.finish()
+    
+
+
+    def get_record_count(self,condition_dic):
+        response_dic={}
+
+        for key in condition_dic.keys():
+            datetime_str=condition_dic[key]
+            datemax = datetime.datetime.strptime(datetime_str, "%Y-%m-%d-%H-%M-%S")+datetime.timedelta(hours=-8)
+
+            ##获取申请账号冻结数
+            if key=="freeze-user-list":
+                where={
+                    "freeze_status":"1",
+                    "freeze_date":{
+                        "$gt":datemax
+                    }
+                }
+                user_cursor=MongoFront.find_all(where,"users")
+                user_count=0
+                if user_cursor:
+                    user_count=user_cursor.count()
+                response_dic[key]=user_count
+
+            ##获取申请删除渔获数
+            if key=="deleted_post":
+                where={
+                    "deleted":{"$ne":True},
+                    "pre_delete":True,
+                    "pre_delete_date":{
+                        "$gt":datemax
+                    }
+                }
+                user_cursor=MongoFront.find_all(where,"posts")
+                user_count=0
+                if user_cursor:
+                    user_count=user_cursor.count()
+                response_dic[key]=user_count
+
+
+            ##获取申请精品渔获数
+            if key=="great_post":
+                where={
+                    'deleted': {'$ne': True},
+                    "boutique": "1",
+                    "apply_boutique_date":{
+                        "$gt":datemax
+                    }
+                }
+                user_cursor=MongoFront.find_all(where,"posts")
+                user_count=0
+                if user_cursor:
+                    user_count=user_cursor.count()
+                response_dic[key]=user_count
+
+            ##获取活动审核数
+            if key=="activity_check":
+                admin_user=self.me
+                where = {
+                    'deleted': {'$ne': True},
+                    "created":{
+                        "$gt":datemax
+                    },
+                    "activity_type":1
+                }
+                if admin_user:
+                    if admin_user["level"]=="leader":
+                        ###需求修改：让主管能看到所有的待审核帖子,包括运营人员发的和用户发的。
+                        where["$or"]=[{"check":{ "$exists" : False }},{"check":"0"}]
+                    else:
+                        where["post_type"]="1"  ####POST_TYPE==1表示非小号发的活动,非leader用户是不能审小号活动的
+                        where['check'] = { "$exists" : False }
+
+
+                user_cursor=MongoFront.find_all(where,"activities")
+                user_count=0
+                if user_cursor:
+                    user_count=user_cursor.count()
+                response_dic[key]=user_count
+
+
+            ##获取商家认证审核数
+            if key=="activity-biz-user-list":
+                admin_user=self.me
+                where = {
+                    "status":0,
+                    "created":{
+                        "$gt":datemax
+                    },
+                }
+                biz_username = self.username
+                biz_where={
+                    "username":biz_username
+                }
+                account=options.dbconn_ht.Account_ht.find(biz_where)
+                if account[0]["level"]=="staff":
+                    if account[0]["activity_area"]!=None:
+                        where["admin_area"]={"$in":account[0]["activity_area"]}
+                    else:
+                         where["admin_area"]="50"
+
+
+                user_cursor=MongoFront.find_all(where,"biz_user")
+                user_count=0
+                if user_cursor:
+                    user_count=user_cursor.count()
+                response_dic[key]=user_count
+
+
+             ##获取新版活动审核数
+            if key=="new-activity-check-list":
+                admin_user=self.me
+                where = {
+                    'deleted': {'$ne': True},
+                    "activity_type":0,
+                    "status":0,
+                    "created":{
+                        "$gt":datemax
+                    },
+                }
+                biz_username = self.username
+                biz_where={
+                    "username":biz_username
+                }
+                account=options.dbconn_ht.Account_ht.find(biz_where)
+                if account[0]["level"]=="staff":
+                    if account[0]["activity_area"]!=None:
+                        where["admin_area"]={"$in":account[0]["activity_area"]}
+                    else:
+                         where["admin_area"]="50"
+
+
+                user_cursor=MongoFront.find_all(where,"activities")
+                user_count=0
+                if user_cursor:
+                    user_count=user_cursor.count()
+                response_dic[key]=user_count
+
+
+             ##获取新版活动删除数
+            if key=="new-activity-delete-list":
+                admin_user=self.me
+                where = {
+                    'deleted': {'$ne': True},
+                    "pre_delete":True,
+                    "activity_type":0,
+                    "created":{
+                        "$gt":datemax
+                    },
+                }
+                biz_username = self.username
+                biz_where={
+                    "username":biz_username
+                }
+                account=options.dbconn_ht.Account_ht.find(biz_where)
+                # where["admin_area"]={"$in":account[0]["activity_area"]}
+                if account[0]["level"]=="staff":
+                    if account[0]["activity_area"]!=None:
+                        where["admin_area"]={"$in":account[0]["activity_area"]}
+                    else:
+                         where["admin_area"]="50"
+
+
+                user_cursor=MongoFront.find_all(where,"activities")
+                user_count=0
+                if user_cursor:
+                    user_count=user_cursor.count()
+                response_dic[key]=user_count
+
+
+            ##获取新版活动订单取消审核数
+            if key=="new-activity-order-cancel-check":
+                admin_user=self.me
+                where = {
+                    "status":0,
+                    "created":{
+                        "$gt":datemax
+                    },
+                }
+                biz_username = self.username
+                biz_where={
+                    "username":biz_username
+                }
+                account=options.dbconn_ht.Account_ht.find(biz_where)
+                if account[0]["level"]=="staff":
+                    if account[0]["activity_area"]!=None:
+                        where["admin_area"]={"$in":account[0]["activity_area"]}
+                    else:
+                         where["admin_area"]="50"
+
+
+                user_cursor=MongoFront.find_all(where,"ziya_order_cancel_apply")
+                user_count=0
+                if user_cursor:
+                    user_count=user_cursor.count()
+                response_dic[key]=user_count
+
+             ##获取新版活动订单退款审核数
+            if key=="new-activity-order-refund":
+                admin_user=self.me
+                where = {
+                    "status":0,
+                    "created":{
+                        "$gt":datemax
+                    },
+                }
+                biz_username = self.username
+                biz_where={
+                    "username":biz_username
+                }
+                account=options.dbconn_ht.Account_ht.find(biz_where)
+                if account[0]["level"]=="staff":
+                    if account[0]["activity_area"]!=None:
+                        where["admin_area"]={"$in":account[0]["activity_area"]}
+                    else:
+                         where["admin_area"]="50"
+
+
+                user_cursor=MongoFront.find_all(where,"ziya_order_refund_apply")
+                user_count=0
+                if user_cursor:
+                    user_count=user_cursor.count()
+                response_dic[key]=user_count
+
+            ##获取新版活动订单流程提醒审核数
+            if key=="new-activity-order-remind":
+                admin_user=self.me
+                where = {
+                     "is_deal":0,
+                    "created":{
+                        "$gt":datemax
+                    },
+                }
+                biz_username = self.username
+                biz_where={
+                    "username":biz_username
+                }
+                account=options.dbconn_ht.Account_ht.find(biz_where)
+                if account[0]["level"]=="staff":
+                    if account[0]["activity_area"]!=None:
+                        where["admin_area"]={"$in":account[0]["activity_area"]}
+                    else:
+                         where["admin_area"]="50"
+
+                where["type"] = {"$nin":[9,10,11]}
+                user_cursor=MongoFront.find_all(where,"ziya_order_flow_remind")
+                user_count=0
+                if user_cursor:
+                    user_count=user_cursor.count()
+                response_dic[key]=user_count
+
+                ##获取新版活动提醒审核数
+            if key == "new-activity-remind":
+                admin_user = self.me
+                where = {
+                    "is_deal": 0,
+                    "created": {
+                        "$gt": datemax
+                    },
+                }
+                biz_username = self.username
+                biz_where = {
+                    "username": biz_username
+                }
+                account = options.dbconn_ht.Account_ht.find(biz_where)
+                if account[0]["level"] == "staff":
+                    if account[0]["activity_area"] != None:
+                        where["admin_area"] = {"$in": account[0]["activity_area"]}
+                    else:
+                        where["admin_area"] = "50"
+                where["type"] = {"$in": [9, 10, 11]}
+                user_cursor = MongoFront.find_all(where, "ziya_order_flow_remind")
+                user_count = 0
+                if user_cursor:
+                    user_count = user_cursor.count()
+                response_dic[key] = user_count
+
+             ##获取提现申请数
+            if key=="deposit_apply_list":
+                admin_user=self.me
+                where = {
+                    "status":4,
+                    "balance_status":0,
+                    "pay_status":10,
+                }
+                biz_username = self.username
+                biz_where={
+                    "username":biz_username
+                }
+                account=options.dbconn_ht.Account_ht.find(biz_where)
+                if account[0]["level"]=="staff":
+                    if account[0]["activity_area"]!=None:
+                        where["admin_area"]={"$in":account[0]["activity_area"]}
+                    else:
+                         where["admin_area"]="50"
+
+
+                user_cursor=MongoFront.find_all(where,"ziya_income_deposit_apply")
+                user_count=0
+                if user_cursor:
+                    user_count=user_cursor.count()
+                response_dic[key]=user_count
+
+             ##获取活动结算数
+            if key=="new-activity-order-balance":
+                admin_user=self.me
+                where = {
+                    "status":0,
+                    "created":{
+                        "$gt":datemax
+                    },
+                }
+                biz_username = self.username
+                biz_where={
+                    "username":biz_username
+                }
+                account=options.dbconn_ht.Account_ht.find(biz_where)
+                if account[0]["level"]=="staff":
+                    if account[0]["activity_area"]!=None:
+                        where["admin_area"]={"$in":account[0]["activity_area"]}
+                    else:
+                         where["admin_area"]="50"
+
+
+                user_cursor=MongoFront.find_all(where,"ziya_order")
+                user_count=0
+                if user_cursor:
+                    user_count=user_cursor.count()
+                response_dic[key]=user_count
+
+            ##获取外链渔获数
+            if key == "link-post":
+                admin_user = self.me
+                where = {
+                    "delete":{"$ne": True},
+                    "created": {
+                        "$gt": datemax
+                    },
+                    "product_detail_array":{"$exists":True}
+                }
+                user_cursor = MongoFront.find_all(where, "posts")
+                user_count = 0
+                if user_cursor:
+                    user_count = user_cursor.count()
+                response_dic[key] = user_count
+
+            ##获取违规信息数
+            if key == "irregularity-info":
+                admin_user = self.me
+                where = {
+                    "created": {
+                        "$gt": datemax
+                    },
+                }
+                content_check_cursor = MongoFront.find_all(where, "content_check")
+                content_check_count = 0
+                if content_check_cursor:
+                    content_check_count = content_check_cursor.count()
+                response_dic[key] = content_check_count
+
+            ##私人定制
+            if key == "activity-customized-list":
+                admin_user = self.me
+                where = {
+                    "created": {
+                        "$gt": datemax
+                    },
+                }
+                content_check_cursor = MongoFront.find_all(where, "activity_customized")
+                content_check_count = 0
+                if content_check_cursor:
+                    content_check_count = content_check_cursor.count()
+                response_dic[key] = content_check_count
+
+            ##获取文章待审核数
+            if key == "article_list":
+                where = {
+                    "status": 1,
+                    "created": {
+                        "$gt": datemax
+                    },
+                }
+                user_cursor = MongoFront.find_all(where, "article")
+                user_count = 0
+                if user_cursor:
+                    user_count = user_cursor.count()
+                response_dic[key] = user_count
+
+            # #获取用户举报数
+            if key == "user_inform_model":
+                where = {
+                    "created": {
+                        "$gt": datemax
+                    },
+                }
+                informs_cursor = MongoFront.find_all(where, "informs")
+                inform_count = 0
+                if informs_cursor:
+                    inform_count = informs_cursor.count()
+                response_dic[key] = inform_count
+
+            # #获取用户建议数
+            if key == "user_advice_model":
+                where = {
+                    "created": {
+                        "$gt": datemax
+                    },
+                }
+                advices_cursor = MongoFront.find_all(where, "advices")
+                advice_count = 0
+                if advices_cursor:
+                    advice_count = advices_cursor.count()
+                response_dic[key] = advice_count
+
+            # #获取下单数
+            if key == "new-activity-order-list":
+                where = {
+                    "status":{"$in":[100,0]},
+                    "created": {
+                        "$gt": datemax
+                    },
+                }
+                order_cursor = MongoFront.find_all(where, "ziya_order")
+                order_count = 0
+                if order_cursor:
+                    order_count = order_cursor.count()
+                response_dic[key] = order_count
+
+            # #用户频道审核
+            if key == "user-video-channels-management":
+                where = {
+                    "status": 1,
+                    "created": {
+                        "$gt": datemax
+                    },
+                }
+                channel_cursor = MongoFront.find_all(where, "user_video_channels_check")
+                channel_count = 0
+                if channel_cursor:
+                    channel_count = channel_cursor.count()
+                response_dic[key] = channel_count
+
+            # #用户节目审核
+            if key == "user-video-programs-management":
+                where = {
+                    "status": 1,
+                    "created": {
+                        "$gt": datemax
+                    },
+                }
+                program_cursor = MongoFront.find_all(where, "user_video_programs_check")
+                program_count = 0
+                if program_cursor:
+                    program_count = program_cursor.count()
+                response_dic[key] = program_count
+        return response_dic
+
+
+
+
+
+    def fire_response_bad_response(self):
+        """
+        返回登录请求错误响应
+        """
+        self.set_status(400)
+        response = {}
+        response["error"] = "invalid_grant"
+        response["error_description"] = "invalid username or password"
+        self.write(json.dumps(response, indent=2, ensure_ascii=False))
+        self.finish()

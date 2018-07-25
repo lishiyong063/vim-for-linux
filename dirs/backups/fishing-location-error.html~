@@ -1,0 +1,130 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="renderer" content="webkit|ie-comp|ie-stand">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta name="viewport" content="width=device-width,initial-scale=1,minimum-scale=1.0,maximum-scale=1.0,user-scalable=no" />
+<meta http-equiv="Cache-Control" content="no-siteapp" />
+<!--[if lt IE 9]>
+<script type="text/javascript" src="lib/html5.js"></script>
+<script type="text/javascript" src="lib/respond.min.js"></script>
+<script type="text/javascript" src="lib/PIE_IE678.js"></script>
+<![endif]-->
+<link href="css/H-ui.min.css" rel="stylesheet" type="text/css" />
+<link href="css/H-ui.admin.css" rel="stylesheet" type="text/css" />
+<link href="css/style.css" rel="stylesheet" type="text/css" />
+<link href="lib/font-awesome/font-awesome.min.css" rel="stylesheet" type="text/css" />
+    <style>
+        #default_sentence_div .label-r{
+            float: right;
+        }
+        #default_sentence_div .label-l{
+            float: left;
+        }
+    </style>
+<!--[if IE 7]>
+<link href="lib/font-awesome/font-awesome-ie7.min.css" rel="stylesheet" type="text/css" />
+<![endif]-->
+<link href="lib/iconfont/iconfont.css" rel="stylesheet" type="text/css" />
+<!--[if IE 6]>
+<script type="text/javascript" src="lib/DD_belatedPNG_0.0.8a-min.js" ></script>
+<script>DD_belatedPNG.fix('*');</script>
+<![endif]-->
+<title>分类管理</title>
+</head>
+<body>
+<nav class="breadcrumb"><i class="iconfont">&#xf012b;</i> 首页 <span class="c-gray en">&gt;</span> 建议管理 <span class="c-gray en">&gt;</span> 用户建议 </nav>
+<div class="pd-20 text-c">
+  <div class="article-class-list cl mt-20" >
+    <div class="cl bg-1 bk-gray mt-20"> <span class="l"></span> <span class="r"><a href="javascript:;" onclick="loaderrorList();layer.msg('刷新成功',1,1);" class="btn btn-primary radius">刷新</a>&nbsp;&nbsp;&nbsp;&nbsp;共有数据：<strong id="count">0</strong> 条&nbsp;</span> </div>
+
+    <table class="table table-border table-bordered table-hover table-bg">
+      <thead>
+        <tr class="text-c" id="tab_div">
+          <!--<th width="25"><input type="checkbox" name="" value="" error_id=""></th>-->
+          <th width="80">头像</th>
+          <th width="80">用户信息</th>
+          <th width="200">钓场名称</th>
+          <th width="200">用户反馈</th>
+          <th width="100">发送日期</th>
+          <th width="150">问题图片</th>
+          <th width="50">操作</th>
+        </tr>
+      </thead>
+      <tbody id="error_list">
+
+      </tbody>
+    </table>
+
+  </div>
+</div>
+<div id="pageComponent" ></div>
+
+<script type="text/javascript" src="lib/jquery.min.js"></script> 
+<script type="text/javascript" src="lib/Validform_v5.3.2.js"></script> 
+<script type="text/javascript" src="lib/layer1.8/layer.min.js"></script> 
+<script type="text/javascript" src="lib/laypage/laypage.js"></script> 
+<script type="text/javascript" src="js/H-ui.js"></script> 
+<script type="text/javascript" src="js/H-ui.admin.js"></script> 
+<script type="text/javascript" src="js/H-ui.admin.doc.js"></script>
+<script type="text/javascript" src="bizjs/base.js"></script>
+<script type="text/javascript" src="bizjs/map.js"></script>
+<script type="text/javascript" src="bizjs/shop-error.js?t=0133">
+</script>
+
+<script>
+  $(function(){
+    init_chat_data()
+    loaderrorList();
+  });
+
+  function select_word(word_flg){
+       $('#message').val(word_flg);
+      if (word_flg==1){
+          $('#message').val('你的建议子牙已经看到啦，我们会及时优化改进哒！');
+      }
+      if (word_flg==2){
+          $('#message').val('你的建议子牙很重视，可以留下你的微信号或者添加我们官方负责人微信账号Xihaijinlinzi（西海金鳞子的全拼）继续详细沟通。');
+      }
+      if (word_flg==3){
+            $('#message').val('还有什么不清楚的地方，可以直接加我们负责人的微信Xihaijinlinzi（西海金鳞子的全拼）进一步咨询沟通。');
+        }
+      if (word_flg==4){
+            $('#message').val('你反馈的真是太及时了！技术部门正在努力排查原因，可以留下你的微信号，修复好后会第一时间予以向你告知！');
+        }
+    }
+
+  function clearTextArea(){
+    $('#message').val('')
+  }
+
+  function init_chat_data(){
+        var requestURL = fishing_admin_Url+'/chat_content_config';
+        $.ajax({
+            url:requestURL,
+            type:'GET',
+            async:false,
+            dataType:'json',
+            error: function(jqXHR, textStatus, errorThrown) {
+                alert('访问服务器失败，请重试!');
+                //alert("error:"+jqXHR.readyState+"  请求状态:"+jqXHR.status+" response:"+jqXHR.responseText)
+                //alert("textStatus:"+textStatus)
+            },
+            success: function(data, textStatus, jqXHR) {
+
+                var msg ='<label class="label-l" style="float: left;">建议常用语：</label><br>';
+                var data = data.entities.offer;
+                for(var i = 0;  i < data.length; i++){
+                    //msg += '<label><input type="radio" name="hello" onclick="select_tool_word(\''+ data[i] +'\')"/>'+ data[i] +'</label><br>'
+                    msg += '<label><input type="radio" name="hello" onclick="select_word(\''+ data[i] +'\')"/>'+ data[i] +'</label><br>'
+                }
+                msg += '<div ><textarea id ="message" name="message" style="padding:5px;width:500px; height:80px;">你的建议已收到，感谢你的反馈，我们会不断优化~为了你的反馈我们能在第一时间接收并且给你答复，可以加一下我们官方微信账号：Xihaijinlinzi（西海金鳞子的全拼），全天24小时在线</textarea> &nbsp;<a onclick="clearTextArea()" style="display: inline-block;width: 28px;height: 28px;text-align: center;line-height: 28px;;">×</a><input type="button"  value="发送反馈" class="btn btn-primary radius size-S" onclick="error_reply()"> </div>';
+                $("#default_sentence_div").html(msg);
+                $('#message').val('你的建议子牙已经看到啦，我们会及时优化改进哒！')
+            }
+        });
+    }
+</script>
+</body>
+</html>

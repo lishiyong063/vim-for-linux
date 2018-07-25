@@ -1,0 +1,233 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="renderer" content="webkit|ie-comp|ie-stand">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta name="viewport" content="width=device-width,initial-scale=1,minimum-scale=1.0,maximum-scale=1.0,user-scalable=no" />
+<meta http-equiv="Cache-Control" content="no-siteapp" />
+<!--[if lt IE 9]>
+<script type="text/javascript" src="lib/html5.js"></script>
+<script type="text/javascript" src="lib/respond.min.js"></script>
+<script type="text/javascript" src="lib/PIE_IE678.js"></script>
+<![endif]-->
+<link href="css/H-ui.min.css" rel="stylesheet" type="text/css" />
+<link href="css/H-ui.admin.css" rel="stylesheet" type="text/css" />
+<link href="lib/icheck/icheck.css" rel="stylesheet" type="text/css" />
+<link href="lib/font-awesome/font-awesome.min.css" rel="stylesheet" type="text/css" />
+<!--[if IE 7]>
+<link href="lib/font-awesome/font-awesome-ie7.min.css" rel="stylesheet" type="text/css" />
+<![endif]-->
+<link href="lib/iconfont/iconfont.css" rel="stylesheet" type="text/css" />
+<!--[if IE 6]>
+<script type="text/javascript" src="lib/DD_belatedPNG_0.0.8a-min.js" ></script>
+
+<script>DD_belatedPNG.fix('*');</script>
+<![endif]-->
+</head>
+<body>
+<div class="pd-20">
+  <form action="" method="post" class="form form-horizontal" id="form-user-add">
+
+    <div style="Float:left">
+      <strong >在“全部”活动中的排名：</strong></div>
+    <div>
+    <select id="rank_area_all">
+      <option value="-1"> 不参加排名 </option>
+      <option value="1"> 1 </option>
+      <option value="2"> 2 </option>
+      <option value="3"> 3 </option>
+      <option value="4"> 4 </option>
+      <option value="5"> 5 </option>
+      <option value="6"> 6 </option>
+      <option value="7"> 7 </option>
+      <option value="8"> 8 </option>
+      <option value="9"> 9 </option>
+      <option value="10"> 10 </option>
+    </select>
+        <br><br><br>
+      <div style="Float:left">
+        <strong >活动所在片区活动排名：</strong></div>
+      <div>
+      <select id="rank_belong_area">
+        <option value="-1"> 不参加排名 </option>
+        <option value="1"> 1 </option>
+        <option value="2"> 2 </option>
+        <option value="3"> 3 </option>
+        <option value="4"> 4 </option>
+        <option value="5"> 5 </option>
+        <option value="6"> 6 </option>
+        <option value="7"> 7 </option>
+        <option value="8"> 8 </option>
+        <option value="9"> 9 </option>
+        <option value="10"> 10 </option>
+      </select>
+      <br><br><br>
+        <div style="Float:left">
+          <strong >活动所在渔获列表中的排名：</strong></div>
+        <div>
+          <select id="rank_in_post">
+            <option value="-1"> 不参加排名 </option>
+            <option value="1"> 1 </option>
+            <option value="2"> 2 </option>
+            <option value="3"> 3 </option>
+            <option value="4"> 4 </option>
+            <option value="5"> 5 </option>
+            <option value="6"> 6 </option>
+            <option value="7"> 7 </option>
+            <option value="8"> 8 </option>
+            <option value="9"> 9 </option>
+            <option value="10"> 10 </option>
+          </select>
+          <br><br><br>
+            <div style="Float:left;display: none" id = "activity_boutique">
+                <strong >活动所在热门活动列表中的排名：</strong>
+                <select id="rank_in_boutique">
+                    <option value="-1"> 不参加排名 </option>
+                    <option value="1"> 1 </option>
+                    <option value="2"> 2 </option>
+                    <option value="3"> 3 </option>
+                    <option value="4"> 4 </option>
+                    <option value="5"> 5 </option>
+                    <option value="6"> 6 </option>
+                    <option value="7"> 7 </option>
+                    <option value="8"> 8 </option>
+                    <option value="9"> 9 </option>
+                    <option value="10"> 10 </option>
+                </select>
+                <br><br><br></div>
+            <div style="Float:left;display: none" id = "activity_big_fish">
+                <strong >活动所在大鱼专线中的排名：</strong>
+                <select id="rank_in_big">
+                    <option value="-1"> 不参加排名 </option>
+                    <option value="1"> 1 </option>
+                    <option value="2"> 2 </option>
+                    <option value="3"> 3 </option>
+                    <option value="4"> 4 </option>
+                    <option value="5"> 5 </option>
+                    <option value="6"> 6 </option>
+                    <option value="7"> 7 </option>
+                    <option value="8"> 8 </option>
+                    <option value="9"> 9 </option>
+                    <option value="10"> 10 </option>
+                </select>
+                <br><br><br></div>
+            <div style="Float:left;display: none" id = "activity_biz_group">
+                <strong >活动所在商务团建中的排名：</strong>
+                <select id="rank_in_group">
+                    <option value="-1"> 不参加排名 </option>
+                    <option value="1"> 1 </option>
+                    <option value="2"> 2 </option>
+                    <option value="3"> 3 </option>
+                    <option value="4"> 4 </option>
+                    <option value="5"> 5 </option>
+                    <option value="6"> 6 </option>
+                    <option value="7"> 7 </option>
+                    <option value="8"> 8 </option>
+                    <option value="9"> 9 </option>
+                    <option value="10"> 10 </option>
+                </select>
+                <br><br><br></div>
+            <div class="clr"></div>
+    <div style="padding-left: 100px">
+      <input class="btn btn-primary radius" type="button" onclick = "setRank()" value="&nbsp;&nbsp;提交&nbsp;&nbsp;">
+      </div>
+    </div>
+  </form>
+</div>
+</div>
+<script type="text/javascript" src="lib/jquery.min.js"></script>
+<script type="text/javascript" src="lib/icheck/jquery.icheck.min.js"></script>
+<script type="text/javascript" src="lib/layer1.8/layer.min.js"></script>
+<script type="text/javascript" src="lib/Validform_v5.3.2.js"></script>
+<script type="text/javascript" src="js/H-ui.js"></script>
+<script type="text/javascript" src="js/H-ui.admin.js"></script>
+<script type="text/javascript" src="bizjs/base.js"></script>
+
+
+<script type="text/javascript">
+  $(function(){
+    var request_url= "/singleActivity?id="+queryString("post_id")
+    var result=getRequest(request_url,'','GET','','')
+    if (result.entities && result.entities.length>0)
+    {
+      var activity=result.entities[0];
+      var rank_area_all="-1";
+      if (activity.rank_area_all){
+        rank_area_all=""+activity.rank_area_all
+      }
+      $("#rank_area_all").find("option[value='"+rank_area_all+"']").attr("selected",true);
+
+        var rank_in_boutique="-1";
+        if (activity.boutique){
+            boutique = activity.boutique
+            if (boutique=='2'){
+                $('#activity_boutique').show()
+            }
+        }
+        if (activity.rank_in_boutique){
+            rank_in_boutique=""+activity.rank_in_boutique
+        }
+        $("#rank_in_boutique").find("option[value='"+rank_in_boutique+"']").attr("selected",true);
+
+      var rank_belong_area="-1";
+      if (activity.rank_belong_area){
+        rank_belong_area=""+activity.rank_belong_area
+      }
+      $("#rank_belong_area").find("option[value='"+rank_belong_area+"']").attr("selected",true);
+
+        var rank_in_group="-1";
+        if (activity.fish_code){
+            fish_code = activity.fish_code
+            if (fish_code.toString().indexOf("1") > -1){
+                $('#activity_big_fish').show()
+            }
+            if (fish_code.toString().indexOf("2") > -1){
+                $('#activity_biz_group').show()
+            }
+        }
+        if (activity.rank_in_group){
+            rank_in_group=""+activity.rank_in_group
+        }
+        $("#rank_in_group").find("option[value='"+rank_in_group+"']").attr("selected",true);
+
+        var rank_in_big="-1";
+        if (activity.rank_in_big){
+            rank_in_big=""+activity.rank_in_big
+        }
+        $("#rank_in_big").find("option[value='"+rank_in_big+"']").attr("selected",true);
+      var rank_in_post="-1";
+      if (activity.rank_in_post){
+        rank_in_post=""+activity.rank_in_post
+      }
+      $("#rank_in_post").find("option[value='"+rank_in_post+"']").attr("selected",true);
+    }
+    else{
+      alert("数据异常，请重新登陆")
+    }
+  });
+
+  function setRank() {
+    var post_id=queryString("post_id")
+    var d={
+      "rank_area_all":parseInt($('#rank_area_all').val()),
+      "rank_belong_area":parseInt($('#rank_belong_area').val()),
+      "rank_in_post":parseInt($('#rank_in_post').val()),
+      "rank_in_boutique":parseInt($('#rank_in_boutique').val()),
+      "rank_in_big":parseInt($('#rank_in_big').val()),
+      "rank_in_group":parseInt($('#rank_in_group').val()),
+      "activity_id":post_id
+    }
+  //  window.parent.searchActivityById(post_id,$('#rank').val(),type)
+  //  searchActivityById()
+  //  alert("d:"+JSON.stringify(d))
+    request_url=fishing_admin_Url+"/activity_rank_area"
+    reusult=getRequest(request_url,d,'PUT','','排名设置成功')
+//      运营需要不刷新设置片区，所有注释掉这行
+//      window.parent.location.reload();
+    closeAlertPage();
+  }
+</script>
+
+</body>
+</html>

@@ -1,0 +1,94 @@
+# -*- coding: utf-8 -*-
+# Created Time: 2018-05-30 10:39:46
+from netCDF4 import Dataset
+import numpy
+
+def main():
+    print """
+        lat 0-59.5      length 120
+        lot 100-149.5   length 100
+    """ 
+    file_name = raw_input("please input path for nc file:")
+    nc_obj = Dataset(file_name, mode='r')
+
+    while 1:
+        #nc_obj = Dataset('wave_20180515_WVHGT_39.nc', mode='r')
+        lat_lon_info = raw_input("please input lat,lon:")
+        lat, lon = lat_lon_info.split(',')
+        try:
+            lat, lon = float(lat), float(lon)
+        except:
+            print("must be input a number type")
+            continue
+
+        lat, lon = get_short_distance(lat, lon)
+        print("lat:%s, lon:%s"%(lat, lon))
+        lat_index = get_data_index(nc_obj, lat, 'lat')
+        lon_index = get_data_index(nc_obj, lon, 'lon')
+        print(nc_obj.variables["WVHGT"][:][lat_index][lon_index])
+
+
+def get_data_index(nc_obj, num, type_num='lat'):
+    """
+    获取经纬度所在的索引
+        lat 0 - 59.5
+        lon 100 - 149.5
+    """
+    index = 0
+    compare_num = num
+    lat_list = list(nc_obj.variables["lat_0"][:])
+    lon_list = list(nc_obj.variables["lon_0"][:])
+    
+    if type_num == 'lat':
+        index = lat_list.index(numpy.float32("-%s"%str(num)))
+    elif type_num == 'lon':
+        index = lon_list.index(numpy.float32(str(num)))
+    else:
+        print index,'num not in list'
+
+    return index 
+
+
+def get_short_distance(lat, lon):
+    """ 获取距离最短的坐标
+    """
+    if round(lat) == lat:
+        border_lat_max = lat
+        border_lat_min = lat
+    else:
+        border_lat_max = round(lat) if round(lat) > lat else int(lat) + 0.5
+        border_lat_min = round(lat) if round(lat) < lat else int(round(lat)) - 0.5
+    if round(lon) == lon:
+        border_lon_max = lon
+        border_lon_min = lon
+    else:
+        border_lon_max = round(lon) if round(lon) > lon else int(lon) + 0.5
+        border_lon_min = round(lon) if round(lon) < lon else int(round(lon)) - 0.5
+
+    border_points =(
+                [border_lat_min, border_lon_min],
+                [border_lat_min, border_lon_max],
+                [border_lat_max, border_lon_min],
+                [border_lat_max, border_lon_max],
+            )
+
+    distance_list = []
+    for point in border_points:
+        distance_list.append(get_distance(numpy.array(point), numpy.array([lat, lon])))
+
+    short_index = distance_list.index(min(distance_list))
+    return border_points[short_index]
+
+def get_distance(x, y):
+    """ 获取两点之前的欧式距离
+    """
+    print(x,y)
+    dist = numpy.linalg.norm(x-y)
+    print(dist)
+    return dist
+
+
+
+
+if __name__ == "__main__":
+    main()

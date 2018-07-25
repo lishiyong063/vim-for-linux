@@ -1,0 +1,308 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# @Date    : 2015-05-04 10:43:14
+# @Author  : Your Name (you@example.org)
+# @Link    : http://example.org
+# @Version : $Id$
+
+import tornado.web
+from tornado.web import asynchronous
+from tornado.options import options
+import json
+import optionsSetting
+from log import get_logger
+from model.accounts import Account
+from model.users import User
+from model.invitations import Invitation
+import pymongo
+import traceback
+from services.service_credit_month import *
+import uuid
+import hashlib
+import random
+from utils.redis_client import RedisClient
+from utils.mongo_client import MongoClient
+from tornado.httpclient import HTTPRequest
+import random
+from utils.token_im import TokenService
+import datetime
+from mongo_field_encoder import MongoFieldEncoder
+from utils.monitor import *
+from paramAuth import param_auth
+from services.service_register import *
+from handler_base import BaseHandler
+from services.service_credit import pushRedis
+from services.service_user import user_pay_status,getUserLv
+from tornado import gen
+try:
+    from tornado.curl_httpclient import CurlAsyncHTTPClient as AsyncHTTPClient
+except ImportError:
+    from tornado.simple_httpclient import SimpleAsyncHTTPClient as AsyncHTTPClient
+
+from utils.gdt_upload import *
+log = get_logger()
+
+class RegisterHandler(BaseHandler):
+
+    def getAddressIP(self):
+        ip=""
+        try:
+            ip=self.request.remote_ip
+        except:
+            ip=""
+
+
+        if ip is None or ip=="" or ip=="127.0.0.1":
+            try:
+                ip=self.request.headers['X-Real-Ip']
+            except:
+                pass
+        return ip
+
+    """
+    用户处理类
+    """
+    def __init__(self, application, request, **kwargs):
+        super(RegisterHandler, self).__init__(application, request, **kwargs)
+
+    @param_auth("RegisterCheck")
+    @asynchronous
+    @gen.coroutine
+    def post(self):
+        """
+        用户注册
+        """
+        log.info("RegisterHandler.post:"+self.request.body)
+        if self.request.body is '':
+            self.fire_response_bad_response()
+            return
+
+        body_dic = json.loads(self.request.body,encoding="utf-8")
+
+        # any(not body_dic.get("password"), not body_dic.get("mobile"))
+        if not body_dic.has_key("password") or body_dic["password"] =='':
+            self.fire_response_bad_response()
+            return
+
+        if not body_dic.has_key("mobile") or body_dic["mobile"] =='':
+            self.fire_response_bad_response()
+            return
+
+
+        account = options.dbconn.Account()
+        user = options.dbconn.User()
+
+        nick = unicode(body_dic.get("nick", ""))
+        mobile=body_dic["mobile"]
+        success=False
+        ###运营号注册无需考虑验证码问题与昵称问题
+        # if body_dic.get("user_tpe") != 2:
+        if not body_dic.has_key("user_type") or body_dic["user_type"]!="2":
+
+          if "子" in nick and "牙" in nick:
+            error = "common_error"
+            des = "nick error"
+            content = "昵称带有敏感字符，请重新填写"
+            self.fire_response_bad_content(error,des,content)
+            return
+
+
+          register_code=body_dic["register_code"]
+          sms_key="register_code:"+mobile
+          register_code_correct=RedisClient.get(sms_key)
+
+          if register_code_correct is None or register_code!=register_code_correct:
+              history_register_code=RedisClient.hget("history_register_code_mobile:"+mobile,register_code)
+
+              if history_register_code is None:
+                  error = "register_code_error"
+                  des = "mobile registe code error"
+                  self.fire_response_bad(error,des)
+                  return
+
+              del body_dic["register_code"]
+
+        try:
+
+            username,is_recommend_user,recommend_user=getUsername(mobile)
+
+            password=unicode(body_dic["password"])
+          
+            body_dic["username"] = username
+            del body_dic["password"]
+
+            invite_source = body_dic.get("invite_source",None)
+
+            ####将头像的ziyafish的域名改为ziyadiaoyu
+            avatar_url = body_dic.get("avatar_url", "")
+            if avatar_url and "avatar.ziyafish.com" in avatar_url:
+                body_dic["avatar_url"] = avatar_url.replace("avatar.ziyafish.com", \
+                                                            "avatar.ziyadiaoyu.com")
+
+            ##保存用户信息表
+            user=options.dbconn.User()
+            for el in body_dic:
+                user[el]=body_dic[el]
+
+
+            user_type = user.get("user_type",None)
+            if user_type==None:
+                user["user_type"]="1"
+
+            if body_dic.has_key("source"):
+                user["source"]=body_dic["source"]
+
+            user["nick"]=nick
+
+            user["created"]=datetime.datetime.utcnow()
+            user["modified"]=datetime.datetime.utcnow()
+
+            if  not body_dic.has_key("gps_info") :
+                self.coordinates_ = {"country": "", "country_code": "", "province": "", "city": "", "area": "",
+                                     "location": {"type": "Point", "coordinates": [0, 0]}}
+                user["gps_info"]= self.coordinates_
+
+class RegisterHandler(BaseHandler):
+
+            # 访问设备的 udid 号
+            udid = self.udid
+            user["udid"]=udid
+            ###保存客户端信息
+            client_info = self.getClientInfo()
+            if client_info:
+                user["client_info"]=client_info
+
+            register_user_save(user)
+
+            ##保存账号表
+            account["username"] = username
+            account["password"] = password
+            account["im_password"] = unicode(hashlib.md5(password.encode('utf-8')).hexdigest())
+            account["mobile"] = body_dic["mobile"]
+            account["random"] = unicode(random.random())
+            account["created"]=datetime.datetime.utcnow()
+            account["modified"]=datetime.datetime.utcnow()
+            account["user_type"]=user_type
+
+
+
+            register_account_save(account)
+
+
+            token,token_expire,refresh_token = get_token(account)
+
+            #创建invite_code
+            invite_code = create_invite_code(username)
+            #如果昵称不存在，昵称择为"大侠"+invite_code
+            if nick=="":
+                nick = unicode("大侠"+invite_code)
+                user["nick"]=nick
+                where = {"username":username}
+                update = {"$set":{"nick":nick}}
+                MongoClient.update(where,update,"users")
+
+            today = datetime.datetime.utcnow()
+            result={}
+            result["access_token"] = token
+            result["expires_in"] = str((token_expire-today).seconds)
+            result["refresh_token"] = refresh_token
+            result["firstLogin"]=True
+
+            credit_info = pushRedis(username,"login","",isAddCredits=self.isAddCredits())
+            result["credit_info"] = credit_info
+
+
+            user_array=[]
+            if "shop_text" in credit_info:
+                shop_text=credit_info["shop_text"]
+                user["credits"]=credit_info["credits"]
+            else:
+                shop_text=str(int(user["credits"]))+" 金币"
+
+            user["shop_text"]=shop_text
+            user["earn_text"]=options.earn_text
+            user["gift_text"]=options.gift_text
+            user["invite_text"]=options.invite_text
+            user["wallet_text"]=options.wallet_text
+
+            user["pd"] = account["im_password"]
+            user["invite_code"] = invite_code
+            user["binding"] = 1  #1：绑定    0：未绑定
+            user_level, title, next_level_score = getUserLv(user)
+            user["user_level"] = user_level
+            user["activity_order"] = user_pay_status(username)
+            user_array.append(user)
+            result["entities"]=user_array
+
+
+
+            ###暂停流量的赠送
+            #####注册即赠送10M流量
+            promotion_gift={
+                "username":username,
+                "created":datetime.datetime.utcnow(),
+                "bait":0,#options.fish_count,
+                "flows":0,#options.register_flows,
+                "exchanged_flows":0,
+                "exchanging_flows":0,
+                "from":"ziya",
+                "recommend_flow":1
+            }
+
+            MongoClient.insert(promotion_gift,"promotion_gift")
+
+
+            ###聊天服务器注册
+            response =yield register_im_impl(username,account["im_password"],nick)
+
+            #请求结束
+            self.write(json.dumps(result,indent=2, ensure_ascii=False,cls=MongoFieldEncoder))
+            self.finish()
+
+            ###删除游客
+            delete_tourist_mode(self.udid)
+
+            #发送官方消息
+            sendSystemMessageByIm(user)
+
+            #用户邀请码来源登记
+            if invite_source!=None and invite_source!="" :
+                invate_source_save(invite_source,username)
+
+            ###推荐用户送元宝
+            if is_recommend_user:
+                user_agent = ""
+                if "User-Agent" in self.request.headers:
+                    user_agent = self.request.headers["User-Agent"]
+                ip = self.getAddressIP()
+                award_recommend_user(recommend_user,isTicketVersion = self.isTicketVersion(), udid=udid, user_agent=user_agent, ip=ip)
+
+
+            success=True
+
+        except pymongo.errors.DuplicateKeyError as e:
+            log.error("DuplicateKeyError"+e.message)
+            error = "username_duplicate"
+            des = "username or mobile has existed"
+            self.fire_response_bad(error,des)
+            
+        except:
+            log.error(traceback.format_exc())
+            error = "bad_request"
+            des = "invalid user data"
+            self.fire_response_bad(error,des)
+
+        # if success:
+        #     ###上报广点通
+        #     if self.udid:
+        #         response = yield uploadToGDT(self.udid)
+                                                 
+       
+
+            
+    
+    
+
+
+
+

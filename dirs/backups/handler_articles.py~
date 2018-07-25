@@ -1,0 +1,643 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# @Date    : 2014-12-05 15:45:20
+# @Author  : Your Name (you@example.org)
+# @Link    : http://example.org
+# @Version : $Id$
+
+from __future__ import division
+import tornado.web
+from tornado.web import asynchronous
+from tornado.options import options
+import re
+
+from mongokit import *
+from mongokit.helpers import totimestamp, fromtimestamp
+import pymongo
+from mongo_field_encoder import MongoFieldEncoder
+from handler_baseHt import BaseHtHandler
+from services.service_article import *
+from auth import requires_auth
+from model.articles import Article
+from utils.redis_weibo_client import RedisWeiboClient
+
+from utils.mongo_front import MongoFront
+import traceback
+import json
+import bson
+from bson import ObjectId
+import random
+from log import get_logger
+import datetime
+import time
+from utils.redis_client import RedisClient
+from services.service_post_display_count import *
+from services.service_credits import addCredits
+from utils.pinyin import *
+from tornado.escape import url_escape
+from tornado import gen
+from services.service_fishing_place import get_image_info
+log = get_logger()
+
+class ArticlesHandler(BaseHtHandler):
+    """
+    文章处理类
+    """
+    def __init__(self, application, request, **kwargs):
+        super(ArticlesHandler, self).__init__(application, request, **kwargs)
+        self.pinyin_util = PinYin()
+        self.pinyin_util.load_word()
+        self.banner_type = {"global_fishing":"10","biggie_fishing":"20","new_fishing":"30"}
+        self.article_type_tag = {"video":"30","hot":"40","new":"50","new_fishing":"novice_class"}
+
+    @gen.coroutine
+    @asynchronous
+    @requires_auth
+
+    def get(self,article_id):
+        """
+        获取文章
+        接口定义：
+        1.下拉刷新列表：
+        /post?longitude=112&latitude=32&timestamp=1418038119461&direction=down&limit=15
+        timestamp参数是最新一条广播的时间戳
+        2.上拉获取更多帖子：
+        /post?longitude=112&latitude=32&timestamp=1418038119461&direction=up&limit=15
+        timestamp参数是最后一条广播的时间戳
+        3.获取单条帖子帖子详情：
+        /post/{$post_id}
+        """
+        log.info('ArticlesHandler.get')
+        if article_id is not None:
+            article_id = article_id[1:]
+            self.fetch_post(article_id)
+        else:
+            self.fetch_posts()
+
+
+    @asynchronous
+    @gen.coroutine
+    def fetch_posts(self):
+
+        response = {}
+        curr = self.get_argument('curr', "")
+        limit = self.get_argument('limit', 10)
+        user_id_nick = self.get_argument('user_id_nick', "")
+        keyword = self.get_argument('keyword', "")
+        article_rank = self.get_argument('article_rank', "")
+        status = int(self.get_argument('status', -1))
+        article_tag = self.get_argument('article_tag', [])
+        article_user_tag = self.get_argument('article_user_tag', [])
+
+        lookup={
+            "status":{"$in":[1,2,3]}
+        }
+        user_where = {}
+
+        # 关键字搜索
+        if keyword:
+            page = self.get_argument('curr', 1)
+            # 调用search服务
+            search_url = options.ziyafish_search + "/search?kw=%s&type=%s&page=%s" % (url_escape(keyword), u"1", page)
+            response = self.request_get_json(search_url)
+            result = yield response
+            code = result.code
+            try:
+                if code == 200:
+                    result_dic = json.loads(result.body, encoding='utf-8')
+                    articles,total = keyword_response(result_dic)
+                    response_dic={"entities":articles}
+                    if total:
+                        response_dic["count"] = str(total)
+                    response_str = json.dumps(response_dic, indent=2, ensure_ascii=False, cls=MongoFieldEncoder)
+                    log.info("response_str:"+response_str)
+                    self.write(response_str)
+                    self.finish()
+                    return
+                else:
+                    self.fire_response_bad_content("common_error", "search error", "搜索服务异常")
+                    return
+            except Exception as e:
+                log.error(traceback.format_exc())
+                self.fire_response_bad_response()
+
+        # 查询设置过排名的文章
+        if article_rank and status not in[1,3]:
+            place_code = article_rank[5:]
+            log.info("place_code:" + place_code)
+            # 指定类型中排名或设置过排名的文章
+            if place_code == "all":
+                place_where = {}
+            else:
+                place_where = {
+                    "place_code": place_code
+                }
+            sort = [('place_code', pymongo.ASCENDING), ('rank', pymongo.ASCENDING)]
+            article_array, count = getRankArticle(place_where, 10, sort, curr)
+            article_ids = []
+            for place_cursor in article_array:
+                article_id = ObjectId(place_cursor["article_id"])
+                article_ids.append(article_id)
+            lookup = {
+                "_id": {"$in": article_ids}
+            }
+            # 组装返回文章信息
+            articles, a_count = getArticleList(lookup=lookup)
+            response["entities"] = articles
+            response["count"] = str(count)
+            response = json.dumps(response,
+                                  indent=2,
+                                  ensure_ascii=False,
+                                  cls=MongoFieldEncoder)
+            self.write(response)
+            self.finish()
+            return
+        # 昵称或子牙号
+        if user_id_nick!="":
+            user_where["$or"]=[
+                {"nick":re.compile(user_id_nick+'.*')},
+                {"invite_code":user_id_nick}
+            ]
+            user_cursor = MongoFront.find_one(user_where,"users")
+            if user_cursor:
+                username = user_cursor.get("username","")
+                lookup["actor.username"] = username
+        # 状态筛选
+        if status!=-1:
+            lookup["status"]=status
+
+        # 类型筛选
+        article_type = self.get_argument('article_type',"")
+        article_rank_where = {}
+        if article_type and article_type!="":
+            # 攻略设置排名搜索条件设置
+            if article_type=="video":
+                lookup["video"]=1
+                article_rank_where["place_code"]=self.article_type_tag[article_type]
+            elif article_type=="new":
+                lookup["new_user"] = 1
+                article_rank_where["place_code"] = self.article_type_tag[article_type]
+            elif article_type=="hot":
+                lookup["isHot"] = 1
+                article_rank_where["place_code"] = self.article_type_tag[article_type]
+            # 环球钓记、大鱼专线、新手课堂
+            elif article_type in ["global_fishing","biggie_fishing","new_fishing"]:
+                lookup["banner_type"]={"$in":[self.banner_type.get(article_type)]}
+                # 环球钓记添加洲信息
+                if article_type=="global_fishing":
+                    continent_type = self.get_argument('continent_info', "")
+                    if continent_type:
+                        lookup["continent_type"] = continent_type
+
+                if article_type in ["biggie_fishing","new_fishing"]:
+                    fishing_skill = self.get_argument('fishing_skill', "")
+                    if fishing_skill:
+                        article_rank_where["rank_type"] = article_type
+                        lookup["article_fishing_type"] = {"$in":[fishing_skill]}
+                        article_rank_where["screen_code"] = fishing_skill
+            else:
+                lookup["article_fishing_type"] = {"$in":[article_type]}
+                article_rank_where["place_code"] = article_type
+
+
+        # 是否热门
+        isHot = self.get_argument('isHot', "")
+        if isHot:
+            lookup["isHot"] = 1
+
+        # 标签查询（原创，力荐）
+        if article_tag:
+            lookup["article_tag"] = {"$in":[article_tag]}
+
+        # 真实、小号用户筛选
+        if article_user_tag:
+            # 真实用户
+            if article_user_tag=="2":
+                lookup["post_type"] = article_user_tag
+            else:
+                lookup["post_type"] = {"$ne":"2"}
+
+        rank_count = 0
+        rank_articles=[]
+        rank_article_ids = []
+        # 首页文章类型查询排过序的
+        if curr and curr == '1' and article_rank_where and status not in[1,3]:
+            sort = [('rank', pymongo.ASCENDING)]
+            article_array, count = getRankArticle(article_rank_where, 10, sort, curr)
+            for place_cursor in article_array:
+                article_id = ObjectId(place_cursor["article_id"])
+                rank_article_ids.append(article_id)
+            if rank_article_ids:
+                rank_lookup = {
+                    "_id": {"$in": rank_article_ids}
+                }
+                # 组装返回文章信息
+                articles, rank_count = getArticleList(lookup=rank_lookup)
+
+                # 排名的文章排序
+                for id in rank_article_ids:
+                    for article in articles:
+                        if article["_id"]==id:
+                            rank_articles.append(article)
+
+
+
+        log.info("lookup:"+str(lookup))
+        articles,count=getArticleList(lookup=lookup,curr=curr,limit=limit,rank_article_ids=rank_article_ids)
+        count = int(rank_count)+int(count)
+        entities = rank_articles+articles
+        response={}
+        response["entities"]=entities
+        response["count"]=str(count)
+
+        response = json.dumps(response,
+                              indent=2,
+                              ensure_ascii=False,
+                              cls=MongoFieldEncoder)
+        self.write(response)
+        self.finish()
+
+    def fetch_post(self, article_id):
+        """
+        获取文章详情
+        """
+        entities = []
+        is_success=False
+        post={}
+        try:
+            ##帖子浏览数+1
+            lookup = {
+                '_id':ObjectId(article_id)
+            }
+
+#             option = {"$inc":{"display_count":1}}
+            article=MongoFront.find_one(lookup,"article")
+
+            if article:
+                if article['status']==10:
+                    self.set_status(400)
+                    response = {}
+                    response["error"] = "bad_request"
+                    response["error_description"] = "invalid post data"
+                    self.write(json.dumps(response, indent=2, ensure_ascii=False))
+                    self.finish()
+                    return
+
+                actor_username=article["actor"]["username"]
+
+                lookup={
+                    "username":actor_username
+                }
+                user=MongoFront.find_one(lookup,"users")
+                if user:
+                    actor={
+                        "username":actor_username,
+                        "nick":user.get("nick",""),
+                        "avatar_url":user.get("avatar_url",""),
+                        "sex":user.get("sex","U")
+                    }
+                    article["actor"]=actor
+
+                entities.append(article)
+
+
+
+            is_success=True
+        except bson.errors.InvalidId as e:
+            log.info('PostHandler.fetch_post Exception(bson.errors.InvalidId):%s' % e.message)
+            log.error(traceback.format_exc())
+        except Exception as e:
+            log.info('PostHandler.fetch_post Exception():%s' % e.message)
+            log.error(traceback.format_exc())
+
+
+        response_dic = {}
+        response_dic["entities"] = entities
+        response = json.dumps(response_dic,
+                              indent=2,
+                              ensure_ascii=False,
+                              cls=MongoFieldEncoder)
+        self.write(response)
+        self.finish()
+
+        # if is_success:
+        #     ####增加浏览量
+        #     addPostDisplayCount(post_id,"display")
+        #
+        #     ##保存用户行为
+        #     savePostActivity(unicode(self.username),unicode("display"),post_id=post_id,post=post)
+        #     # savePostDisplay(post_id,unicode(self.username),"display",post)
+
+
+    @requires_auth
+    @asynchronous
+    def put(self,username=None):
+        log.info("ArticlesHandler.put is called:"+self.request.body)
+        success = False
+        try:
+            body_dic = json.loads(self.request.body,encoding="utf-8")
+            body_dic["modified"]=datetime.datetime.utcnow()
+            article_id = body_dic["article_id"]
+            status = int(body_dic.get("status",1))
+            article_tag = body_dic.get("article_tag",[])
+            del body_dic["article_id"]
+
+            status_modified = datetime.datetime.utcnow()
+            lookup = {'_id': ObjectId(article_id)}
+
+            # 查看文章之前状态
+            article_temp = MongoFront.find_one(lookup,"article")
+            orginal_status = -1
+            images = []
+            if article_temp:
+                orginal_status = article_temp.get("status",-1)
+                images = article_temp.get("images", [])
+            update_value={}
+            update_value["status"]=status
+            update_value["status_modified"]=status_modified
+            # update_value["created"]=status_modified
+
+            if article_tag:
+                update_value["article_tag"] = article_tag
+
+            if images:
+                update_value["images"] = self.edit_image(images)
+            option = {'$set': update_value}
+            article_update = MongoFront.find_and_modify(lookup, option, "article")
+
+            response = {"entities":[article_update]}
+            self.write(json.dumps(response,
+                                  indent=2,
+                                  ensure_ascii=False,
+                                  cls=MongoFieldEncoder))
+            self.finish()
+            success = True
+        except:
+            log.error(traceback.format_exc())
+            self.fire_response_bad_response()
+
+        if success and status==2:
+            addArticleDisplayCount(article_id, article_update.get("type")+"_new")
+
+            add,credits = addCredits(article_update["actor"]["username"],article_id,"article")
+            content = self.getContent("article",article_update,add,credits)
+            to_usernames = [article_update["actor"]["username"]]
+            message_event = {}
+            message_event["post_id"]=str(article_id)
+            message_event["target"]="apoint"
+            message_event["message_type"]="article"
+            message_event["content"] = content
+            message_event["to_usernames"] = to_usernames
+            message_event["created"]=datetime.datetime.utcnow()
+
+
+            #### 保存消息监控表
+            message_monitor_entity={
+                "created":datetime.datetime.utcnow(),
+                "begin_milli":int(round(time.time() * 1000)),
+                "message_event":message_event
+            }
+            id,db_error=MongoFront.insert(message_monitor_entity,"message_monitor")
+            message_event["message_monitor_id"]=id
+
+            message_event = json.dumps(message_event,
+                              indent=2,
+                              ensure_ascii=False,
+                              cls=MongoFieldEncoder)
+            queue_name=options.redis_queue_message_event_boutique
+            result =RedisWeiboClient.rpush(queue_name,message_event)
+
+            # 如果是达人，全员推送攻略信息。不是达人，则推送给他的粉丝
+            user_where = {
+                "username": article_update["actor"]["username"]
+            }
+            user_cursor = MongoFront.find_one(user_where, "users")
+            article_expert = user_cursor.get("article_expert", "")
+            log.info("article_expert" + str(article_expert))
+
+
+
+            ####给全员发消息
+            message_event = {}
+            message_event["article_id"]=str(article_id)
+            message_event["target"]="apoint"
+            message_event["message_type"]="article_expert"
+            message_event["content"] = article_update.get("title","")
+            message_event["to_usernames"] = to_usernames
+            message_event["created"]=datetime.datetime.utcnow()
+
+            if article_expert == "1":
+                # 达人文章数量加1,达人最近一篇文章的标题
+                where = {
+                    "username": article_update["actor"]["username"]
+                }
+                update_val = {
+                    "$inc": {"article_num": 1},
+                    "$set": {"title": article_update["title"]}
+                }
+
+                MongoFront.update(where, update_val, "articles_user")
+                message_event["push_all"] = "1"
+            #### 保存消息监控表
+            message_monitor_entity={
+                "created":datetime.datetime.utcnow(),
+                "begin_milli":int(round(time.time() * 1000)),
+                "message_event":message_event
+            }
+            id,db_error=MongoFront.insert(message_monitor_entity,"message_monitor")
+            message_event["message_monitor_id"]=id
+            message_event = json.dumps(message_event,
+                              indent=2,
+                              ensure_ascii=False,
+                              cls=MongoFieldEncoder)
+            queue_name=options.redis_queue_message_event_expect
+            log.info("insert queue:%s"%queue_name)
+            log.info("insert message_event:%s"%message_event)
+            result =RedisWeiboClient.rpush(queue_name,message_event)
+
+            # 增加贡献值
+            contribution_json = {
+                "username": article_update["actor"]["username"],
+                "act": "daily_new_article"
+            }
+            message_event = json.dumps(contribution_json,
+                                       indent=2,
+                                       ensure_ascii=False,
+                                       cls=MongoFieldEncoder)
+            queue_name = options.contribution_redis
+            log.info("insert queue:%s" % queue_name)
+            log.info("insert message_event:%s" % message_event)
+            result = RedisClient.rpush(queue_name, message_event)
+
+            # 调用搜索服务，增加搜索内容
+            input_dic = {
+                "id": article_id,
+                "content_type": "1",
+                "created": datetime.datetime.utcnow(),
+                "url": options.weibo_url + "/new_articles/%s" % (article_id)
+            }
+            search_url = options.ziyafish_search + "/index"
+            resp = self.request_post_json(search_url, input_dic)
+        # 审核不通过
+        if status==3 and orginal_status==2:
+            search_url = options.ziyafish_search + "/index?id=%s&type=1" % (article_id)
+            response = self.request_delete_json(search_url)
+
+
+
+    @requires_auth
+    @asynchronous
+    def post(self,username=None):
+        log.info("ArticlesHandler.post is called:"+self.request.body)
+        try:
+            body_dic = json.loads(self.request.body,encoding="utf-8")
+            body_dic["modified"]=datetime.datetime.utcnow()
+            article_id = body_dic["article_id"]
+            del body_dic["article_id"]
+
+            lookup = {'_id': ObjectId(article_id)}
+            option = {'$set':body_dic }
+            article_update = MongoFront.find_and_modify(lookup, option, "article")
+
+            response = {"entities":[article_update]}
+            self.write(json.dumps(response,
+                                  indent=2,
+                                  ensure_ascii=False,
+                                  cls=MongoFieldEncoder))
+            self.finish()
+
+        except:
+            log.error(traceback.format_exc())
+            self.fire_response_bad_response()
+
+
+
+    ###删除帖子
+    @asynchronous
+    @requires_auth
+    def delete(self,article_id):
+        articleid = article_id[1:]
+        lookup = {'_id': ObjectId(articleid),'actor.username':self.username}
+
+        post=options.dbconn.Article.find_one(lookup)
+        if post is None:
+            self.set_status(400)
+            response = {}
+            response["error"] = "bad_request"
+            response["error_description"] = "post is not belong to current user"
+            self.write(json.dumps(response, indent=2, ensure_ascii=False))
+            self.finish()
+            return
+
+        option = {'$set':{'status':10}}
+        is_success=False
+        try:
+            response = options.dbconn.Article.find_and_modify(lookup, option, new=True)
+
+            self.write({})
+            self.finish()
+            if response is not None:
+                is_success=True
+        except Exception as e:
+            self.set_status(400)
+            response = {}
+            response["error"] = "bad_request"
+            response["error_description"] = e.message
+            self.write(json.dumps(response, indent=2, ensure_ascii=False))
+            self.finish()
+
+
+    def getContent(self,type,article,add=False,credits=50):
+        mes = ""
+        content = article.get("title","")
+        if type=="article":
+            text = "并奖励"+str(credits)+"个元宝，"
+            if content!="" :
+                if add:
+                    mes = '恭喜你的文章"'+content+'"被官方审核通过，'+text+'祝你天天爆箱，夜夜爆护。'
+                else:
+                    mes = '恭喜你的文章"'+content+'"被官方审核通过，祝你天天爆箱，夜夜爆护。'
+            else:
+                if add:
+                    mes = '恭喜你的文章被官方审核通过，'+text+'祝你天天爆箱，夜夜爆护。'
+                else:
+                    mes = '恭喜你的文章被官方审核通过，祝你天天爆箱，夜夜爆护。'
+
+        return mes
+
+
+    def FirstLetter(self,fir):
+        if isinstance(fir, unicode):
+            log.info("fir"+str(fir.encode('gb2312')))
+        else:
+            log.info("fir"+str( fir.decode('utf-8').encode('utf-8')))
+        if re.match('^[0-9a-z]+$',fir):
+            fir = fir[0]
+        if fir.isalpha():
+            return fir[0].upper()
+        if fir.isdigit():
+            return "#"
+        try:
+            pin = self.pinyin_util.hanzi2pinyin(fir)[0].upper()
+        except Exception as e:
+            pin = "#"
+        return pin
+
+    @gen.coroutine
+    def search_article_by_keyword(self,keyword):
+        page = self.get_argument('cursor', 1)
+        search_url = options.ziyafish_search + "/search?kw=%s&type=%s&page=%s" % (url_escape(keyword), u"1", page)
+        response = self.request_get_json(search_url)
+        result = yield response
+
+        code = result.code
+        if code == 200:
+            result_dic = json.loads(result.body, encoding='utf-8')
+            log.info("result_dic" + str(result_dic))
+            entities = result_dic.get("entities", [])
+            total = result_dic.get("total", "")
+            id_array = []
+            id_title_tag = {}
+            for entity in entities:
+                search_info = {}
+                id = entity.get("id", "")
+                word_tag = entity.get("word_tag", [])
+                score = entity.get("score", "")
+                search_info["word_tag"] = word_tag
+                search_info["score"] = score
+                if id:
+                    id_array.append(ObjectId(id))
+                    id_title_tag[id] = search_info
+
+            where = {
+                "_id": {
+                    "$in": id_array
+                }
+            }
+            # 文章搜索
+            if type == '1':
+                articles_temp,count = getArticleList(lookup=where,curr=page)
+                id_array_str = list(map(str, id_array))
+                articles = assembleArticleList(articles_temp, id_title_tag, id_array_str)
+                response_dic = {"entities": articles}
+                if total:
+                    response_dic["count"] = str(total)
+            response = json.dumps(response_dic,
+                                  indent=2,
+                                  ensure_ascii=False,
+                                  cls=MongoFieldEncoder)
+            self.write(response)
+            self.finish()
+
+    @staticmethod
+    def edit_image(images):
+        if images:
+            image_url = images[0].get("image_url", "")
+            if image_url:
+                image_url1 = re.sub("[?].+", "", image_url)
+                cover, flag = get_image_info(image_url1)
+                if flag:
+                    cover["image_url"] = image_url
+                    images[0] = cover
+        return images
+

@@ -1,0 +1,119 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# @Date    : 2015-05-18 17:41:52
+# @Author  : Your Name (you@example.org)
+# @Link    : http://example.org
+# @Version : $Id$
+from handler_baseHt import BaseHtHandler
+from log import get_logger
+import tornado.web
+from tornado.web import asynchronous
+from tornado.options import options
+import json
+import hashlib
+import datetime
+import hashlib
+from bson import ObjectId
+import random
+import time
+from log import get_logger
+from model.advices import Advice
+from model.permissions_ht import Permissions_ht
+import optionsSetting
+from utils.secret import *
+import traceback
+from utils.redis_client import RedisClient
+from utils.mongo_front import MongoFront
+from mongo_field_encoder import MongoFieldEncoder
+from services.service_activity import *
+from mongolog import MongoHandler
+from mongokit.helpers import totimestamp, fromtimestamp
+from utils.token_im import TokenService
+from tornado.httpclient import HTTPRequest
+from utils.mongo_client import MongoClient
+import pymongo
+from auth import requires_auth
+
+try:
+    from tornado.curl_httpclient import CurlAsyncHTTPClient as AsyncHTTPClient
+except ImportError:
+    from tornado.simple_httpclient import SimpleAsyncHTTPClient as AsyncHTTPClient
+log = get_logger()
+class ImageDealHandler(BaseHtHandler):
+
+
+    '''
+        图片保存处理
+     '''
+    @requires_auth
+    @asynchronous
+    def post(self):
+       log.info("ImageDeleteHandler.post:"+self.request.body)
+       try:
+           body_dic = json.loads(self.request.body,encoding="utf-8")
+           id = body_dic.get("id",None)
+           image_url = body_dic.get("image_url",None)
+           src_url = body_dic.get("src_url",None)
+           image_name = body_dic.get("image_name",None)
+           db_name = body_dic.get("name",None)
+           if id is None or db_name is None:
+               self.fire_response_bad_request("user_id or image_name or db_name")
+           lookup = {
+               "_id": ObjectId(id),
+           }
+           update_val = {
+               "$set":{
+                   image_name:image_url
+               }
+           }
+           MongoFront.update(lookup,update_val,db_name)
+           resp = {"res":"ok"}
+           self.write(json.dumps(resp,
+                             indent=2,
+                             ensure_ascii=False,
+                             cls=MongoFieldEncoder))
+           self.finish()
+       except Exception as e:
+           log.info('DeletePostHandler.put Exception:%s' % e.message)
+           log.error(traceback.format_exc())
+           self.fire_response_bad_request(key_required=e.message)
+           return
+
+    '''
+     图片删除处理
+    '''
+    @requires_auth
+    @asynchronous
+    def delete(self):
+       log.info("ImageDeleteHandler.delete:"+self.request.body)
+       try:
+           body_dic = json.loads(self.request.body,encoding="utf-8")
+           user_id = body_dic.get("user_id",None)
+           image_url = body_dic.get("image_url",None)
+           image_name = body_dic.get("image_name",None)
+           db_name = body_dic.get("name",None)
+           if user_id is None or image_name is None or db_name is None:
+               self.fire_response_bad_request("user_id or image_name or db_name")
+           lookup = {
+               "_id": ObjectId(user_id),
+           }
+           update_val = {
+               "$unset":{
+                   image_name:""
+               }
+           }
+           MongoFront.update(lookup,update_val,db_name)
+           resp = {"res":"ok"}
+           self.write(json.dumps(resp,
+                             indent=2,
+                             ensure_ascii=False,
+                             cls=MongoFieldEncoder))
+           self.finish()
+       except Exception as e:
+           log.info('DeletePostHandler.put Exception:%s' % e.message)
+           log.error(traceback.format_exc())
+           self.fire_response_bad_request(key_required=e.message)
+           return
+
+
+

@@ -1,0 +1,56 @@
+# -*- coding: utf-8 -*-
+# Created Time: 2018-05-16 09:16:28
+# 使用tornado的同步请求
+import tornado.httpserver
+import tornado.options
+import tornado.web
+import tornado.httpclient
+
+import urllib
+import json
+import datetime
+import time
+
+from tornado.options import define, options
+define('port', default=8000, help='run the syn web server')
+
+
+# 同步的情况
+class IndexHandler(tornado.web.RequestHandler):
+    def get(self):
+        time.sleep(3)
+        self.write(
+            """<div style="text-align: center">
+               <div style="font-size: 72px">10</div>
+               <div style="font-size: 144px">0.02</div>
+               <div style="font-size: 24px">tweets per second</div></div>""" )
+
+
+@tornado.web.gen.coroutine
+def delay():
+    time.sleep(3)
+    raise tornado.web.gen.Return(3)
+        
+        
+class IndexHandlerAsyn(tornado.web.RequestHandler):
+    # 需要callback 实现异步
+    @tornado.web.asynchronous
+    # 异步生成器 可以提供一个更整洁的方式来执行异步请求
+    @tornado.web.gen.coroutine
+    def get(self):
+        y = yield delay()
+        self.write(
+            """<div style="text-align: center">
+               <div style="font-size: 72px">10</div>
+               <div style="font-size: 144px">0.02</div>
+               <div style="font-size: 24px">tweets per second</div></div>""" )
+        self.finish()
+
+
+if __name__ == '__main__':
+    tornado.options.parse_command_line()
+    app = tornado.web.Application(handlers=[(r'/', IndexHandler),
+                                            (r'/asyn', IndexHandlerAsyn)])
+    httpServer = tornado.httpserver.HTTPServer(app)
+    httpServer.listen(options.port)
+    tornado.ioloop.IOLoop.instance().start()

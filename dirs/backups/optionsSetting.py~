@@ -1,0 +1,135 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# @Date    : 2015-04-16 18:19:48
+# @Author  : Your Name (you@example.org)
+# @Link    : http://example.org
+# @Version : $Id$
+
+from tornado.options import define
+import sys
+reload(sys)
+sys.setdefaultencoding('utf-8')
+
+mongo_conn_host="mongodb.nbchatV5.com:27017"
+define("mongo_conn_host", mongo_conn_host)
+
+import pymongo
+conn = pymongo.Connection(mongo_conn_host)
+
+import mongokit
+dbconn = mongokit.Connection(mongo_conn_host)
+define("dbconn", dbconn)
+define("database", "fishing")
+define("accounts", "accounts")
+define("users", "users")
+define("permissions", "permissions")
+define("posts", "posts")
+define("comments", "comments")
+define("vents", "vents")
+define("invitations", "invitations")
+define("informs", "informs")
+define("user_join_post","user_join_post")
+define("user_post_activiy", "user_post_activiy")
+define("user_like_post", "user_like_post")
+define("user_collect_post","user_collect_post")
+define("versions","versions")
+define("activities", "activities")
+define("article", "article")
+define("user_go_activity", "user_go_activity")
+define("fish_location", "fish_location")
+define("new_post_list","redis_new_post_list")
+define("boutique_post_list","redis_boutique_post_list")
+
+
+define("port", default=8088, help="run on the given port", type=int)
+define("api_protocol", default="http")
+define("api_host", default="127.0.0.1")
+define("debug", default=True, type=bool)
+
+
+define("mongo_conn", conn)
+
+###token相关配置
+define("token_expire",default=365*50)  ##token的有效期
+define("token_key",default="1qaznbchat6yhn86")  ##token加密密钥
+define("token_prefix",default="token:")  ##token的redis的key前缀
+
+define("redis_ip", default="redis.nbchatV5.com")
+define("redis_port", default=6379)
+define("redis_db", default=1)
+define("redis_queue_messagePush", default="queue_fish_messagePush")
+define("redis_queue_message_event", default="q_fish_message_event_debug")
+# define("redis_queue_message_activity_order", default="q_fish_message_activity_order")   # 语音接单时加
+
+
+define("redis_weibo_ip", default="redis.nbchatV5.com")
+define("redis_weibo_port", default=6379)
+define("redis_weibo_db", default=1)
+
+####子牙服务API地址
+define("ziyafish_api", default="http://47.95.38.67:8090")
+# define("upload_url", default="http://localhost:9079")
+# define("redirect_uri", default="http://www.ziyafish.com/loginByPlatform")
+# define("domain", default="ziyafish.com")
+
+
+# define("ziyafish_api", default="http://47.95.38.67:8090")
+define("upload_url", default="http://47.95.38.67:8080/weibo")
+# 第三方登录调整地址
+define("redirect_uri", default="http://www.ziyafish.com/loginByPlatform")
+
+define("domain", default="47.95.38.67")
+# define("domain", default="ziyafish.com")
+
+
+
+####微信公众号相关配置
+define("qq_appid", default='101304884')
+define("qq_appsecret", default='b8b8c27b1e31fcfa66c1783f29958085')
+
+define("weixin_appid", default='wxfb4fb8b816246b9a')
+define("weixin_appsecret", default='22fe17c584f732dba64710669ac2247f')
+
+define("sina_appid", default='2547842943')
+define("sina_appsecret", default='c311033a776ada5ac015143fa164e098')
+
+
+define("recommend_sms_content",default="%s,%s送你价值5元的元宝赏金邀请你加入子牙。 http://www.ziyadiaoyu.com 退订回复T【子牙钓鱼】")
+
+####批量发通讯录推荐短信
+define("queue_batch_sms", default="queue_batch_sms")
+# define("ziyafish_api", default="http://47.95.38.67:8090")
+
+define("sms_register_code_content",default="验证码：%s；欢迎使用。【子牙钓鱼】")
+define("audio_register_code_content",default="您的验证码是%s")
+
+define("activity_order_queue", default="q_activity_order")
+
+define("activity_detail_domain","http://47.95.38.67:8088")
+define("ziyafish_group_api","http://47.95.38.67:11000")
+
+#积分商城需要高于以下版本才给用户金币
+define("ticket_Version_android","1.8.2")
+define("ticket_Version_ios","1.8.2")
+
+define("earn_text", "马上抢")
+define("gift_text", "兑换渔具")
+define("invite_text", "白拿20元")
+
+
+###im相关配置
+define("im_username", default="nbchat")
+define("im_password", default="nbchat1357924680")
+define("im_url", default="https://a1.easemob.com/nbchat/ziyadiaoyu/token")
+define("client_id", default="YXA6ga_0EAKLEeW1A8tGlt_Zmg")
+define("client_secret", default="YXA6NRcYii6yqon0cYprNabq32NPge8")
+
+define("queue_act", default="queue_user_action")
+
+
+####子牙搜索服务地址
+define("ziyafish_search", default="http://localhost:8040")
+
+# 水印图片编码后
+define("watermark", default="aHR0cDovLzd4amJ4Zi5jb20yLnowLmdsYi5xaW5pdWNkbi5jb20vcGxheS5wbmc=")
+define("shop_domain", default="http://test.shop.ziyadiaoyu.com")

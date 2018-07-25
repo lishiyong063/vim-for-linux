@@ -1,0 +1,1086 @@
+		 
+#根据经纬度搜索周围渔获
+###get /post_near?lon={经度}&lat={纬度}
+* URL参数：limit 默认15  cursor翻页，无cursor代表最后一页
+* Request Body：无
+* curl示例：
+
+		curl -X GET -i "http://127.0.0.1:8090/post_near?lon=116.334704&lat=39.978437"
+		
+* Response：
+		 
+		 {
+    	cursor: "6769.28272528",
+    	entities: [
+        {
+            liked: false,
+            last_act_date: 1437619545763,
+            rank: 999,
+            like_count: 0,
+            post_type: "2",
+            mold: "post",
+            hasPic: 1,
+            actor: {
+                username: "8473f26e294911e5a4e948d705d33a1b",
+                nick: "小w",
+                avatar_url: "http://7xjbxf.com2.z0.glb.qiniucdn.com/7d9ffb73294911e5a67348d705d33a1b.png",
+                follow: 0,
+                gps_info: {
+                    province: "北京市",
+                    city: "北京市",
+                    area: "朝阳区",
+                    country: "中国",
+                    location: {
+                        type: "Point",
+                        coordinates: [
+                            116.4009,
+                            39.9887
+                        ]
+                    },
+                    country_code: "cn",
+                    address: "北京市朝阳区"
+                },
+                sex: "U"
+            },
+            content: "hhh",
+            comment_count: 0,
+            share_count: 0,
+            type: "post",
+            status: 0,
+            deleted: true,
+            gps_info: {
+                province: "北京市",
+                city: "北京市",
+                area: "朝阳区",
+                country: "中国",
+                location: {
+                    type: "Point",
+                    coordinates: [
+                        116.4009,
+                        39.9887
+                    ]
+                },
+                country_code: "cn",
+                address: "北京市朝阳区"
+            },
+            pre_delete_content: "内容不符规定",
+            last_act: "create",
+            display_count: 0,
+            pre_delete: true,
+            created: 1437619545763,
+            modified: 1437619545763,
+            _id: "55b05559f3179909c1e4ad5f",
+            page: [
+                {
+                    is_cover: true,
+                    width: 128,
+                    image_url: "http://7xjbxf.com2.z0.glb.qiniucdn.com/e9113de330e411e5b61c34363b6f45fc.png",
+                    height: 127
+                }
+            ]
+        }
+    ]
+}
+
+
+#获取渔获浏览用户列表
+##Get /display?post_id={post_id}
+* 描述:获取渔获浏览用户列表* 权限:无
+* Url参数: post_id
+* Response:
+       
+        {
+        	      entities: [
+            {
+            actor: {
+                username: "7bbab750465811e5ab39000c29160262",
+                status: 0,
+                created: 1439978155157,
+                register_code: "304690",
+                post_count: 22,
+                gps_info: {
+                    province: "北京市",
+                    city: "北京市",
+                    gps_modified: 1439978365193,
+                    area: "海淀区",
+                    country: "中国",
+                    location: {
+                        type: "Point",
+                        coordinates: [
+                            116.305019,
+                            40.035607
+                        ]
+                    },
+                    country_code: "cn",
+                    address: "北京市海淀区"
+                },
+                modified: 1439978155157,
+                avatar_url: "http://7xjbxa.com2.z0.glb.qiniucdn.com/vivoX5proD_avator_1439978139907_168197_8514.jpg",
+                user_type: "1",
+                nick: "宝宝",
+                last_post_date: 1450862337379,
+                score: 70,
+                last_login: 1446717984353,
+                followed_num: 2,
+                following_num: 1,
+                reward_date: 20151104,
+                continue_login_day_count: 1
+            },
+            created: 1450945923213
+          }
+        ]
+     
+        }
+        
+      
+      
+      
+      
+        
+        
+#渔获视频上传
+## POST /posts_video
+* 描述:渔获视频发布
+* URL参数：无
+* Request Body：
+
+         {
+     
+         "channel": "qq",//分享平台
+         "page": [
+        {
+            "image_url": "http://7tszd2.com2.z0.glb.qiniucdn.com/4f1db1a076f6fe3fe770d56c27a81710.jpg",
+            "width": 100,
+            "height": 200
+        }
+         ],
+        "video": {
+        "video_url": "",
+        "size": int,//大小
+        "duration": int,//秒数
+        "video_type": "",//视频类型(mp4,flv)
+        "width": 100,
+        "height": 200
+        },
+        "content": "说说钓鱼心得",
+        "gps_info": {
+        "location": {
+            "type": "Point",
+            "coordinates": [
+                116.3051223754883,
+                40.03566360473633
+            ]
+        },
+        "address": "北京市朝阳区",
+        "province": "北京市",
+        "city": "北京市",
+        "area": "海淀区",
+        "country": "中国",
+        "country_code": "cn"
+        }
+        }    
+ *  Response：
+
+        {
+        "share_info":{
+        	content: "",
+			image_url: "http://7xjbxf.com2.z0.glb.qiniucdn.com/ShareLogo%402x.png",
+			share_url: "http://share.ziyafish.com/activity.html?post_id=564c3bb4e138236f58085100",
+			title: ""
+        }
+        "credit_info": {
+        "info": "发渔获 +10", 
+        "shop_text": "154 金币", 
+        "gift_text": "渔具钓竿大礼包", 
+        "credits": 154, 
+        "act_credits": 10, 
+        "earn_text": "6个任务未完成", 
+        "change": true
+        }, 
+        "entities": [
+        {
+        "status": 0, 
+         "post_type": "1", 
+         "created": 1458634250549, 
+         "mold": "post", 
+         "_id": "56f0fe0af317998e6653a295", 
+         "gps_info": {
+        "province": "北京市", 
+        "city": "北京市", 
+        "area": "海淀区", 
+        "country": "中国", 
+        "location": {
+          "type": "Point", 
+          "coordinates": [
+            116.3051223754883, 
+            40.03566360473633
+          ]
+        }, 
+        "country_code": "cn", 
+        "address": "北京市朝阳区"
+        }, 
+        "modified": 1458634250549, 
+         "actor": {
+        "username": "f04bdc0c1a4311e5a3cf34363b6f45fc", 
+        "fishingSkill": [
+          "湖库钓", 
+          "坑钓", 
+          "传统钓"
+        ], 
+        "gps_info": {
+          "province": "河北省", 
+          "city": "廊坊市", 
+          "gps_modified": 1446259670536, 
+          "area": "霸州市", 
+          "country": "中国", 
+          "location": {
+            "type": "Point", 
+            "coordinates": [
+              116.320863, 
+              39.001018
+            ]
+          }, 
+          "country_code": "cn", 
+          "address": "河北省廊坊市霸州市"
+        }, 
+        "sex": "f", 
+        "nick": "1111123", 
+        "avatar_url": "http://7xjbxa.com2.z0.glb.qiniucdn.com/9C6E6546-C_1457330394001.jpg"
+        }, 
+        "last_act_date": 1458634250549, 
+        "content": "说说钓鱼心得", 
+        "reward_count": 0, 
+        "comment_count": 0, 
+        "like_count": 0, 
+        "video": {
+        "duration": 150, 
+        "width": 400, 
+        "size": 160, 
+        "video_url": "http://v6.pstatp.com/origin/11110/2473945014?Signature=x9nXSQKhw7nHDAzDxvADYxLhXk0%3D&Expires=1458637555&KSSAccessKeyId=qh0h9TdcEMrm1VlR2ad/", 
+        "height": 300
+        }, 
+        "rank": 999, 
+        "last_act": "create", 
+        "share_count": 0, 
+        "display_count": 0, 
+        "type": "video", 
+        "page": [{
+          "width": 400, 
+          "image_url": "http://p2.pstatp.com/large/3250002951b89580e42", 
+          "height": 300
+        }]
+        }
+         ]
+        }
+* 错误代码：
+
+    	401 Unauthorized：认证失败。返回的response body为json数据：
+    
+        {
+        	"error":"expired_token",
+         	"error_description":"Unable to authenticate due to expired access token"
+        }
+        
+		400 Bad Request：请求不合法。请求中缺少必须的属性。
+		
+		{
+			"error":"bad_request",
+			"error_description":"location is required"
+		}  
+		
+#渔获视频列表与详情说明
+* 渔获列表接口和原来一致，如果获取包含视频的列表加参数：video=1
+
+
+
+        
+#分享信息获取
+## GET /share_info?id={id}&shareType={shareType}&channel={channel}
+* 描述:分享信息获取
+* URL参数：
+    
+          shareType："post"(渔获非视频的),"activity"（活动）,"app"（app分享）,"video"（渔获视频）  4种
+          id为帖子的id
+          channel为：sinaWeibo wechat wechatMoment QQ QQSpace
+*例如:
+		
+		http://192.168.1.222:8090/share_info?shareType=activity&id=564c3bb4e138236f58085100&channel=33
+
+* Request Body：
+	   
+	     {
+        entities: [
+           {
+           content: "近邻",
+          image_url: "http://7xjbxa.com2.z0.glb.qiniucdn.com/497DE0B5-E_1447836595620.jpg",
+         share_url: "http://share.ziyafish.com/activity.html?post_id=564c3bb4e138236f58085100",
+          title: "看看咯哦"
+        }
+        ]
+        }
+* 错误代码：
+		
+		400 Bad Request：请求不合法。请求中缺少必须的属性。
+		
+		{
+			"error":"bad_request",
+			"error_description":"location is required"
+		} 
+		
+		
+		
+
+		
+#获取装备列表
+##首次获取装备列表或下拉刷新获取装备列表
+### GET /tools   （/tools?type=20    获取附近装备）
+* 描述：首次获取装备列表；下拉刷新获取装备列表
+* URL参数：无
+* Request Body：无
+* curl示例：
+
+		curl -X GET -i "http://192.168.1.222:8090/tools?cursor=1479368362372"
+		curl -X GET -i "http://192.168.1.222:8090/tools?type=20&lon=116.41637&lat=39.92855&cursor=0*1479368362372"      (获取附近装备)
+		
+* Response：
+		 
+		 {		
+			"entities": [
+    			{
+    				"_id": "548bec31fe000104e16e3861", 
+					"pages": [
+    					{    			
+    						"image_url":"http://7tszd2.com2.z0.glb.qiniucdn.com/4f1db1a076f6fe3fe770d56c27a81710.jpg",
+    						"height":2.3,
+    						"width":4.2
+    					},
+    					{
+    						"image_url":"http://7tszd2.com2.z0.glb.qiniucdn.com/4f1db1a076f6fe3fe770d56c27a81710.jpg",
+    						"height":2.3,
+    						"width":4.2
+    					},
+    					{
+    						"image_url":"http://7tszd2.com2.z0.glb.qiniucdn.com/4f1db1a076f6fe3fe770d56c27a81710.jpg",
+    						"height":2.3,
+    						"width":4.2
+    					}
+					], 
+					"content":"说说钓鱼心得",
+					"actor": {
+    					"username": "544982ab7d2a11e4b6d748d705d33a1b",
+    					"nick":"钓鱼人",
+    					"avatar_url": "http://7tszd2.com2.z0.glb.qiniucdn.com/a7.jpg",
+        				"sex": "F",
+        				"gps_info":{
+        	       			"address":"北京市朝阳区",
+							"country_code": "cn",
+						} ,
+						"fishingSkill": [
+							"矶钓"
+						],
+						"follow":0, //0：相互之间都不是关注人  1：当前用户已关注发帖人，但是发帖用户并没有关注当前用户 
+									//2：相互关注  3：当前用户未关注发帖人，但是发帖人已经关注用户																	}, 
+					"gps_info":{
+        	       		"address":"北京市朝阳区",
+						"country_code": "cn",
+					} ,
+					"created": 1418486508820,
+					"like_count":0,    //点赞数
+					"comment_count":0, //评论数
+					"display_count":1,  //浏览数
+					"reward_count": 0,  //打赏次数
+					"liked":true,		//当前用户是否赞过					
+				}
+				...
+    		]
+			"cursor":"1418470354235"   //无cursour 则无数据
+			}
+	
+			
+##上翻获取更多装备列表
+### GET /tools
+* 描述：上翻获取更多装备列表
+* URL参数：cursor={$cursor}
+* Request Body：无
+* curl示例：
+
+		curl -X GET -i "http://192.168.1.222:8000/tools?cursor=1234567"
+		
+* Response：
+		 
+		 和首次获取装备列表或下拉刷新获取装备列表的Response一致
+		 
+
+#我的装备
+##首次获取用户发布的装备或下拉刷新获最新装备
+### GET /user_tools
+* 描述：首次获取渔获列表；下拉刷新获取渔获列表
+* URL参数：username,没有该参数时，根据token获取当前用户的装备
+* 权限：无
+* Request Body：无
+* curl示例：
+
+		curl -X GET -i "http://192.168.1.222:8090/user_tools"
+		
+* Response：
+
+		和首次获取装备列表或下拉刷新获取装备列表的Response一致 
+		 	 
+
+		
+##上翻获取更多装备列表
+### GET /user_tools
+* 描述：上翻获取更多装备列表
+* URL参数：username={$username},没有该参数时，根据token获取当前用户的装备    
+			cursor={$cursor}
+* 权限：App登录用户
+* Request Body：无
+* curl示例：
+
+		curl -X GET -i "http://192.168.1.222:8090/user_tools?cursor=1234567"
+		
+* Response：
+		 
+		和首次获取装备列表或下拉刷新获取装备列表的Response一致
+		
+		
+		
+#收藏的装备
+##首次获取收藏的装备列表或下拉刷新获取收藏的装备列表
+### GET /collect_tools
+* 描述：首次获取装备列表；下拉刷新获取装备列表
+* URL参数：username,没有该参数时，根据token获取当前用户的装备
+* 权限：无
+* Request Body：无
+* curl示例：
+
+		curl -X GET -i "http://127.0.0.1:8090/collect_tools"
+		
+* Response：
+		 
+		 和首次获取装备列表或下拉刷新获取装备列表的Response一致
+
+		
+##上翻获取更多收藏的装备列表
+### GET /collect_tools?cursor=1234567
+* 描述：上翻获取更多收藏的装备列表
+* URL参数：username={$username},没有该参数时，根据token获取当前用户的装备    
+			cursor={$cursor}
+* 权限：无
+* Request Body：无
+* curl示例：
+
+		curl -X GET -i "http://127.0.0.1:8000/collect_tools?cursor=1234567"
+		
+* Response：
+		 
+		和首次获取装备列表或下拉刷新获取装备列表的Response一致
+		
+		
+##渔获列表接口（带活动和广告）
+### GET /posts_with_act_ad
+* 描述：获取渔获列表，以及指定排名的活动和广告
+* URL参数：
+
+		type={$code}  默认是最新
+		cusrsor={$cusrsor}
+		lon={经度}&lat={纬度}    
+		
+* Request Body：无
+* curl示例：
+
+		curl -X GET -i "http://192.168.1.222:8090/posts_with_act_ad"
+		
+* Response
+
+		{
+		"cursor": "1479368362374,-1,1", 
+		"entities": [
+    	{
+			"liked": false, 
+			"_id": "5746c00fe1382345a167d547", 
+			"created": 1464254479660, 
+			"type": "video", 
+			"mold": "post", 
+			"gps_info": {
+        	    	"province": "", 
+        	    	"city": "", 
+        	    	"area": "", 
+        	    	"country": "", 
+        	    	"location": {
+        	    		"type": "Point", 
+        	    		"coordinates": [0, 0]
+        			}, 
+        	   		"country_code": "", 
+        			"address": ""
+        		}, 
+			"actor": {
+				"username": "14c36b5e1a4411e5895534363b6f45fc", 
+				"nick": "33333", 
+				"avatar_url": "http://7te9ok.com2.z0.glb.qiniucdn.com/004D1272-A_1431456602846.jpg", 
+				"follow": 0, 
+				"gps_info": {
+					"province": "河北省", 
+					"city": "秦皇岛市", 
+					"area": "北戴河区", 
+					"auto": 0, 
+					"location": {
+						"type": "Point", 
+					}, 
+					"country_code": "cn", 
+					"address": "河北省秦皇岛市北戴河区", 
+					"country": "中国"
+        		}
+        	}, 
+        	"reward_count": 0, 
+        	"comment_count": 0, 
+        	"like_count": 1, 
+        	"video": {
+				"video_url": "http://7xsav2.media1.z0.glb.clouddn.com/245_1464254472015.mp4", 
+				"video_type": "mp4", 
+				"height": 360, 
+				"width": 480, 
+				"duration": 3, 
+				"size": 777148
+				}, 
+        	"rank": 5, 
+        	"display_count": 2, 
+        	"created_micros": 1464254479660, 
+        	"page": [
+        	{
+          		"width": 480, 
+          		"image_url": "http://7xjbxh.com2.z0.glb.qiniucdn.com/245_1464254471218.jpg", 
+          		"height": 360
+        	}
+			], 
+			"isHot": 1,		//热门渔获   该数据等于1表示热门渔获
+			"isTop": 1		//置顶渔获   该数据等于1表示置顶渔获
+			}, 
+			{
+			"price_object": {
+				"price": "300", 
+				"other_text": "起", 
+				"payment": "全款", 
+				"flg": "￥"
+			}, 
+			"title": "山东青岛钓鱼1日游（复制）", 
+			"reward_money": "赚\n￥50", 
+			"activity_date": "已结束", 
+			"mold": "activity",
+			"actor": {
+				"username": "85d4eff0796911e5bb92000c29160262", 
+				"fishingSkill": [
+					"坑钓", 
+					"冰钓"
+				], 
+				"gps_info": {
+					"province": "北京市", 
+					"city": "北京市", 
+					"area": "海淀区", 
+					"country": "中国", 
+					"address": "北京市海淀区", 
+					"country_code": "cn", 
+					"auto": 1
+				}, 
+				"actor_role_image": "http://7te9ok.com1.z0.glb.clouddn.com/shangjia.png", 
+				"sex": "m", 
+				"nick": "韩梅梅", 
+				"avatar_url": "http://7xjbxa.com2.z0.glb.qiniucdn.com/4ca590e6952311e6a5c4000c29160262.jpg"
+			}, 
+			"join_text": "10人团", 
+			"redirect_url": "http://192.168.1.222:8088/activity_mobile/58302b05e138234e97bd8d60", 
+			"target_fish": "1", 
+			"title_prefix": {
+				"content": "[已认证]", 
+				"font-color": "#ff8000"
+			}, 
+			"_id": "58302b05e138234e97bd8d60", 
+			"page": [
+				{
+					"y2": 512, 
+          			"ratio": 1, 
+          			"height": 512, 
+          			"x2": 1024, 
+          			"width": 1024, 
+          			"image_url": "http://7xjbxf.com2.z0.glb.qiniucdn.com/e37598feaa2711e6acab000c29160262.jpg", 
+          			"y1": 0, 
+          			"x1": 0, 
+          			"type": 2
+          		}
+          	],
+          	“product”:[			//商品信息
+				{	
+					"name":"商品名称",		//商品名称
+					"images":[
+						"http://img03.taobao.net/bao/uploaded/i3/T1HXdXXgPSt0JxZ2.8_070458.jpg",
+						"http://img03.taobao.net/bao/uploaded/i3/T1HXdXXgPSt0JxZ2.8_070458.jpg"...				
+					],				//商品图片
+					“sale_num”:121,	//销量，，可能为空，或不存在该属性
+					“piece”:59,		//价格
+					"ziya_url":"http://ziya_exec/?action=jd&type=url_detail&url=https%3A%2F%2Fjd.com",  //子牙钓鱼格式化后的淘宝、京东链接
+					"url":"https://item.taobao.com/item.htm?spm=a219r.lm5059.14.18.Ufj5PG&id=521852250488&ns=1&abbucket=1#detail",//用户输入的原始链接地址
+				}
+			}]
+          },
+          {	
+          	"mold": "buffer_ad",  //缓冲广告          			"page":[
+          		{
+          			"width":640,
+          			"height":400,
+          			"image_url":"http://7xjbxf.com2.z0.glb.qiniucdn.com/d7131bf8abea11e6ad91000c29160262.png", 
+          			"link_url":"http://www.ziyafish.com"
+				}
+          	],
+          	"buffer_time":500,//缓冲时间，暂定500毫秒  单位：毫秒
+          	"_id":"582e7164e138231b08dd63b4"
+          }
+         ], 
+		"banners": [
+			{
+			"shouldLogin": false, 
+			"onclick_url": "http://shop.ziyadiaoyu.com", 
+			"name": "商城广告", 
+			"height": 300, 
+			"width": 640, 
+			"image_url": "http://7xjbxf.com2.z0.glb.qiniucdn.com/f04b583470b611e6be6e000c29160262.jpg", 
+			"_id": "57c8e72ae13823093b27ed92"
+			}, 
+			{
+			"shouldLogin": true, 
+			"onclick_url": "http://192.168.1.222:9237/draw_location", 
+			"name": "抽签", 
+			"height": 240, 
+			"width": 640, 
+			"image_url": "http://7xjbxf.com2.z0.glb.qiniucdn.com/cdda7ea2799d11e69e58000c29160262.jpg", 
+			"_id": "57d7d678e13823747718c3cc"
+			}, 
+		], 
+		"filter": [{
+			"code": "10",
+			"value": "最新",
+			"selected":1
+		}, {
+		"code": "20",
+		"value": "热门",
+		"icon_url":"http://7xjbxa.com2.z0.glb.qiniucdn.com/4ca590e6952311e6a5c4000c29160262.jpg"
+		}, {
+		"code": "30",
+		"value": "附近",
+		"gps_force":1
+		}, {
+		"code": "40",
+		"value": "推荐",
+		"login_force":1
+		}, {
+		"code": "100",
+		"value": "海钓"
+		}, {
+		"code": "110",
+		"value": "矶钓"
+		}, {
+		"code": "120",
+		"value": "路亚"
+		}, {
+		"code": "130",
+		"value": "台钓"
+		}, {
+		"code": "140",
+		"value": "筏钓"
+		}],
+		"binding": 0
+	}
+
+##提交过来类型排序
+### post /filter_order
+* 描述：自定义渔获种类排列顺序
+* URL参数：无
+* 权限：登陆用户
+* Request Body：
+	
+		{
+			"order":["20","10","30","40","100","110","120","130","140"],
+			"type":"post"  // 如果是活动，则是“activity”
+		}
+* curl示例：
+
+		curl -X POST -i "http://192.168.1.222:8090/filter_order"
+		
+* Response
+		
+		{
+			"result":ok
+		}
+
+##满足用户自定义排序的渔获列表
+### get /post_list_custom
+* 描述：满足用户自定义排序的渔获列表
+* URL参数：
+		
+		type={$code}  无type属性，则返回用户自定义渔获种类排序的第一个类别的渔获列表
+		cusrsor={$cusrsor}
+		lon={经度}&lat={纬度}   
+* Request Body：无
+* Response：
+		
+		type=30 and lon和lat都为0时，
+				返回200：
+					{
+						"entities":[],
+						"filter":[{
+							"code": "10",
+							"value": "最新",
+							"selected":1
+						}, {
+							"code": "20",
+							"value": "热门",
+							"icon_url":"http://7xjbxa.com2.z0.glb.qiniucdn.com/4ca590e6952311e6a5c4000c29160262.jpg"
+						}, {
+							"code": "30",
+							"value": "附近",
+							"gps_force":1
+						}, {
+							"code": "40",
+							"value": "推荐",
+							"login_force":1
+						}, {
+							"code": "100",
+							"value": "海钓"
+						}, {
+							"code": "110",
+							"value": "矶钓"
+						}, {
+							"code": "120",
+							"value": "路亚"
+						}, {
+							"code": "130",
+							"value": "台钓"
+						}, {
+							"code": "140",
+							"value": "筏钓"
+						}]
+						"error_reason":"coordinate is need"					}
+
+		其他：
+			同posts_with_act_ad接口返回同样数据
+			
+
+##装备列表
+### get /new_tools
+* 描述:根据根据
+* Url参数:?lat=40.04205&lon=116.299&type=80
+* 权限：无
+* Request Body：无
+* curl示例：
+
+		curl -X GET -i "http://192.168.1.222:8090/new_tools?lat=40.04205&lon=116.299&cursor=1234567"
+		
+* Response：
+		 
+		{
+		"entities": [{
+			"_id": "58b40cdb01a0f72f31471696",
+			"page": [{
+				"is_cover": false,
+				"width": 800,
+				"image_url": "http://7xjbxh.com2.z0.glb.qiniucdn.com/BLN-AL10_post_1488194772611_984.jpg",
+				"height": 600
+				}, {
+				"is_cover": false,
+				"width": 800,
+				"image_url": "http://7xjbxh.com2.z0.glb.qiniucdn.com/BLN-AL10_post_1488194772716_2561.jpg",
+				"height": 565
+			}],
+			"yuhuo_type": 1,
+			"city_area":"北京|海淀",
+			"display_count": 123,
+			"price":"¥ 123.4",
+			"title":"出口欧洲1.8米碳素实心路亚竿",
+			"redirect_url": "http://www.ziyafish.com/tools/58b40cdb01a0f72f31471696",
+			"liked": false,
+			"created": 1488194779949,
+			"gps_info": {
+				"province": "山东省",
+				"city": "青岛市",
+				"area": "市北区",
+				"country": "中国",
+				"address": "山东省青岛市市北区",
+				"country_code": "cn",
+				"auto": 0
+			},
+			"tools_rank": 999,
+			"actor": {
+				"username": "cea14c70f32911e6879b00163e0044d9",
+				"fishingSkill": [
+					"船钓"],
+				"gps_info": {
+					"province": "山东省",
+					"city": "青岛市",
+					"gps_modified": 1487127156998,
+					"area": "市北区",
+					"country": "中国",
+					"country_code": "cn",
+					"address": "山东省青岛市市北区"
+				},
+				"sex": "M",
+				"nick": "开疆拓土",
+				"avatar_url": "http://q.qlogo.cn/qqapp/1104620544/AEFB4081A913604120551D0B3AEA4476/100",
+				"follow": 0
+			},
+			"content": "全新铝合金游钓艇出售。电话：18953288293",
+			"reward_count": 0,
+			"comment_count": 1,
+			"like_count": 0,
+			"rank": 999,
+			"mold": "tool",
+						}....
+		],
+		"banners": [{
+			"shouldLogin": false,
+			"onclick_url": "http://partner.ziyafish.com/partner/status/new?utm_source=app",
+			"name": "游钓服务商",
+			"hour": 15,
+			"height": 240,
+			"width": 640,
+			"num": 4727,
+			"image_url": "http://7xjbxf.com2.z0.glb.qiniucdn.com/8d0f07e6684811e6b8cc00163e000cb8.jpg?watermark/3/text/NDcyNw==/gravity/NorthEast/fontsize/450/fill/I0ZGRkZGRg==/dx/28/dy/50",
+			"_id": "57b81d7b56f0ca10cf713144"
+		}],
+		"cursor": "1488065444135",
+		"filter": [{
+			"code": "10",
+			"value": "全部"
+			}, {
+			"gps_force": 1,
+			"code": "20",
+			"value": "附近"
+			}, {
+			"code": "30",
+			"value": "钓竿"
+			}, {
+			"code": "40",
+			"value": "钩线"
+			}, {
+			"code": "50",
+			"value": "漂饵"
+			}, {
+			"code": "60",
+			"value": "鱼轮"
+			}, {
+			"code": "70",
+			"value": "生鲜"
+			}, {
+			"code": "80",
+			"selected": 1,
+			"value": "钓船"
+			}, {
+			"code": "90",
+			"value": "服饰"
+			}, {
+			"code": "100",
+			"value": "配件"
+		}],
+}
+
+		 	
+
+##@列表
+### get /at_list
+* 描述:根据根据
+* Url参数:无
+* 权限：本人
+* Request Body：无
+* Response：
+
+
+		{
+ 		"entities": [
+    		{
+		"rank": 999, 
+		"_id": "59325e7fcb606d0730fa1bcd", 
+		"created": 1496473215495, 
+		"mold": "post", 
+		"liked": false, 
+		"gps_info": {
+        "province": "北京市", 
+        "city": "北京市", 
+        "auto": 0, 
+        "area": "海淀区", 
+        "country": "中国", 
+        "country_code": "cn", 
+        "address": "北京市海淀区"
+		}, 
+		"tools_rank": 999, 
+		"tag_tool": 0, 
+		"oldth": 0, 
+		"content": "w1", 
+		"reward_count": 0, 
+		"comment_count": 0, 
+		"like_count": 0, 
+     	"actor": {
+        "username": "98663e661f5911e7b4df000c29160262", 
+        "next_level_score": 1500, 
+        "fishingSkill": [
+          "海钓"
+        ], 
+        "gps_info": {
+          "province": "北京市", 
+          "city": "北京市", 
+          "gps_modified": 1491985554908, 
+          "area": "海淀区", 
+          "country": "中国", 
+          "country_code": "cn", 
+          "address": "北京市海淀区"
+        }, 
+        "nick": "0000", 
+        "avatar_url": "http://7xjbxa.com2.z0.glb.qiniucdn.com/H60-L02_avator_1441026087347_464663_7456.jpg", 
+        "user_level": "8", 
+        "title": "双飞行家", 
+        "follow": 2
+		}, 
+		"display_count": 6, 
+		"created_micros": 1496473215516, 
+ 		"at_user_list": [
+        {
+          "username": "7dbf4c9a1f5b11e7b4df000c29160262", 
+          "nick": "李雷"
+        }, 
+        {
+          "username": "99275f5a1f5a11e7b4df000c29160262", 
+          "nick": "9999"
+        }
+		], 
+		"yuhuo_type": 0
+		}
+  		]
+		}
+
+
+
+
+##新装备列表
+### get /tool_list
+* 描述:根据根据
+* Url参数:?lat=40.04205&lon=116.299&type=80
+* 权限：无
+* Request Body：无
+* curl示例：
+
+		curl -X GET -i "http://192.168.1.222:8090/tool_list?lat=40.04205&lon=116.299&cursor=1234567"
+		
+* Response：
+		 
+		{
+			"entities": [
+			{
+	      "rank": 999, 
+	      "like_count": 1, 
+	      "isTop": 1, 
+	      "created_micros": 1495681952962, 
+	      "title": "还有", 
+	      "actor": {
+	        "username": "27de5f561f5a11e7b4df000c29160262"
+	      }, 
+	      "content": "还有\n58866\n新旧程度：全新\n价格：¥ 100\n联系方式：13112345678", 
+	      "comment_count": 1, 
+	      "city_area": "北京 | 海淀", 
+	      "yuhuo_type": 1, 
+	      "price": "100", 
+	      "tools_rank": 999, 
+	      "tag_tool": 1, 
+	      "oldth": 10, 
+	      "contact_tel": "13112345678", 
+	      "display_count": 12, 
+	      "desc": "58866", 
+	      "tool_type": [
+	        "80"
+	      ], 
+	      "created": 1495681952960, 
+	      "reward_count": 0, 
+	      "redirect_url": "http://192.168.1.222:8088/tools/59264ba0e1382322b45ddd7b", 
+	      "_id": "59264ba0e1382322b45ddd7b", 
+	      "page": [
+	        {
+	          "is_cover": false, 
+	          "width": 1280, 
+	          "image_url": "http://fishimage.ziyafish.com/Nexus5X_post_1495681952186_3979.jpg", 
+	          "height": 640
+	        }
+	      ]
+	    }, 
+	    {  ##广告
+	      "shouldLogin": false, 
+	      "onclick_url": "http://192.168.1.222:8088/static/shopAd.html", 
+	      "height": 240, 
+	      "width": 640, 
+	      "image_url": "http://7xjbxf.com2.z0.glb.qiniucdn.com/afe7e6dc42ba11e7a7fe000c29160262.png", 
+	      "_id": "59293fc4e13823441b435fc9", 
+	      "mold": "ad", 
+	      "canTap": true
+	    }, 
+		],
+		"banners": [{
+			"shouldLogin": false,
+			"onclick_url": "http://partner.ziyafish.com/partner/status/new?utm_source=app",
+			"name": "游钓服务商",
+			"hour": 15,
+			"height": 240,
+			"width": 640,
+			"num": 4727,
+			"image_url": "http://7xjbxf.com2.z0.glb.qiniucdn.com/8d0f07e6684811e6b8cc00163e000cb8.jpg?watermark/3/text/NDcyNw==/gravity/NorthEast/fontsize/450/fill/I0ZGRkZGRg==/dx/28/dy/50",
+			"_id": "57b81d7b56f0ca10cf713144"
+		}],
+		"cursor": "1488065444135",
+		"filter": [{
+			"code": "10",
+			"value": "全部"
+			}, {
+			"gps_force": 1,
+			"code": "20",
+			"value": "附近"
+			}, {
+			"code": "30",
+			"value": "钓竿"
+			}, {
+			"code": "40",
+			"value": "钩线"
+			}, {
+			"code": "50",
+			"value": "漂饵"
+			}, {
+			"code": "60",
+			"value": "鱼轮"
+			}, {
+			"code": "70",
+			"value": "生鲜"
+			}, {
+			"code": "80",
+			"selected": 1,
+			"value": "钓船"
+			}, {
+			"code": "90",
+			"value": "服饰"
+			}, {
+			"code": "100",
+			"value": "配件"
+		}],
+}
+
+##左上角天气数据
+### get /weather_cut
+* 描述:根据根据经纬度获取简版天气
+* Url参数:?lat=40.04205&lon=116.299
+* 权限：无
+* Request Body：无
+* curl示例：
+
+		curl -X GET -i "http://192.168.1.222:8090/weather_cut?lat=40.04205&lon=116.299818"
+		
+* Response：
+		
+		{
+			"top": "北京 西南风", 
+			"bottom": "气压1003.7hpa", 
+			"icon": "http://o84ir2o49.bkt.clouddn.com/w_weather_119@2x.png"
+		}
+
+		 	

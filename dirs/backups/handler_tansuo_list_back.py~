@@ -1,0 +1,796 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# @Date    : 2014-12-05 15:45:20
+# @Author  : Your Name (you@example.org)
+# @Link    : http://example.org
+# @Version : $Id$
+
+from __future__ import division
+import tornado.web
+from tornado.web import asynchronous
+from tornado.options import options
+import copy
+from mongokit import *
+from mongokit.helpers import totimestamp, fromtimestamp
+import pymongo
+from mongo_field_encoder import MongoFieldEncoder
+from handler_base import BaseHandler
+from access_track import access_log
+from services.service_waterfall_list import *
+from services.service_activities import *
+from services.service_waterfall_flow_json import *
+from utils.banner import *
+from services.service_post_list_place_property import *
+import traceback
+import json
+import bson
+import datetime
+import time
+import random
+from log import get_logger
+from utils.redis_client import RedisClient
+from utils.mongo_client import MongoClient
+from utils.gps_info import *
+from services.service_geocoder import *
+from services.service_ip_address import *
+
+log = get_logger()
+
+class TanSuoListHandler(BaseHandler):
+    """
+    探索列表
+    """
+    def __init__(self, application, request, **kwargs):
+        super(TanSuoListHandler, self).__init__(application, request, **kwargs)
+
+    @asynchronous
+    @access_log
+    @gen.coroutine
+    def get(self):
+        log.info("TanSuoListHandler begin:" + str(self.request.arguments))
+
+        # 获取当地的信息
+        loc_info = yield self.getCurrLoc()
+
+        country_code = loc_info["country_code"]
+        if country_code=="cn":
+            province=loc_info.get("province","")
+            if province=="台湾省":
+                ####取省一级渔获，按距离排序
+                self.province_post_list(loc_info)
+            else:
+                ###国内的渔获
+                self.domestic_post_list_by_created(loc_info)
+        else:
+            ####国外渔获
+            self.foreign_post_list(loc_info)
+
+    #####省一级渔获
+    def province_post_list(self, loc_info):
+        request_cursor = self.get_argument('cursor', '')
+        act = self.get_argument('act', '')
+
+        now = datetime.datetime.utcnow()
+        lastest_up_time = self.get_argument('lastest_up_time', '')
+
+        new_post_array = []
+        limit = 10
+        if lastest_up_time == '':
+            new_lastest_up_time = str(totimestamp(now))
+        else:
+            if act == "up":
+                new_lastest_up_time = str(totimestamp(now))
+            else:
+                new_lastest_up_time = lastest_up_time
+
+        action = self.getActionByRequest()
+        # log.info("action:"+action)
+        response = {
+            "entities": [],
+            "lastest_up_time": new_lastest_up_time
+        }
+        city, lon, lat, province = loc_info["city"], loc_info["lon"], loc_info["lat"], loc_info[
+            "province"]
+
+        if lastest_up_time and action == "up":
+            where = {
+                "deleted": {"$ne": True},
+                "sold_out": {"$ne": "1"},
+                "yuhuo_type": 0,
+                "created": {
+                    '$gt': fromtimestamp(int(lastest_up_time))
+                },
+
+                "gps_info.province": province
+            }
+            order_by = [('created', pymongo.DESCENDING)]
+            new_post_array, post_id_array = getPostSearchListNoCursor(where, order_by, self.username)
+
+            ###是否显示双击图标
+            if not new_post_array:
+                response["flag_show"] = True
+
+            response["entities"] = getPostListJson(new_post_array)
+            if request_cursor:
+                response["cursor"] = request_cursor
+        else:
+            center = [float(lon), float(lat)]
+            request_cursor_list = request_cursor.split(",")
+            min = 0 if request_cursor_list[0] == "" else float(request_cursor_list[0])
+            where = {
+                "deleted": {"$ne": True},
+                "sold_out": {"$ne": "1"},
+                "yuhuo_type": 0,
+                "gps_info.province": province,
+                "gps_info.location": {
+                    "$near": {
+                        "$geometry": {
+                            "type": "Point",
+                            "coordinates": center
+                        },
+                        "$minDistance": min,
+                        "$maxDistance": 500 * 1000
+                    }
+                }
+            }
+            post_array, cursor_return, post_id_array = getNearPosts(where, limit, center, self.username)
+
+            if request_cursor:
+                cursor_list = [cursor_return, str(int(request_cursor_list[1])+1)]
+                response["cursor"] = ",".join(cursor_list)
+            else:
+                return_cursor = ",".join([cursor_return, "1"])
+                response["cursor"] = return_cursor
+
+            # response["entities"] = getPostListJson(post_array)
+            response["entities"] = getPostListJson(assemble_new_post_ad(
+                    post_array, response["cursor"].split(",")[1], "2", username=self.username))
+
+            if cursor_return == "-1":
+                response.pop("cursor", "")
+        response["show_type"] = 2
+        response_str = json.dumps(response,
+                                  indent=2,
+                                  ensure_ascii=False,
+                                  cls=MongoFieldEncoder)
+
+        self.write(response_str)
+        self.finish()
+        return
+
+
+    #####国外渔获
+    def foreign_post_list(self,loc_info):
+        request_cursor = self.get_argument('cursor', '')
+        act = self.get_argument('act', '')
+
+        now = datetime.datetime.utcnow()
+        lastest_up_time = self.get_argument('lastest_up_time', '')
+
+        new_post_array = []
+        limit = 10
+        if lastest_up_time == '':
+            new_lastest_up_time = str(totimestamp(now))
+        else:
+            if act == "up":
+                new_lastest_up_time = str(totimestamp(now))
+            else:
+                new_lastest_up_time = lastest_up_time
+
+        action = self.getActionByRequest()
+        # log.info("action:"+action)
+        response = {
+            "entities": [],
+            "lastest_up_time": new_lastest_up_time
+        }
+        city, lon, lat,country_code = loc_info["city"], loc_info["lon"], loc_info["lat"],loc_info["country_code"]
+
+        if lastest_up_time and action == "up":
+            where = {
+                "deleted": {"$ne": True},
+                "sold_out": {"$ne": "1"},
+                "yuhuo_type": 0,
+                "created": {
+                    '$gt':fromtimestamp(int(lastest_up_time))
+                },
+
+                "gps_info.country_code": country_code
+            }
+            order_by = [('created', pymongo.DESCENDING)]
+            new_post_array, post_id_array = getPostSearchListNoCursor(where, order_by, self.username)
+
+            ###是否显示双击图标
+            if not new_post_array:
+                response["flag_show"] = True
+
+
+            response["entities"] = getPostListJson(new_post_array)
+            if request_cursor:
+                response["cursor"] = request_cursor
+        else:
+            center = [float(lon), float(lat)]
+            request_cursor_list = request_cursor.split(",")
+            min = 0 if request_cursor_list[0] == "" else float(request_cursor_list[0])
+            # min = 0 if request_cursor == '' else float(request_cursor)
+            where = {
+                "deleted": {"$ne": True},
+                "sold_out": {"$ne": "1"},
+                "yuhuo_type": 0,
+                "gps_info.country_code": country_code,
+                "gps_info.location": {
+                    "$near": {
+                        "$geometry": {
+                            "type": "Point",
+                            "coordinates": center
+                        },
+                        "$minDistance": min,
+                        "$maxDistance": 500 * 1000
+                    }
+                }
+            }
+            post_array, cursor_return, post_id_array = getNearPosts(where, limit, center, self.username)
+
+            if request_cursor:
+                cursor_list = [cursor_return, str(int(request_cursor_list[1])+1)]
+                response["cursor"] = ",".join(cursor_list)
+            else:
+                return_cursor = ",".join([cursor_return, "1"])
+                response["cursor"] = return_cursor
+
+            # response["entities"] = getPostListJson(post_array)
+            response["entities"] = getPostListJson(assemble_new_post_ad(
+                    post_array, response["cursor"].split(",")[1], "2", username=self.username)
+            )
+            if cursor_return == "-1":
+                response.pop("cursor", "")
+
+            # if cursor_return != "-1":
+            #     response["cursor"] = cursor_return
+            # response["entities"] = getPostListJson(post_array)
+        response["show_type"] = 2
+        response_str = json.dumps(response,
+                                  indent=2,
+                                  ensure_ascii=False,
+                                  cls=MongoFieldEncoder)
+
+        self.write(response_str)
+        self.finish()
+        return
+
+    #####国内渔获:按指定城市的渔获的发布时间排序
+    def domestic_post_list_by_created(self, loc_info):
+        request_cursor = self.get_argument('cursor', "")
+        request_cursor_array = request_cursor.split(",")
+        act = self.get_argument('act', '')
+
+        now = datetime.datetime.utcnow()
+        lastest_up_time = self.get_argument('lastest_up_time', '')
+
+        new_post_array = []
+        post_array=[]
+        limit = 10
+        # 最后更新时间
+        if lastest_up_time == '':
+            new_lastest_up_time = str(totimestamp(now))
+        else:
+            if act == "up":
+                new_lastest_up_time = str(totimestamp(now))
+            else:
+                new_lastest_up_time = lastest_up_time
+
+        action = self.getActionByRequest()
+        # log.info("action:"+action)
+        response = {
+            "entities": [],
+            "lastest_up_time": new_lastest_up_time
+        }
+
+        city, lon, lat = loc_info["city"], loc_info["lon"], loc_info["lat"]
+        # log.info("city:"+str(city))
+
+        is_newest_post=False
+        # 刷新
+        if action=="up":
+            if lastest_up_time:
+                if city:
+                    where = {
+                        "deleted": {"$ne": True},
+                        "sold_out": {"$ne": "1"},
+                        "yuhuo_type": 0,
+                        "created": {
+                            '$gt': fromtimestamp(int(lastest_up_time))
+                        },
+
+                        "gps_info.city": city
+                    }
+                    order_by = [('created', pymongo.DESCENDING)]
+                    new_post_array, post_id_array = getPostSearchListNoCursor(where, order_by, self.username)
+
+                    ###是否显示双击图标
+                    if not new_post_array:
+                        response["flag_show"] = True
+
+                    response["entities"] = getPostListJson(new_post_array)
+                    if request_cursor:
+                        response["cursor"] = request_cursor
+            else:
+                is_newest_post=True
+
+        else:
+            is_newest_post = True
+
+        # 下拉请求新数据
+        if is_newest_post:
+            limit=10
+            where = {
+                "deleted": {"$ne": True},
+                "sold_out": {"$ne": "1"},
+                "yuhuo_type": 0,
+                "gps_info.city": city
+            }
+
+            if request_cursor and request_cursor_array[0] == "1":
+                created_cursor = request_cursor_array[1]
+                cursor_datetime = fromtimestamp(int(created_cursor))
+                # cursor_datatime 为最后一天帖子的创建时间
+                where["created"]={
+                    "$lt": cursor_datetime
+                }
+
+            order_by = [('created', pymongo.DESCENDING)]
+            # log.info("where:"+str(where))
+            # 获取帖子
+            post_array, cursor_return, post_id_array = getPostSearchList(where, limit, order_by, self.username)
+
+            # if cursor_return != "-1":
+            #     response["cursor"] = "1," + cursor_return
+            if request_cursor:
+                cursor_list = ["1", cursor_return, str(int(request_cursor_array[2])+1)]
+                response["cursor"] = ",".join(cursor_list)
+            else:
+                return_crusor = ",".join(["1", cursor_return, "1"])
+                response["cursor"] = return_crusor
+            # response["entities"] = getPostListJson(new_post_array + post_array)
+            response["entities"] = getPostListJson(assemble_new_post_ad(
+                    new_post_array+post_array, response["cursor"].split(",")[2], "2", username=self.username)
+                    )
+            if cursor_return == "-1":
+                response.pop("cursor", "")
+        response["show_type"] = 2
+        response_str = json.dumps(response,
+                                  indent=2,
+                                  ensure_ascii=False,
+                                  cls=MongoFieldEncoder)
+
+        self.write(response_str)
+        self.finish()
+        return
+
+
+
+    #####国内渔获
+    def domestic_post_list(self,loc_info):
+        request_cursor=self.get_argument('cursor','')
+        request_cursor_array = request_cursor.split(",")
+        act = self.get_argument('act', '')
+
+        now = datetime.datetime.utcnow()
+        lastest_up_time = self.get_argument('lastest_up_time', '')
+
+        new_post_array=[]
+        limit = 10
+        if lastest_up_time=='':
+            new_lastest_up_time = str(totimestamp(now))
+        else:
+            if act == "up":
+                new_lastest_up_time = str(totimestamp(now))
+            else:
+                new_lastest_up_time = lastest_up_time
+
+        action = self.getActionByRequest()
+        # log.info("action:"+action)
+        response = {
+            "entities": [],
+            "lastest_up_time":new_lastest_up_time
+        }
+
+        city, lon, lat = loc_info["city"], loc_info["lon"], loc_info["lat"]
+        # log.info("city:"+str(city))
+        if city and lastest_up_time and action == "up":
+            where = {
+                "deleted": {"$ne": True},
+                "sold_out": {"$ne": "1"},
+                "yuhuo_type": 0,
+                "created": {
+                    '$gt':fromtimestamp(int(lastest_up_time))
+                },
+
+                "gps_info.city": city
+            }
+            order_by = [('created', pymongo.DESCENDING)]
+            new_post_array, post_id_array = getPostSearchListNoCursor(where, order_by, self.username)
+
+        ####下拉时，只需要获取5条
+        if action == "up":
+            limit = 5
+
+        if action == "up" and (limit<=len(new_post_array) or request_cursor==''):
+            response["entities"] = getPostListJson(new_post_array)
+            if request_cursor:
+                response["cursor"]=request_cursor
+        else:
+            limit=limit-len(new_post_array)
+
+
+            if lon=="" or lat=="":
+                ####无经纬度时，按指定城市的渔获的发布时间排序
+                where = {
+                    "deleted": {"$ne": True},
+                    "sold_out": {"$ne": "1"},
+                    "yuhuo_type": 0,
+                    "created":{
+                        "$gt": now - datetime.timedelta(days=30),
+                    },
+                    "gps_info.city":city
+                }
+
+                if request_cursor and request_cursor_array[0] == "1":
+                    created_cursor = request_cursor_array[1]
+                    cursor_datetime = fromtimestamp(int(created_cursor))
+                    where["created"]["$lt"] = cursor_datetime
+
+                order_by = [('created', pymongo.DESCENDING)]
+                # log.info("where:"+str(where))
+                post_array, cursor_return, post_id_array = getPostSearchList(where, limit, order_by, self.username)
+
+                if cursor_return != "-1":
+                    response["cursor"]="1,"+cursor_return
+
+                response["entities"] = getPostListJson(new_post_array+post_array)
+
+
+            else:
+                curr_list_section=0
+                center = [float(lon), float(lat)]
+                first_section_post_array=[]
+                second_section_post_array = []
+                third_section_post_array = []
+                second_cursor=None
+                third_cursor=None
+                # log.info("cur2222:" + str(int(time.time() * 1000)))
+                if request_cursor:
+                    if request_cursor_array[0] == "2":
+                        created_partition =request_cursor_array[1]
+                        distance_partition = request_cursor_array[2]
+                        created_cursor = request_cursor_array[3]
+
+                        min_datetime = fromtimestamp(int(created_cursor))
+                        curr_list_section=1
+                    if request_cursor_array[0] == "3":
+                        curr_list_section=2
+                    if request_cursor_array[0] == "4":
+                        curr_list_section=3
+                else:
+                    distance_partition = "0"
+                    created_partition = "0"
+
+                    min_datetime = now
+                    curr_list_section = 1
+
+
+                if  curr_list_section==1:
+                    # log.info("cur33333:" + str(int(time.time() * 1000)))
+                    # log.info("canshu:"+str([center,min_datetime,created_partition,distance_partition,city,[],limit]))
+                    cursor_result,first_section_post_array=self.getPartitionPostList(center,min_datetime,created_partition,distance_partition,city,[],limit)
+
+                    # log.info("cur4444:" + str(int(time.time() * 1000)))
+                    if cursor_result!="-1":
+                        response["cursor"]="2,"+cursor_result
+                    else:
+                        if len(first_section_post_array)==limit:
+                            response["cursor"] = "3,0"
+                        else:
+                            curr_list_section = 2
+                            second_cursor="0"
+
+                if curr_list_section==2:
+
+                    new_limit=limit-len(new_post_array+first_section_post_array)
+                    if second_cursor is None:
+                        if request_cursor:
+                            second_cursor=request_cursor_array[1]
+                        else:
+                            second_cursor="0"
+                    # log.info("cur555555:" + str(int(time.time() * 1000)))
+                    second_section_post_array,cursor_result = self.getSecondSectionPost(center, second_cursor, city,new_limit)
+                    # log.info("cur66666:" + str(int(time.time() * 1000)))
+                    if cursor_result!="-1":
+                        response["cursor"]="3,"+cursor_result
+                    else:
+                        if len(second_section_post_array)==limit:
+                            response["cursor"] = "4,0"
+                        else:
+                            curr_list_section = 3
+                            third_cursor=""
+
+                if curr_list_section==3:
+                    if third_cursor is None:
+                        if request_cursor:
+                            third_cursor=request_cursor_array[1]
+                        else:
+                            third_cursor=""
+                    # log.info("cur77777:" + str(int(time.time() * 1000)))
+                    new_limit = limit - len(new_post_array + first_section_post_array+second_section_post_array)
+                    third_section_post_array,cursor_result = self.getThirdSectionPost(third_cursor, city, new_limit)
+                    # log.info("cur8888:" + str(int(time.time() * 1000)))
+                    if cursor_result != "-1":
+                        response["cursor"] = "4," + cursor_result
+
+
+                response["entities"]=getPostListJson(new_post_array+first_section_post_array+second_section_post_array+third_section_post_array)
+
+        # if not response.has_key("cursor"):
+        #     ####如果没有cursor，返回最近30-90天是否有渔获
+        #     where={
+        #         "deleted": {"$ne": True},
+        #         "sold_out": {"$ne": "1"},
+        #         "yuhuo_type": 0,
+        #         "gps_info.city": city,
+        #         "created":{
+        #             "$lt": now - datetime.timedelta(days=30),
+        #             "$gt": now - datetime.timedelta(days=90)
+        #         },
+        #     }
+        #     # log.info("where:"+json.dumps(where,
+        #     #                   indent=2,
+        #     #                   ensure_ascii=False,
+        #     #                   cls=MongoFieldEncoder))
+        #     # log.info("where111:" +str(where))
+        #     cursor_post=MongoSlaveClient.find_all(where, "posts")
+        #     # log.info("cursor_post:"+str(cursor_post.count()))
+        #     if cursor_post and cursor_post.count()>0:
+        #         response["has_other"]=1
+        response_str = json.dumps(response,
+                              indent=2,
+                              ensure_ascii=False,
+                              cls=MongoFieldEncoder)
+
+        self.write(response_str)
+        self.finish()
+        return
+
+
+
+
+    def getAddressIP(self):
+        ip=""
+        try:
+            ip=self.request.remote_ip
+        except:
+            ip=""
+
+
+        if ip is None or ip=="" or ip=="127.0.0.1":
+            try:
+                ip=self.request.headers['X-Real-Ip']
+            except:
+                pass
+        return ip
+
+    def getPartitionPostList(self,center,min_datetime,created_partition,distance_partition,city,tmp_post_array,limit):
+        # log.info("---------------------------")
+        # log.info("curXXXXXX:" + str(int(time.time() * 1000)))
+        # log.info("created_partition:"+str(created_partition))
+        # log.info("distance_partition:" + str(distance_partition))
+        now=datetime.datetime.utcnow()
+        where = {
+            "deleted": {"$ne": True},
+            "sold_out": {"$ne": "1"},
+            "yuhuo_type": 0,
+            "gps_info.city": city
+        }
+        if created_partition == "0":
+            ###1-7天的帖子
+            where["created"] = {
+                "$gt": now - datetime.timedelta(days=7),
+                "$lt": min_datetime
+            }
+        if created_partition == "1":
+            ###8-16天的帖子
+            before_7_days_time = now - datetime.timedelta(days=7)
+
+            where["created"] = {
+                "$gt": now - datetime.timedelta(days=16),
+                "$lt": min_datetime if before_7_days_time > min_datetime else before_7_days_time
+            }
+        if created_partition == "10":
+            ###16-30天的帖子
+            before_16_days_time = now - datetime.timedelta(days=16)
+
+            where["created"] = {
+                "$gt": now - datetime.timedelta(days=30),
+                "$lt": min_datetime if before_16_days_time > min_datetime else before_16_days_time
+            }
+
+        if distance_partition == "0":
+            where["gps_info.location"] = {
+                "$near": {"$geometry": {
+                    "type": "Point",
+                    "coordinates": center
+                },
+                    "$minDistance": 0,
+                    "$maxDistance": 15 * 1000
+                }}
+        if distance_partition == "1":
+            where["gps_info.location"] = {
+                "$near": {"$geometry": {
+                    "type": "Point",
+                    "coordinates": center
+                },
+                    "$minDistance": 15 * 1000,
+                    "$maxDistance": 300 * 1000
+                }}
+        # log.info("where:"+json.dumps(where,
+        #                           indent=2,
+        #                           ensure_ascii=False,
+        #                           cls=MongoFieldEncoder))
+        # log.info("where:" + str(where))
+        order_by = [('created', pymongo.DESCENDING)]
+
+        post_array, cursor_return, post_id_array = getPostSearchList(where, limit, order_by, self.username)
+        # log.info("cur c:" + created_partition + ",d:" + distance_partition)
+        # log.info("len(tmp_post_array):" + str(len(tmp_post_array)))
+        #
+        # log.info("len(post_array):"+str(len(post_array)))
+        # log.info("cursor_return:" + str(cursor_return))
+        if cursor_return != "-1":
+            return created_partition + "," + distance_partition + "," + cursor_return, tmp_post_array+post_array
+        else:
+            new_created_partition, new_distance_partition = self.nextCreatedDistancePartition(created_partition,
+                                                                      distance_partition)
+            # log.info("new_created_partition:" + str(new_created_partition)+\
+            #          " new_distance_partition:"+str(new_distance_partition))
+            sum_post_array=tmp_post_array + post_array
+
+            if new_created_partition == "-1":
+                return "-1", sum_post_array
+            else:
+                if limit==len(post_array):
+                    return new_created_partition + "," + new_distance_partition + "," + str(totimestamp(now)), sum_post_array
+
+                if limit > len(post_array):
+                    return self.getPartitionPostList(center, now, new_created_partition, new_distance_partition,
+                                                 city,sum_post_array,limit-len(post_array))
+
+    def nextCreatedDistancePartition(self,created_partition,distance_partition):
+
+        next_int = int(bin(int(created_partition + distance_partition, 2)), 2) + 1
+        if next_int <= 5:
+            next_str = str(bin(next_int))[2:].zfill(2)
+            return next_str[:-1], next_str[-1]
+        else:
+            return "-1", "-1"
+
+
+    @gen.coroutine
+    def getCurrLoc(self):
+        city = "青岛市"
+        country_code="cn"
+        province=""
+        try:
+            lon = self.get_argument("lon", "")
+            lat = self.get_argument("lat", "")
+
+            if lon and lat:
+                gps_info = yield geocoder(lon, lat)
+                # log.info("gps_info:"+json.dumps(gps_info,
+                #                       indent=2,
+                #                       ensure_ascii=False,
+                #                       cls=MongoFieldEncoder))
+                city_gps = gps_info.get("city", "")
+                if city_gps:
+                    city = city_gps
+                country_code=gps_info.get("country_code", "")
+                province = gps_info.get("province", "")
+            else:
+                ip = self.getAddressIP()
+                if ip:
+                    loc = yield ipAddaressBelonge(ip)
+                    if loc:
+                        location = loc.get("location", {})
+                        if location:
+                            lng_tmp = location.get("lng", 0)
+                            lat_tmp = location.get("lat", 0)
+                            if lng_tmp and lat_tmp:
+                                lon, lat = lng_tmp, lat_tmp
+
+                        ad_info = loc.get("ad_info", {})
+                        if ad_info:
+                            nation=ad_info.get("nation","")
+                            if nation=="中国":
+                                city_ip = ad_info.get("city", "")
+                                if city_ip:
+                                    city = city_ip
+
+        except Exception as e:
+            log.info('Exception:%s' % e.message)
+            log.error(traceback.format_exc())
+            city = "青岛市"
+        result = {
+            "city": city,
+            "lon": lon,
+            "lat": lat,
+            "country_code":country_code,
+            "province":province
+        }
+        # log.info("result:"+str(result))
+        raise gen.Return(result)
+
+    ###根据传入参数判断当前用户的行为：
+    ############act == up and lastest_up_time!=''  动作：从上往下滑动屏幕，下拉
+    ############act == ''          动作：从下往上滑动屏幕，刷新
+    ##########注意：当第一次进入时失败，没有结果，此时前端下拉刷新时，当第一次进入处理
+    ##########此时传入act == up lastest_up_time＝＝'',也可以看作从下往上滑动屏幕，刷新
+    def getActionByRequest(self):
+        act = self.get_argument('act', '')
+        lastest_up_time = self.get_argument('lastest_up_time', '')
+        if act == 'up' and lastest_up_time != '':
+            action = "up"
+        else:
+            action = "down"
+
+        return action
+
+    #####第二区域数据：以前30天-90天的数据，按距离排序
+    def getSecondSectionPost(self,center,cursor,city,limit):
+        # log.info("======getSecondSectionPost is called:"+cursor)
+        now=datetime.datetime.utcnow()
+        min = 0 if cursor == '' else float(cursor)
+        where = {
+            "deleted": {"$ne": True},
+            "sold_out": {"$ne": "1"},
+            "yuhuo_type": 0,
+            "gps_info.city": city,
+            "created": {
+                "$lt": now - datetime.timedelta(days=30),
+                "$gt": now - datetime.timedelta(days=90)
+            },
+            "gps_info.location": {
+                "$near": {
+                    "$geometry": {
+                        "type": "Point",
+                        "coordinates": center
+                    },
+                    "$minDistance": min,
+                    "$maxDistance": 300 * 1000
+                }
+            }
+        }
+        post_array, cursor_return, post_id_array = getNearPosts(where, limit,center, self.username)
+        return post_array,cursor_return
+
+    #####第三区域数据：90天以后的数据，按时间排序
+    def getThirdSectionPost(self,cursor,city,limit):
+        # log.info("======getThirdSectionPost is called:" + cursor)
+        now = datetime.datetime.utcnow()
+
+        where = {
+            "deleted": {"$ne": True},
+            "sold_out": {"$ne": "1"},
+            "yuhuo_type": 0,
+            "gps_info.city": city
+        }
+
+        if cursor:
+            cursor_datetime = fromtimestamp(int(cursor))
+            where["created"]={
+                "$lt": cursor_datetime
+            }
+        else:
+            where["created"] ={
+                "$lt": now - datetime.timedelta(days=90)
+            }
+        order_by = [('created', pymongo.DESCENDING)]
+
+        post_array, cursor_return, post_id_array = getPostSearchList(where, limit, order_by, self.username)
+        return post_array, cursor_return

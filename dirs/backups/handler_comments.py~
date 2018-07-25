@@ -1,0 +1,108 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# @Date    : 2015-05-18 17:41:52
+# @Author  : Your Name (you@example.org)
+# @Link    : http://example.org
+# @Version : $Id$
+from handler_baseHt import BaseHtHandler
+from log import get_logger
+import tornado.web
+from tornado.web import asynchronous
+from tornado.options import options
+import json
+import hashlib
+import datetime
+import hashlib
+from bson import ObjectId
+import random
+import time
+from log import get_logger
+from auth import requires_auth
+from model.comment import Comment
+from model.activities import Activities
+import optionsSetting
+from utils.secret import *
+import traceback
+from utils.redis_client import RedisClient
+from utils.mongo_front import MongoFront
+from mongo_field_encoder import MongoFieldEncoder
+from model.posts import Post
+from mongolog import MongoHandler
+from mongokit.helpers import totimestamp, fromtimestamp
+from utils.token_im import TokenService
+from tornado.httpclient import HTTPRequest
+from utils.mongo_client import MongoClient
+import pymongo
+
+try:
+    from tornado.curl_httpclient import CurlAsyncHTTPClient as AsyncHTTPClient
+except ImportError:
+    from tornado.simple_httpclient import SimpleAsyncHTTPClient as AsyncHTTPClient
+log = get_logger()
+class CommentsHandler(BaseHtHandler):
+    @asynchronous
+    @requires_auth
+    def delete(self):
+        log.info("AdvicesHandler.delete is called")
+
+        comment_id = self.get_argument('comment_id',None)
+
+        lookup = {"_id": ObjectId(comment_id)}
+        comment=options.dbconn.Comment.find_one(lookup)
+        if comment is not None:
+            type=comment["type"]
+            post_id=comment["to_post_id"]
+
+            ##删除评论
+            MongoFront.remove(lookup,"comments")
+            if type=="comments":
+                ##如果是评论，也删除对应的回复
+                lookup={
+                    "to_comment_id":comment_id
+                }
+                MongoFront.remove(lookup,"comments")
+
+                ##评论对应帖子的回复数-1
+                is_post_comment=True
+                if comment.has_key("post_type") and comment["post_type"]=="activity":
+                    is_post_comment=False
+
+                if is_post_comment:
+                    lookup = {"_id": ObjectId(post_id),"comment_count":{'$gt':0}}
+
+                    option = {
+                        "$inc":{"comment_count":-1}
+                    }
+                    options.dbconn.Post.find_and_modify(lookup, option, new=True)
+                else:
+                    lookup = {"_id": ObjectId(post_id),"comment_count":{'$gt':0}}
+
+                    option = {
+                        "$inc":{"comment_count":-1}
+                    }
+                    options.dbconn.Activities.find_and_modify(lookup, option, new=True)
+
+        response = json.dumps({},
+                          indent=2,
+                          ensure_ascii=False,
+                          cls=MongoFieldEncoder)
+        self.write(response)
+        self.finish()
+
+    def to_object_id_array(self,str_array):
+        object_id_array=[]
+        for str in str_array:
+            object_id_array.append(ObjectId(str))
+
+        return object_id_array
+
+    def fire_response_bad_response(self):
+        """
+        返回登录请求错误响应
+        """
+        self.set_status(400)
+        response = {}
+        response["error"] = "invalid_grant"
+        response["error_description"] = "invalid username or password"
+        self.write(json.dumps(response, indent=2, ensure_ascii=False))
+        self.finish()

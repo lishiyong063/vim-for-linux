@@ -1,0 +1,521 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# @Date    : 2015-07-13 11:05:00
+# @Author  : Your Name (you@example.org)
+# @Link    : http://example.org
+# @Version : $Id$
+
+from __future__ import division
+import tornado.web
+import copy
+from tornado.web import asynchronous
+from tornado.options import options
+from handler_baseHt import BaseHtHandler
+import pymongo
+from model.activities import Activities
+import json
+import datetime
+from services.service_activities import *
+from services.service_order import *
+from services.service_post_display_count import *
+
+from utils.mongo_front import MongoFront
+from mongo_field_encoder import MongoFieldEncoder
+from utils.redis_client import RedisClient
+from log import get_logger
+from auth import requires_auth
+import time
+from services.service_xcx import *
+from services.service_recently_activity import *
+from services.service_activities_kefu_info import *
+from utils.redis_weibo_client import RedisWeiboClient
+try:
+    from tornado.curl_httpclient import CurlAsyncHTTPClient as AsyncHTTPClient
+except ImportError:
+    from tornado.simple_httpclient import SimpleAsyncHTTPClient as AsyncHTTPClient
+
+log = get_logger()
+
+class NewActivityCheckHandler(BaseHtHandler):
+
+    """
+    活动
+    """
+    def __init__(self, application, request, **kwargs):
+        super(NewActivityCheckHandler, self).__init__(application, request, **kwargs)
+
+    @requires_auth
+    @asynchronous
+    @gen.coroutine
+    def put(self):
+        log.info("ActivityCheckHandler.put:"+self.request.body)
+        body_dic = json.loads(self.request.body,encoding="utf-8")
+        content = body_dic.get("content","")
+        check_failed_reason = body_dic.get("check_failed_reason","")
+        post_ids = body_dic.get("post_id",None)
+        check = body_dic.get("check",None)
+        curr_date=datetime.datetime.utcnow()
+        if post_ids == None or check==None:
+            self.fire_response_bad_request()
+            return
+
+
+        post_id_array=post_ids.split(",")
+        post_id_object_array=[]
+
+        for post_id in post_id_array:
+            post_id_object_array.append(ObjectId(post_id))
+
+
+        lookup = {"_id": {"$in":post_id_object_array}}
+        log.info("lookup:"+str(lookup))
+
+
+        updated={
+            "check":check
+        }
+        settlement_cycle = body_dic.get("settlement_cycle", 0)
+        if settlement_cycle>0:
+            updated["settlement_cycle"]=settlement_cycle
+        if check=="2":
+            updated["status"]=2
+            # updated["deleted"] = True
+            updated["check_failed_reason"]=check_failed_reason
+
+        if check=="1":
+
+
+            try:
+                activity_cursor = MongoFront.find_all(lookup, "activities")
+                for activity in activity_cursor:
+                    begin_point = activity["begin_point"]
+                    corrective = begin_point.get("corrective","")
+                    # 判断经纬度是否设置
+                    if corrective is None or corrective == "":
+                        self.fire_response_bad_content("common_error","coordinates error" ,"请设置经纬度")
+                        return
+
+                    # 判断是否
+                    where_check={
+                        "activity_id":str(activity["_id"])
+                    }
+                    activity_item_temp_cursor = MongoFront.find_all(where_check, "activities_item")
+                    for activity_item_temp in activity_item_temp_cursor:
+                        price=activity_item_temp.get("price",0)
+                        cooperation_price=activity_item_temp.get("cooperation_price", 0)
+                        if price==0 or cooperation_price ==0:
+                            self.fire_response_bad_content("common_error", "coordinates error", "请设置经联盟合作价")
+                            return
+
+                    day_count = activity["day_count"]
+                    if day_count>2:
+                        activity_desc = activity["activity_desc"]
+                        travle_detail = activity_desc.get("travle_detail",[])
+                        for travle in travle_detail:
+                            content = travle.get("content","").strip()
+                            if content=="":
+                                self.fire_response_bad_content("common_error", "travle error", "请设置行程")
+                                return
+
+
+            except  Exception as e:
+                log.info('NewActivityCheckHandler.put Exception:%s' % e.message)
+                log.error(traceback.format_exc())
+                self.fire_response_bad_content("common_error", "system error", "系统异常")
+                return
+
+            updated["pass_date"]=curr_date
+            updated["status"]=1
+
+
+            is_deepSea=body_dic.get("is_deepSea",None)
+            if is_deepSea:
+                updated["deepSea"]=1
+
+            is_awaySea=body_dic.get("is_awaySea",None)
+            if is_awaySea:
+                updated["awaySea"]=1
+
+            activity_tag=body_dic.get("activity_tag",None)
+            if activity_tag:
+                updated["activity_tag"] = activity_tag
+
+            fish_code = body_dic.get("fish_code", None)
+            if fish_code:
+                updated["fish_code"] = fish_code
+
+            province = body_dic.get("province", None)
+            city = body_dic.get("city", None)
+            lat_lng = body_dic.get("lat_lng", None)
+            updated["belonge_area"] = get_belonge_area(province)
+
+
+            if province is not None and city is not None and lat_lng is not None:
+                lat_lng_str_array = lat_lng.split(",")
+                lat = float(lat_lng_str_array[0])
+                lng = float(lat_lng_str_array[1])
+
+                updated["area_location"] = {
+                    "province": province,
+                    "city": city,
+                    "location": {
+                        "type": "Point",
+                        "coordinates": [
+                            lng,
+                            lat
+                        ]
+                    }
+                }
+
+
+            where = {"key":"pc_activity_send"}
+            update = {"$inc":{"value":1}}
+            ziya_counter = MongoFront.find_and_modify(where,update,"ziya_counter")
+
+            log.info("ziya_counter_type"+str(ziya_counter["value"]))
+
+            # updated["activity_code"] = "6"+str(int(ziya_counter["value"])).zfill(4)
+
+            # 4位，好记
+            updated["activity_code"] = str(int(ziya_counter["value"])).zfill(4)
+
+            for post_id in post_id_array:
+                ####修正活动最近团期的人数和时间价格
+                updateActivityRecentlyInfo(post_id)
+        option = {
+            '$set': updated,
+            '$unset':{'deleted':''}
+        }
+        log.info("option:"+str(option))
+        log.info("lookup:"+str(lookup))
+
+        MongoFront.update(lookup, option, "activities")
+        self.write(json.dumps({"response":"ok"},indent=2, ensure_ascii=False,cls=MongoFieldEncoder))
+        self.finish()
+
+
+        # 活动审核不通过，发环信提醒
+        if check=="2":
+             ###审核不通过
+            post_ary = self.getPosts(lookup)
+            for post in post_ary:
+                to_usernames = [post["actor"]["username"]]
+                title = post["title"]
+                push_content = "你的<"+title+">活动未通过审核。"
+                if check_failed_reason!="":
+                    push_content = check_failed_reason
+
+                # if check_failed_reason!=None and check_failed_reason!="":
+                #     push_content+="请修改" +check_failed_reason+"后，"
+                # push_content+="重新提交审核。"
+                message_event = {}
+                message_event["message_type"] = "activity_nopass_remind"
+                message_event["target"] = "apoint"
+                message_event["content"] = push_content
+                message_event["to_usernames"] = to_usernames
+                self.sendHuanxinMessages(message_event)
+
+
+
+        if check=="1":
+            ###审核通过
+            post_ary = self.getPosts(lookup)
+            for post in post_ary:
+                content = body_dic.get("content","")
+                if content != "":
+                    pass
+                    # 给商家发送审核通过信息2017.12.13关闭
+                    # to_usernames = [post["actor"]["username"]]
+                    # message_event = {}
+                    # #####给发布者发的通知:在消息监控中,为了将活动审核和精品审核分开,此处由"check"改为"activity_check"
+                    # #####为兼容以前的程序,发消息时,会把"message_type"改回"check"
+                    # message_event["message_type"] = "activity_check"
+                    # message_event["target"] = "apoint"
+                    # message_event["content"] = content
+                    # message_event["to_usernames"] = to_usernames
+                    #
+                    # queue_name=options.redis_queue_message_event
+                    #
+                    # #### 保存消息监控表
+                    # message_monitor_entity={
+                    #     "created":curr_date,
+                    #     "begin_milli":int(round(time.time() * 1000)),
+                    #     "message_event":message_event
+                    # }
+                    # id,db_error=MongoFront.insert(message_monitor_entity,"message_monitor")
+                    #
+                    # message_event["message_monitor_id"]=id
+                    # message_event["message_type"]="check"
+                    #
+                    # message_event1 = copy.deepcopy(message_event)
+                    #
+                    # message_event = json.dumps(message_event,
+                    #                   indent=2,
+                    #                   ensure_ascii=False,
+                    #                   cls=MongoFieldEncoder)
+                    #
+                    # log.info("insert queue:%s"%queue_name)
+                    # log.info("insert message_event:%s"%message_event)
+                    # result =RedisClient.rpush(queue_name,message_event)
+
+                    # 给商家短信消息
+                    # message_event1["message_type"] = "activity_check_pass"
+                    # message_event1 = json.dumps(message_event1,
+                    #                            indent=2,
+                    #                            ensure_ascii=False,
+                    #                            cls=MongoFieldEncoder)
+                    # result = RedisClient.rpush(queue_name, message_event1)
+
+                ###添加额外浏览量
+                addActivityDisplayCount(post,"check_pass")
+
+                ###活动审核通过消息，发送给该用户的粉丝
+                user = self.getUser(post["actor"]["username"])
+                message_event = {}
+                message_event["created"]=datetime.datetime.utcnow()
+                message_event["to_usernames"] = []
+                message_event["post_id"] = post["_id"].__str__()
+                message_event["from_user"]={
+                                             "nick":user["nick"],
+                                              "username":user["username"],
+                                              "avatar_url":user["avatar_url"]
+                                             }
+                message_event["message_type"]="activity_post"
+
+                #### 保存消息监控表
+                message_monitor_entity={
+                    "created":curr_date,
+                    "begin_milli":int(round(time.time() * 1000)),
+                    "message_event":message_event
+                }
+                id,db_error=MongoFront.insert(message_monitor_entity,"message_monitor")
+
+                message_event["message_monitor_id"]=id
+
+                message_event = json.dumps(message_event,
+                                   indent=2,
+                                   ensure_ascii=False,
+                                   cls=MongoFieldEncoder)
+                queue_name=options.redis_queue_message_event
+                log.info("insert queue:%s"%queue_name)
+                log.info("insert message_event:%s"%message_event)
+                result =RedisWeiboClient.rpush(queue_name,message_event)
+
+                message = {
+                    "act": "activity_check_pass",
+                    "object_id": str(post["_id"])
+
+                }
+                queue_name = options.activity_order_queue
+                result = RedisWeiboClient.rpush(queue_name, json.dumps(message))
+
+                ####同步小程序
+                to_xcx_flag=body_dic.get("to_xcx","0")
+                if to_xcx_flag=="1":
+                    to_xcx(post)
+
+                ###创建活动对应的分机号
+                createFenjiNO(post)
+                ####创建针对商家的延时通知:活动出团前一天的发出团通知
+                # for activity_id in post_id_object_array:
+                #     where={
+                #         "activity_id":activity_id
+                #     }
+                    # activities_item_cursor=MongoFront.find_all(where,"activities_item")
+                    #
+                    # for activities_item in activities_item_cursor:
+                        # object_id=str(activities_item["_id"])
+                        # begin_date=activities_item["begin_date"]
+                        # ####提醒时间是一天+14小时前,保证白天10点左右商家收到提醒
+                        # act_time=begin_date-datetime.timedelta(days=1)-datetime.timedelta(hours=14)
+                        #
+                        # ziya_order_future_task={
+                        #     "type":1,
+                        #     "created":datetime.datetime.utcnow(),
+                        #     "is_complete":0,
+                        #     "act_time":act_time,
+                        #     "object_id":object_id,
+                        # }
+                        # MongoFront.insert(ziya_order_future_task,"ziya_order_future_task")
+
+
+    @asynchronous
+    @requires_auth
+    def get(self):
+        log.info("NewActivityCheckHandler.get is called")
+
+        admin_user=self.me
+        #初始化
+        where = { 'deleted': {'$ne': True},"activity_type":0}
+        sort= {}
+        sort_by = 'created'
+        sort_value = pymongo.DESCENDING
+        entities = []
+        response = {}
+        
+        # check = self.get_argument('check','-1')
+
+       
+        # if admin_user:
+        #     if admin_user["level"]=="leader":
+        #         # where["$or"]=[{"post_type":"2","check":{ "$exists" : False }},{"check":"0"}]
+        #         ###需求修改：让主管能看到所有的待审核帖子,包括运营人员发的和用户发的。
+        #         where["$or"]=[{"check":{ "$exists" : False }},{"check":"0"}]
+        #     else:
+        #         where["post_type"]="1"
+        #         if check=="-1":
+        #             where['check'] = { "$exists" : False }
+
+        #查询参数设置
+        limit = int(self.get_argument('limit',10))
+        curr = self.get_argument('curr','')
+        datemin = self.get_argument('datemin',None)
+        datemax = self.get_argument('datemax',None)
+        admin_area = self.get_argument('admin_area',None)
+        biz_user_name = self.get_argument('biz_user_name',None)
+        status = self.get_argument('status',None)
+        # city = self.get_argument('city',None)
+
+        if datemin != None:
+           log.info("datemin:"+datemin)
+           datemin = datetime.datetime.strptime(datemin, "%Y-%m-%d")
+           where["created"] = {"$gte":datemin}
+
+        if datemax != None:
+           log.info("datemax:"+datemax)
+           datemax = datetime.datetime.strptime(datemax, "%Y-%m-%d")
+           between={}
+           if where.has_key("created"):
+               between=where["created"]
+
+           between["$lte"]=datemax
+           where["created"]=between
+
+        # 片区查询
+        if admin_area!=unicode(0):
+            where["admin_area"]=admin_area
+        else:
+            biz_username = self.username
+            biz_where={
+                "username":biz_username
+            }
+            account=options.dbconn_ht.Account_ht.find(biz_where)
+            level = account[0]["level"]
+            if level=="staff":
+                where["admin_area"]={"$in":account[0]["activity_area"]}
+
+        # 按活动状态查询
+        if status!=None:
+            try:
+                status = int(status)
+                where["status"]=int(status)
+            except Exception as e:
+                log.info('NewActivityCheckHandler.get Exception:%s' % e.message)
+                log.error(traceback.format_exc())
+                self.fire_response_bad_request(key_required=e.message)
+                return
+
+        # 按商家名称查询
+        if biz_user_name!=unicode(0):
+            user_list = get_order_username(biz_user_name)
+            where["actor.username"] = {"$in":user_list}
+
+
+        # if admin_user["username"]!="ziya010":
+        #     self.city_deal(city,where)
+        #
+        #     province = self.get_argument('province',None)
+        #     if province!=None:
+        #         log.info("province:"+province)
+        #         where['gps_info.province']=province
+
+       
+
+        ##排序
+        sort_by = self.get_argument("sort_by","modified")
+        sort_value = self.get_argument('sort_value',"-1")
+
+        log.info("where:"+str(where))
+        # log.info("sort_by:"+sort_by)
+        # log.info("sort_value:"+sort_value)
+        sort=[]
+        if sort_by=="":
+            ##默认排序：先按排名排，然后按发活动时间排
+            sort = [('rank',pymongo.ASCENDING),('created', pymongo.DESCENDING)]
+        else:
+            sort=[(sort_by,int(sort_value))]
+        #查询
+        if curr=="":
+            activities = options.dbconn.Activities.find(where).sort(sort).limit(limit)
+        else:
+            activities = options.dbconn.Activities.find(where).sort(sort).skip((int(curr)-1)*limit).limit(limit)
+        #
+
+
+        #结果处理
+        #for activity in activities:
+            #entities.append(activity)
+        if activities!=None:
+            entities = getActivityList(activities)
+        response["entities"] = entities
+        response["count"] = str(activities.count())
+        self.write(json.dumps(response,indent=2, ensure_ascii=False,cls=MongoFieldEncoder))
+        self.finish()
+
+        # response = {"entities":[activities]}
+        # self.write(json.dumps(response,
+        #                       indent=2,
+        #                       ensure_ascii=False,
+        #                       cls=MongoFieldEncoder))
+        # self.finish()
+
+
+
+    def getPost(self,id):
+        lookup = {"_id":ObjectId(id)}
+        filters = {"page":1,"content":1,"actor":1,"_id":0}
+        post = MongoFront.find_one(lookup,"activities",filters)
+        return post
+
+    def getPosts(self,lookup):
+        filters = {"page":1,"content":1,"actor":1,"_id":1,"adcc":1,"belonge_area":1,"activity_type":1}
+        posts = MongoFront.finds(lookup,"activities",filters)
+        posts_ary = []
+        for post in posts:
+            posts_ary.append(post)
+        return posts_ary
+    
+    def getUser(self,username):
+        lookup = {"username":username}
+        filters = {"username":1,"nick":1,"avatar_url":1}
+        user = MongoFront.find_one(lookup,"users",filters)
+        return user
+
+    
+    def city_deal(self,city,where):
+        
+        if city!=None:
+            log.info("city:"+city) 
+            cities = city.split(',')
+            if '海外' in city:
+                index = cities.index('海外')
+                del cities[index]
+                where['$or']=[
+                              {'gps_info.city':{'$in':cities}},
+                              {'gps_info.country_code':{'$nin':['','cn'],'$exists':True}}
+                              ]
+            elif '其他' in city:
+                index = cities.index('其他')
+                del cities[index]
+                cities.append('')
+                
+                #由于海外的数据存在只有country_code,没有city，所以其他的数据应该把这类排除在外
+                where['$or']=[
+                              {'gps_info.city':{'$in':cities},'gps_info.country_code':'cn'},
+                              {'gps_info.city':{'$exists':False},'gps_info.country_code':{'$exists':False}},
+                              {'gps_info.city':{'$exists':False},'gps_info.country_code':'cn'}
+                              ]
+                
+              
+            else:
+                 where['gps_info.city']={'$in':cities}

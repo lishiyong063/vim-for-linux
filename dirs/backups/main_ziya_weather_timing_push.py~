@@ -1,0 +1,383 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# @Date    : 2014-08-15 17:04:53
+# @Author  : Your Name (you@example.org)
+# @Link    : http://example.org
+# @Version : $Id$
+# 天气接口推送
+import md5
+import sys, urllib, urllib2, json
+import tornado.httpclient
+from tornado.web import HTTPError, asynchronous
+from tornado.httpclient import HTTPRequest
+import datetime
+try:
+    from tornado.curl_httpclient import CurlAsyncHTTPClient as AsyncHTTPClient
+except ImportError:
+    from tornado.simple_httpclient import SimpleAsyncHTTPClient as AsyncHTTPClient
+import tornado.escape
+import json
+from sendemail import *
+import calendar
+from tornado.options import options
+
+from tornado import gen
+import random
+try:
+    from pymongo.objectid import ObjectId
+except ImportError:
+    from bson.objectid import ObjectId
+from utils.redis_client import RedisClient
+import sys
+reload(sys)
+sys.setdefaultencoding('utf-8')
+import globalConfig
+import traceback
+import ConfigParser
+import urllib2
+from urllib import quote
+from utils.mongo_client import MongoClient
+from utils.mongo_weather_client import MongoWeatherClient
+from utils.redis_weibo_client import RedisWeiboClient
+from utils.token_im import *
+import logging
+from utils.secret import *
+from distutils.version import LooseVersion
+import  datetime
+import time
+import httplib, urllib
+from urlparse import urlparse
+import hashlib
+from log import *
+CURRENT_DIR = os.path.dirname(__file__)
+LOG_FILE = os.path.abspath(os.path.join(CURRENT_DIR, "logs", "fishing_ziya_weather_timing_push.log"))
+
+log = getLogger(LOG_FILE)
+
+####天气定时推送
+def main():
+    ###读取配置文件，系统初始化
+    global credits_rules_dic
+    global hour
+    globalConfig.init()
+    log.info("redis_ip:"+globalConfig.redis_ip)
+    log.info("redis_port:"+str(globalConfig.redis_port))
+    log.info("redis_db:"+str(globalConfig.redis_db))
+    log.info("mongodb_host:"+str(globalConfig.mongodb_host))
+
+    # mongo初始化
+    MongoClient.init()
+    MongoWeatherClient.init()
+    now = datetime.datetime.utcnow()
+    # now=datetime.datetime(2018, 2, 12, 6, 25, 34, 72152) - datetime.timedelta(hours=8)
+    # now = datetime.datetime(2018, 2, 8, 20, 25, 34, 72152) - datetime.timedelta(hours=8)
+    now_hour = now.hour
+    # ##删除已经产生的所有天气
+    where = {
+        "date_ymd": int(now.strftime("%Y%m%d"))
+    }
+    log.info("where:"+str(where))
+    MongoWeatherClient.remove(where, "weather_new")
+
+    # ###查询最近30天的登陆用户
+    login_days = 30
+    begin_date = datetime.datetime.utcnow() - datetime.timedelta(days=login_days)
+
+    lookup = {
+        # "status": 0,
+        "last_login": {"$gte": begin_date},
+        "user_type": {"$in": ["1", "3"]},
+        # "username":{"$in": ["a85e8050a1d411e7847400163e0044d9", "cffe09e44f6911e8934800163e0044d9", "5b387ab003a511e7b91800163e0044d9", "f5857d9c226011e69e5f00163e0044d9", "44d4ca20f12b11e7a59200163e0044d9", "b56c7e308fac11e7b1ba00163e0044d9", "e825f5e433ed11e5838100163e0044d9", "74dd9f8a3e9011e5bfbe00163e0044d9"]}
+        # "gps_info": {"$ne": ""}
+    }
+
+    filter = {
+        "last_gps_info": 1,
+        "to_gps_info": 1,
+        "username": 1,
+        "client_info": 1
+    }
+
+    # 天气请求缓存数据 key area value result
+    now = datetime.datetime.utcnow()
+    # 测试时间
+    # now = now+datetime.timedelta(hours=2)
+    now_hour = now.hour
+    log.info("now_hour:" + str(now_hour))
+
+    # now_hour = 22
+    if now_hour == 22:
+        startdate = totimestamp(now)
+        day_index = "今天"
+        log.info("#####################")
+
+    if now_hour == 12:
+        tomorrow_day = now + datetime.timedelta(days=1)
+        startdate = totimestamp(tomorrow_day)
+        day_index = "明天"
+
+    log.info("startdate:"+str(startdate))
+    # 只有这两个时间点推送
+    if now_hour not in [22, 12]:
+        return
+    
+    user_cursor = MongoClient.find_all(lookup, "users", filter=filter)
+    
+    userinfo_arrary = []
+    for user in user_cursor:
+        # 过滤推送条件 和 创建消息列表
+        app_version = user.get("client_info", {}).get("app_version")
+        if not app_version:
+            continue
+        # 用户自己的设置
+        weather_push = user.get("weather_push", {})
+        if weather_push:
+            # 今日是否推送
+            push_1 = weather_push.get("push_1", 0)
+            # 明日是否推送
+            push_2 = weather_push.get("push_2", 0)
+            if push_1 == 0 and now_hour == 22:
+                continue
+
+            if push_2 == 0 and now_hour == 12:
+                continue
+
+        gps_info = getLastGpsInfo(user)
+        user["to_gps_info"] = gps_info
+        to_username = user["username"]
+        country_code, city, area = gps_info.get("country_code", ""), gps_info.get("city", ""), gps_info.get("area", ""),
+        if not all([to_username, LooseVersion(app_version) >= LooseVersion("2.3.6"), country_code == "cn", city, area]):
+            continue
+
+        userinfo_arrary.append(user)
+
+    # 消息内容
+    message_dic_from_area = get_message_from_area(userinfo_arrary, startdate, day_index)
+
+    # 将消息分组发送到消息队列
+    for area_key, message in message_dic_from_area.items():
+        username_list = message["to_username"]
+        total_length = len(username_list)
+        # 将用户目标分为100份
+        # all_lst = [[1-100],[100-200]]
+        all_lst = [username_list[i: i+100] for i in range(0, total_length, 100)]
+        for user_lst in all_lst:
+            print(user_lst)
+            message["to_username"] = user_lst
+            # 生成监控信息
+            message_monitor_entity = {
+                "created": now,
+                "begin_milli": int(round(time.time() * 1000)),
+                "message_event": message
+            }
+            id = MongoClient.insert(message_monitor_entity, "message_monitor")
+            message["message_monitor_id"] = str(id)
+            RedisWeiboClient.rpush("q_fish_message_weather", json.dumps(message,
+                                                                        indent=2,
+                                                                        ensure_ascii=False))
+
+def get_message_from_area(userinfo_arrary, startdate, day_index):
+    """ 通过天气生成数据
+    """
+    weather_cache = {}
+    for user in userinfo_arrary:
+        gps_info = user["to_gps_info"]
+        to_username = user["username"]
+        token = ""
+        city, area = gps_info.get("city"), gps_info.get("area")
+        key = md5.new("{city}_{area}".format(city=city, area=area)).hexdigest()
+
+        if weather_cache.get(key):
+            weather_cache[key]["to_username"].append(to_username)
+            continue
+
+        # 按照经纬度请求的天气数据
+        weather_data, is_success = getWeather(gps_info, startdate, token)
+        # 请求不成功不再执行
+        if not is_success:continue
+
+        user_loatiion_dic = {"weather_data": weather_data,
+                             "to_gps_info": gps_info,
+                             "is_success": is_success}
+
+        message = create_push_message(user_loatiion_dic["weather_data"], user_loatiion_dic["to_gps_info"])
+        if message:
+            message["message_type"] = "weather_push"
+            message["date_city"]["day_index"] = day_index
+            message["to_username"] = [to_username]
+            weather_cache[key] = message
+        else:
+            continue
+
+
+    return weather_cache
+
+def getLastGpsInfo(user):
+    result={}
+    last_gps_info=user.get("last_gps_info",{})
+    if last_gps_info:
+        result=last_gps_info
+    else:
+        gps_info = user.get("gps_info", {})
+        if gps_info:
+            result = last_gps_info
+
+    return result
+
+def getWeather(gps_info,startdate,token):
+    is_success=False
+    result=None
+    try:
+
+        if gps_info:
+            location = gps_info.get("location", {})
+            if location:
+                coordinates = location.get("coordinates", [])
+                if coordinates and len(coordinates) == 2:
+                    lng = float(coordinates[0])
+                    lat = float(coordinates[1])
+                    request_url = "http://mongodb_weather.nbchatV5.com:9090/weather2?q=%f,%f&startdate=%d&force=1" % (lat, lng, startdate)
+                    # log.info("request_url:"+request_url)
+                    response_body, is_error = getURLResult(request_url,token)
+                    if is_error:
+                        response_body_dic = json.loads(response_body, encoding="utf-8")
+                        weather_data_array = response_body_dic.get("entities", [])
+
+                        if weather_data_array:
+                            result = weather_data_array[0]
+                            is_success=True
+    except Exception as e1:
+        log.error('Exception:%s' % e1.message)
+        s1 = traceback.format_exc()
+        log.error("traceback:" + s1)
+    return result,is_success
+
+def getURLResult(url,token):
+
+    try:
+        headers={
+            "Authorization":"Bearer "+token
+        }
+
+        request = HTTPRequest(url=url, headers=headers,method="GET",follow_redirects=False,request_timeout=30)
+        client = tornado.httpclient.HTTPClient()
+        response = client.fetch(request)
+        if response.code==200:
+            return response.body,True
+
+        return "",False
+    except Exception as e:
+        log.info('getWeather.post url:%s Exception:%s' % (url,e.message))
+        log.info(traceback.format_exc())
+
+        return "",False
+
+def create_push_message(weather_data,gps_info):
+    message_json={}
+    single_day_weather=weather_data.get("single_day_weather_2",{})
+    if single_day_weather:
+        weather_icon_code=single_day_weather.get("weather_icon_code",0)
+        weather_desc=single_day_weather.get("weather_desc","")
+        min_temp=single_day_weather.get("min_temp",None)
+        max_temp = single_day_weather.get("max_temp", None)
+
+        if weather_icon_code and weather_desc and min_temp  is not None and max_temp  is not None:
+            weather_json = {
+                "weather_icon_code":weather_icon_code,
+                "weather_desc": weather_desc,
+                "min_temp": min_temp,
+                "max_temp": max_temp,
+                "weather_icon":getWeatherIcon(weather_icon_code,weather_desc)
+            }
+
+            message_json["weahter"]=weather_json
+
+            fish_zhishu=weather_data.get("fish_zhishu", None)
+            fish_zhishu_level = weather_data.get("fish_zhishu_level", None)
+            if fish_zhishu is not None and fish_zhishu_level is not None:
+                message_json["fishing_zhishu"] = {
+                    "fish_zhishu":fish_zhishu,
+                    "fish_zhishu_level":fish_zhishu_level,
+                    "fish_zhishu_icon":getFishZhishuIcon(fish_zhishu_level)
+                }
+
+            city = gps_info.get("city", "")
+            date_city = {
+
+            }
+            if city:
+                date_city["city"] = city
+            date=weather_data.get("date",0)
+            if date:
+                date_city["date"] = getDateString(date / 1000)
+                message_json["date_city"] = date_city
+
+            coordinates=gps_info["location"]["coordinates"]
+
+            message_json["q"]="%f,%f"%(float(coordinates[1]),float(coordinates[0]))
+
+    return message_json
+
+def totimestamp(value):
+    """
+    convert a datetime into a float since epoch
+    """
+    return int(calendar.timegm(value.timetuple()) * 1000 + value.microsecond / 1000)
+
+def getFishZhishuIcon(fish_zhishu_level):
+    icon=""
+    for i in range(fish_zhishu_level):
+        icon=icon+"⭐"
+    return icon
+
+emoji_dic={
+    "晴":"☀️",
+    "多云":"☁️",
+    "阴":"☁️",
+    "阵雨":"⛈️",
+    "雷阵雨":"⛈️",
+    "雷阵雨伴有冰雹":"⛈️",
+    "雨夹雪":"🌧️",
+    "小雨":"🌧️",
+    "中雨":"🌧️️",
+    "大雨":"🌧️",
+    "暴雨":"⛈️",
+    "大暴雨":"⛈️",
+    "特大暴雨":"⛈️",
+    "阵雪":"❄️",
+    "小雪":"❄️",
+    "中雪":"❄️",
+    "大雪":"❄️",
+    "暴雪":"❄️",
+    "雾":"🌫️",
+    "冻雨":"🌧️",
+    "沙尘暴":"🌫️",
+    "小到中雨":"🌧️",
+    "中到大雨":"🌧️",
+    "大到暴雨":"⛈️",
+    "暴雨到大暴雨":"⛈️",
+    "大暴雨到特大暴雨":"⛈️",
+    "小到中雪":"❄️",
+    "中到大雪":"❄️",
+    "大到暴雪":"❄️",
+    "浮尘":"🌫️",
+    "扬沙":"🌫️",
+    "强沙尘暴":"🌫️",
+    "霾":"🌫️",
+}
+def getWeatherIcon(weather_icon_code, weather_desc):
+    emoji = emoji_dic.get(weather_desc.encode("utf-8"),"")
+
+    return emoji
+
+day_week=['星期一','星期二','星期三','星期四','星期五','星期六','星期日']
+def getDateString(mesc_int):
+    # log.info("mesc_int:"+str(mesc_int))
+    date = datetime.datetime.utcfromtimestamp(mesc_int)+datetime.timedelta(hours=8)
+    # log.info("date:"+str(date))
+    return "%d月%d日 %s"%(date.month,date.day,day_week[date.weekday()])
+
+if __name__ == "__main__":
+    # import profile
+    # profile.run("main()")
+    main()

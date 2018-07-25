@@ -1,0 +1,80 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# @Date    : 2015-05-18 17:41:52
+# @Author  : Your Name (you@example.org)
+# @Link    : http://example.org
+# @Version : $Id$
+from handler_baseHt import BaseHtHandler
+from log import get_logger
+from tornado import gen
+import tornado.web
+from tornado.web import asynchronous
+from tornado.options import options
+import json
+import hashlib
+import datetime
+from services.service_post import *
+import re
+import hashlib
+from bson import ObjectId
+import random
+import time
+from log import get_logger
+from model.biz_user import Biz_User
+from model.permissions_ht import Permissions_ht
+import optionsSetting
+from utils.secret import *
+import traceback
+from utils.redis_client import RedisClient
+from utils.mongo_front import MongoFront
+from mongo_field_encoder import MongoFieldEncoder
+from services.service_activity import *
+from mongolog import MongoHandler
+from mongokit.helpers import totimestamp, fromtimestamp
+from utils.token_im import TokenService
+from tornado.httpclient import HTTPRequest
+from utils.mongo_client import MongoClient
+from services.service_image_cloud import *
+import pymongo
+from auth import requires_auth
+from services.service_admin_log import save_log
+try:
+    from tornado.curl_httpclient import CurlAsyncHTTPClient as AsyncHTTPClient
+except ImportError:
+    from tornado.simple_httpclient import SimpleAsyncHTTPClient as AsyncHTTPClient
+log = get_logger()
+class BizNickHandler(BaseHtHandler):
+
+
+    @asynchronous
+    @requires_auth
+    def get(self):
+        log.info("BizNickHandler.get is called:")
+
+        where = {
+            "status":1
+        }
+        biz_username = self.username
+        biz_where={
+            "username":biz_username
+        }
+        account=options.dbconn_ht.Account_ht.find(biz_where)
+        level = account[0]["level"]
+        if level=="staff":
+            where["admin_area"]={"$in":account[0]["activity_area"]}
+
+        sort = [('created', pymongo.DESCENDING)]
+        log.info("where:"+str(where))
+        filter = {"nick":1,"username":1}
+        biz_user_cursor = MongoFront.find_all(where,"biz_user",)
+
+        biz_user_array=[]
+        for biz_user in biz_user_cursor:
+            biz_user_array.append(biz_user)
+
+        response={}
+        response["entities"]=biz_user_array
+        response["count"]=str(biz_user_cursor.count())
+        self.write(json.dumps(response,indent=2, ensure_ascii=False,cls=MongoFieldEncoder))
+        self.finish()
+

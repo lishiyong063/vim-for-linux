@@ -1,0 +1,98 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# @Date    : 2014-12-05 15:45:20
+# @Author  : Your Name (you@example.org)
+# @Link    : http://example.org
+# @Version : $Id$
+
+from __future__ import division
+import tornado.web
+from tornado.web import asynchronous
+from tornado.options import options
+import copy
+from mongokit import *
+from mongokit.helpers import totimestamp, fromtimestamp
+import pymongo
+from mongo_field_encoder import MongoFieldEncoder
+from handler_base import BaseHandler
+from access_track import access_log
+from services.service_waterfall_list import *
+from services.service_user_waterfall_flow import *
+from services.service_waterfall_flow_json import *
+from utils.banner import *
+from services.service_post_list_place_property import *
+import traceback
+import json
+import bson
+import datetime
+import time
+import random
+from log import get_logger
+from utils.redis_client import RedisClient
+from utils.mongo_client import MongoClient
+from utils.gps_info import *
+log = get_logger()
+from distutils.version import LooseVersion
+
+
+class TanSuoRouteHandler(BaseHandler):
+    """
+    探索路由接口
+    """
+    def __init__(self, application, request, **kwargs):
+        super(TanSuoRouteHandler, self).__init__(application, request, **kwargs)
+        self.filter = [
+            {
+                "url": "/tansuo_post?type=10",
+                "selected": 1,
+                "name": "最新"
+            }, {
+                "url": "/tansuo",
+                "name": "附近"
+            }, {
+                "url": "/tansuo_post?type=100",
+                "name": "海钓"
+            }, {
+                "url": "/tansuo_post?type=130",
+                "name": "台钓"
+            }, {
+                "url": "/tansuo_post?type=120",
+                "name": "路亚"
+            }, {
+                "url": "/tansuo_post?type=110",
+                "name": "矶钓"
+            }, {
+                "url": "/tansuo_post?type=140",
+                "name": "筏钓"
+            }, {
+                "url": "/tansuo_post?type=150",
+                "name": "飞蝇"
+            }
+        ]
+
+    @gen.coroutine
+    @asynchronous
+    @access_log
+    def get(self):
+        log.info("TanSuoRouteHandler begin:" + str(self.request.arguments))
+        response = {}
+        is_city = self.get_argument("is_city", False)
+        try:
+            if not is_city:
+                url = "http://"+self.request.host + "/tansuo_post?" + self.request.query
+            else:
+                url = "http://"+self.request.host + "/tansuo?" + self.request.query
+            return_result = yield self.request_get_json(url, token=self.token, host=self.request.host)
+            if return_result.code == 200:
+                response = json.loads(return_result.body, encoding='utf-8')
+                response["filter"] = self.filter
+
+        except Exception as e:
+            log.info('TanSuoRouteHandler.get Exception:%s' % e.message)
+            log.error(traceback.format_exc())
+        self.write(json.dumps(response,
+                                  indent=2,
+                                  ensure_ascii=False,
+                                  cls=MongoFieldEncoder))
+        self.finish()
+        return

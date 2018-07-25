@@ -1,0 +1,13 @@
+# -*- coding: utf-8 -*-
+# Created Time: 2018-05-15 17:03:37
+import os
+
+
+xmind_file = os.popen("ls /tmp/*xmind")
+file_name = xmind_file.read()
+if file_name:
+    file_name = file_name.strip()
+    # thunderbird -compose to=john@example.com,subject='Dinner tonight?',body='黎仕勇工作报告',attachment=file:/tmp/黎仕勇工作日报.xmind
+    os.system("thunderbird -compose to=zhangyang@ziyafish.com,subject='黎仕勇工作报告',body='黎仕勇工作报告',attachment=file:%s" % file_name)
+
+

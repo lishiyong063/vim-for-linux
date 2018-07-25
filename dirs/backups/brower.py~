@@ -1,0 +1,126 @@
+# -*- coding: utf-8 -*-
+# Created Time: 2017-07-19 13:47:52
+import requests
+import json
+import time
+from lxml import etree
+from multiprocessing import Pool
+from selenium import webdriver
+from selenium.webdriver import DesiredCapabilities
+from mongo_client import MongoClient
+from mongo_client import mongo
+from selenium.webdriver.common.action_chains import ActionChains
+
+
+def get_json(url):
+
+    headers = {
+            'Accept': '*/*',
+            'Accept-Language': 'en-US,en;q=0.8',
+            'Accept-Language': 'en-CN',
+            'Host': 'rutilus.fishbrain.com',
+            'If-None-Match': 'W/"8a530dba8a3e222bf2046d9f25fd338d"',
+            'Authorization': 'Token token="6sK38KFc2GoG8n1hCh-wj3TN3JmdnFbtRJ3VRJuWTOH2imukhEaTXfuq0s13"',
+            'User-Agent': 'Fishbrain/6.0 (iPhone; iOS 12.0; Scale/2.00)',
+            'Connection': 'keep-alive'}
+
+    respone = requests.get(url, timeout = 10,headers = headers)
+    print respone.status_code
+    if respone.status_code == 200:
+        content = json.loads(respone.content)
+        return content
+    else:
+        return
+
+def get_img(image_info, index=None):
+    result = []
+    if not image_info:return ''
+    if image_info.get("sizes"):
+        result = [info.get("url") for info in image_info.get("sizes")]
+    if not result:
+        return ''
+
+    if index:
+        try:
+            return result[index]
+        except:
+            return result[0]
+    else:
+        return result
+
+def main(users_list):
+    for users in users_list:
+        _url = "https://rutilus.fishbrain.com/catches?page=1&per_page={caches}&q%5Bowner_id_eq%5D={uid}&q%5Bs%5D=created_at%20desc&verbosity=verbose"
+        try:
+            url = _url.format(uid=users.get("user_id"), caches=users.get("caches_count"))
+        except:
+            continue
+        print url
+
+        content = get_json(url)
+
+        if not content:
+            continue
+        yuhuo_content = {}
+        for item in content:
+            # 鱼获列表
+            if item.has_key("private"):
+                if item["private"].get("fishing_water"):
+                    lat = item.get("private", {}).get("fishing_water", {}).get("latitude")
+                    lon = item.get("private", {}).get("fishing_water", {}).get("latitude")
+                else:
+                    lat = ''
+                    lon = ''
+            else:
+                lat = ''
+                lon = ''
+
+            yuhuo_content = {
+                    "yuhuo_id": item["id"],
+                    "cover_img": [get_img(p.get("photo"),3) for p in item.get("photos")],
+                    "content": item["description"],
+                    "private_position": item["private_position"],
+                    "private_fishing_water": item["private_fishing_water"],
+                    "user_id": item["owner"].get("id"),
+                    # 位置
+                    "location": {"lat": lat, "lon": lon},
+                    # 鱼饵
+                    "bait": '' if not item["bait"] else {"name": item.get("bait", {}).get("name"), "img": get_img(item.get("bait",{}).get("image"),3)},
+                    # 点赞总数
+                    "numbers_of_point": item.get("recent_likes", {}).get("total_number_of_likes", 0),
+                    # 评论数
+                    "numbers_of_comment": item.get("recent_comments", {}).get("total_number_of_comments", 0),
+            }
+            if lat and lon:
+                yuhuo_content["is_location"] = 'true'
+            else:
+                yuhuo_content["is_location"] = 'false'
+
+            a = mongo.insert(yuhuo_content, "catches")
+            print a
+            mongo.insert(user.get("user_id"), "recard")
+
+from concurrent import futures
+def muilt_thread(args):
+    # args 为 list
+    # executor.__exit__方法会调用executor.shutdown(wait=True)方法，
+    # 它会在所有线程都执行完毕前阻塞线程
+
+    avg = len(args) // 40
+    args_list = (args[avg*i: avg+avg*i] for i in range(40))
+
+    with futures.ThreadPoolExecutor(40) as executor:  # <5>
+        # map 与内置map方法类似，不过download_one 函数会在多个线程中并发调用；
+        # map 方法返回一个生成器，因此可以迭代，
+        # 迭代器的__next__方法调用各个Future 的 result 方法
+        res = executor.map(main, args_list)
+
+    print(len(list(res)))
+
+
+if __name__ == "__main__":
+    mongo_user = mongo.find_all({"user_id": {"$ne": ""}}, "users")
+    recard_user = mongo.find_all({"user_id": {"$ne": ""}}, "recard")
+    re = [i.get("user_id") for i in recard_user]
+    all_users = [{"user_id": i.get("user_id"), "caches_count": i.get("catches_count")} for i in mongo_user if i.get("catches_count") !=0 and i.get("user_id") not in re]
+    muilt_thread(all_users)

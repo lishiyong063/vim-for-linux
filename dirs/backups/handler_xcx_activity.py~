@@ -1,0 +1,246 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# @Date    : 2015-05-18 17:41:52
+# @Author  : Your Name (you@example.org)
+# @Link    : http://example.org
+# @Version : $Id$
+from handler_baseHt import BaseHtHandler
+from log import get_logger
+import tornado.web
+from tornado.web import asynchronous
+from tornado.options import options
+import json
+import hashlib
+import datetime
+from bson import ObjectId
+import hashlib
+import random
+import pymongo
+import time
+from log import get_logger
+from model.accounts_ht import Account_ht
+from model.users import Users
+import optionsSetting
+import datetime
+import  time
+from utils.secret import *
+import traceback
+from utils.redis_client import RedisClient
+from mongo_field_encoder import MongoFieldEncoder
+from mongolog import MongoHandler
+from mongokit.helpers import totimestamp, fromtimestamp
+from utils.token_im import TokenService
+from tornado.httpclient import HTTPRequest
+from utils.mongo_client import MongoClient
+from utils.mongo_front import MongoFront
+from auth import requires_auth
+import re
+try:
+    from tornado.curl_httpclient import CurlAsyncHTTPClient as AsyncHTTPClient
+except ImportError:
+    from tornado.simple_httpclient import SimpleAsyncHTTPClient as AsyncHTTPClient
+log = get_logger()
+NOW = datetime.datetime.utcnow()
+class XcxActivityHandler(BaseHtHandler):
+
+
+    @asynchronous
+    @requires_auth
+    def get(self):
+        log.info("AreaAdvHandler.get")
+        area = self.get_argument('area',"")
+
+        where = {
+            "area":area
+        }
+        area_advs = list(MongoFront.find_all(where,"area_adv").sort("index",1)) or []
+        for area_adv in area_advs:
+            advid = area_adv["advid"]
+            where = {
+                "_id":ObjectId(advid)
+            }
+            adv = MongoFront.find_one(where,"advs")
+            if adv!=None:
+                area_adv["adv"]=adv
+
+
+        response={}
+        response["entities"]=area_advs
+        self.write(json.dumps(response,indent=2, ensure_ascii=False,cls=MongoFieldEncoder))
+        self.finish()
+
+    @asynchronous
+    @requires_auth
+    def post(self):
+        log.info("AreaAdvHandler.post:"+self.request.body)
+        flag = "false"
+        '''
+        在片区的某一位置插入活动id
+        {
+            "area_code":"2",    片区
+            "index":1,          插入位置
+            "activity_id":activity_id,  活动id
+        }
+        '''
+        #   ======================【入参】=====================================
+        body_dic = json.loads(self.request.body,encoding="utf-8")
+        index = int(body_dic.get("index",0))
+        area_code = body_dic.get("area_code","")
+        activity_id = body_dic.get("activity_id","")
+        if not activity_id or not area_code:
+            desc = "input is not right"
+            self.fire_response_error_info(desc,desc)
+        # ======================【查库，在片区的某一位置插入活动id（添加/修改）】=====================================
+        where = {
+            "area_code":area_code,
+        }
+        xcx_activities = MongoFront.find_one(where,"xcx_activiy_list_congfig")
+        try:
+            if xcx_activities:
+                activity_array = xcx_activities.get("activity_array")
+                activity_array[index] = activity_id
+                update_val = {
+                    "$set":{
+                        "activity_array":activity_array,
+                        "update":NOW
+                    }
+                }
+                MongoFront.update(where,update_val,"xcx_activiy_list_congfig")
+                flag="true"
+            else:
+                activity_array = []
+                activity_dic = {
+                    "activity_id":activity_id
+                }
+                activity_array.append(activity_dic)
+                activity_val = {
+                    "area_code":area_code,
+                    "activity_array":activity_array
+                }
+                MongoFront.insert(activity_val,"xcx_activiy_list_congfig")
+                flag="true"
+        except Exception as e:
+            log.info('Exception:%s' % e.message)
+            log.error(traceback.format_exc())
+            self.fire_response_sys_error()
+            return
+
+        response = json.dumps({"result":flag},indent=2,ensure_ascii=False,cls=MongoFieldEncoder)
+        self.write(response)
+        self.finish()
+
+    @asynchronous
+    @requires_auth
+    def put(self):
+        log.info("AreaAdvHandler.post:"+self.request.body)
+        body_dic = json.loads(self.request.body,encoding="utf-8")
+        '''
+        小程序交换片区中的两个活动的位置
+        1与2交换
+        {
+            "area_code":"1",
+            "index":1,
+            "to":2,
+            "activity_id":""
+        }
+        '''
+        #   ======================【入参】=====================================
+        try:
+            index = body_dic["index"]
+            area_code = body_dic["area_code"]
+            to = body_dic["to"]
+        except Exception as e:
+            log.info('Exception:%s' % e.message)
+            desc = "input is not right"
+            self.fire_response_error_info(desc,desc)
+            return
+        # ======================【查库】=====================================
+        where = {
+            "area_code": area_code,
+        }
+        xcx_activities = MongoFront.find_one(where, "xcx_activiy_list_congfig")
+        flag="false"
+        if xcx_activities:
+            try:
+                # ======================【交换改片区要两个活动id位置】=====================================
+                activity_array = xcx_activities.get("activity_array")
+                activity_id_temp = activity_array[index]
+                activity_array[index]=activity_array[to]
+                activity_array[to] = activity_id_temp
+                update_val = {
+                    "$set": {
+                        "activity_array": activity_array,
+                        "update": NOW
+                    }
+                }
+                MongoFront.update(where,update_val,"xcx_activiy_list_congfig")
+                flag="true"
+            except Exception as e:
+                log.info('Exception:%s' % e.message)
+                log.error(traceback.format_exc())
+                self.fire_response_sys_error()
+                return
+        else:
+            desc = "area_code error"
+            self.fire_response_error_info(desc,desc)
+            return
+        response = json.dumps({"result": flag}, indent=2, ensure_ascii=False, cls=MongoFieldEncoder)
+        self.write(response)
+        self.finish()
+
+
+    @asynchronous
+    @requires_auth
+    def delete(self):
+        log.info("AreaAdvHandler.delete"+self.request.body)
+        '''
+        小程序片区中活动删除
+        {
+            "area_code":"1",
+            "activity_id":"1111"
+        }
+        '''
+        area_code = self.get_argument('area_code')
+        activity_id = self.get_argument("activity_id")
+        flag="false"
+        where = {
+            "area_code":area_code,
+        }
+        xcx_activity = MongoFront.find_one(where, "xcx_activiy_list_congfig")
+        if xcx_activity:
+            try:
+                activity_array = xcx_activity.get("activity_array")
+                for activity in activity_array:
+                    if activity["activity_id"] ==activity_id:
+                        activity_array.remove(activity)
+                        break
+                update_val = {
+                    "$set": {
+                        "activity_array": activity_array,
+                        "update": NOW
+                    }
+                }
+                MongoFront.update(where, update_val, "xcx_activiy_list_congfig")
+                flag = "true"
+            except Exception as e:
+                log.info('Exception:%s' % e.message)
+                log.error(traceback.format_exc())
+                self.fire_response_sys_error()
+                return
+
+        response = json.dumps({"result": flag}, indent=2, ensure_ascii=False, cls=MongoFieldEncoder)
+        self.write(response)
+        self.finish()
+
+
+
+
+
+
+
+
+
+
+
+
+

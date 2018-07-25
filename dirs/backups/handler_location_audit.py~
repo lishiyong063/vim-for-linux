@@ -1,0 +1,146 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+from handler_baseHt import BaseHtHandler
+from log import get_logger
+import tornado.web
+from tornado.web import asynchronous
+from tornado.options import options
+import json
+from bson import ObjectId
+from log import get_logger
+from model.advices import Advice
+from model.permissions_ht import Permissions_ht
+ 
+from utils.secret import *
+import traceback
+from utils.redis_client import RedisClient
+from utils.mongo_front import MongoFront
+from utils.mongo_client import MongoClient
+from mongo_field_encoder import MongoFieldEncoder
+from services.service_activity import *
+from mongolog import MongoHandler
+from mongokit.helpers import totimestamp, fromtimestamp
+from utils.token_im import TokenService
+from tornado.httpclient import HTTPRequest
+from auth import requires_auth
+from services.service_admin_log import save_log
+from services.service_fishing_place import *
+from tornado import gen
+try:
+    from tornado.curl_httpclient import CurlAsyncHTTPClient as AsyncHTTPClient
+except ImportError:
+    from tornado.simple_httpclient import SimpleAsyncHTTPClient as AsyncHTTPClient
+log = get_logger()
+
+
+class LocationAuditHandler(BaseHtHandler):
+    """ 钓场 传图 和 评论审核
+    """
+    #@requires_auth
+    @asynchronous
+    def get(self):
+        log.info("LocationAuditHandler.get:" + str(self.request.arguments))
+        try:
+            # 分页
+            curr = self.get_argument('curr', '1')
+            # 反馈类型 img comment
+            types = self.get_argument("types")
+            limit = int(self.get_argument('limit', '10'))
+            # where = {"images": {"$elemMatch": {"status": 0}}}
+            where = {"status": 0}
+            if types == "img":
+                # 分页
+                _list = MongoFront.find_all(where, "fishing_place_upimg")[(int(curr)-1)*limit: limit]
+            elif types == "comment":
+                _list = MongoFront.find_all(where, "fishing_place_comment")[(int(curr)-1)*limit: limit]
+
+            # 图片列表
+            fishing_place_info = []
+            for obj in _list:
+                dic = {}
+                # 用户信息
+                dic["actor"] = self.get_userinfo(obj.get("username"))
+                fishing_id = obj.get("fishing_id", "") 
+                dic["id"] = fishing_id
+
+                if fishing_id:
+                    fish_obj = MongoFront.find_one({"fishing_id": fishing_id}, "fishing_place")
+                    if not fish_obj: continue
+                    dic["name"] = fish_obj.get("name")
+                if types == "img":
+                    dic["img"] = obj.get("img_url", "")
+                elif types == "comment":
+                    dic["content"] = obj.get("content", "")
+
+                dic["created"] = obj.get("create_time", "") 
+                dic["status"] = obj.get("status", 0)
+                dic["id"] = str(obj.get("_id"))
+                fishing_place_info.append(dic)
+
+            response = {}
+            response["entities"] = fishing_place_info
+            # count 一共有多少数据
+            response["count"] = len(fishing_place_info)
+            self.write(json.dumps(response, indent=2, ensure_ascii=False, cls=MongoFieldEncoder))
+            self.finish()
+
+        except Exception as e:
+            log.info('LocationAuditHandler.get Exception:%s' % e.message)
+            log.error(traceback.format_exc())
+            self.fire_response_bad_request(key_required=e.message)
+            return
+
+    def get_userinfo(self, username):
+        """ 获取用户信息
+        """
+        actor_user = MongoFront.find_one({"username": username}, 'users')
+        actor = {
+                    "username": username,
+                    "nick": actor_user.get("nick", ""),
+                    "advicer_avatar_url": actor_user.get("avatar_url", ""),
+                    "invite_code": actor_user.get("invite_code", "")
+        }
+        return actor
+
+
+    @requires_auth
+    @asynchronous
+    def put(self):
+        """
+            核实已修改
+        """
+        log.info("LocationAuditHandler.put:" + str(self.request.body))
+        try:
+            body = json.loads(self.request.body, encoding="utf-8")
+            types = body.get("types")
+            
+            place_id = body.get("place_id")
+            where = {
+                "_id": ObjectId(place_id)
+            }
+
+            
+            # update({"images.status": 0}, {$set:{"images.$.status":1}}, {multi:true})
+            update = {}
+
+            status = body.get("status", "")
+            if status:
+                update["status"] = int(status)
+
+            update_val = {"$set": update}
+
+            if types == 'comment':
+                MongoFront.update(where, update_val, "fishing_place_upimg")
+            elif types == 'img':
+                MongoFront.update(where, update_val, "fishing_place_upimg")
+
+            response = {}
+            response["entities"] = "ok"
+            self.write(json.dumps(response, indent=2, ensure_ascii=False, cls=MongoFieldEncoder))
+            self.finish()
+
+        except Exception as e:
+            log.info('FishingLocationHandler.get Exception:%s' % e.message)
+            log.error(traceback.format_exc())
+            self.fire_response_bad_request(key_required=e.message)
+            return

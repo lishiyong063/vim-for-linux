@@ -1,0 +1,136 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# @Date    : 2014-12-03 20:35:12
+# @Author  : Your Name (you@example.org)
+# @Link    : http://example.org
+# @Version : $Id$
+
+import tornado.web
+from tornado.web import asynchronous
+from tornado.options import options
+import json
+import re
+import hashlib
+import datetime
+import hashlib
+import random
+import time
+from log import get_logger
+from model.accounts import Account
+import optionsSetting
+from utils.secret import *
+import traceback
+from utils.redis_client import RedisClient
+from handler_baseHt import BaseHtHandler
+from utils.mongo_front import MongoFront
+from mongo_field_encoder import MongoFieldEncoder
+from mongolog import MongoHandler
+from mongokit.helpers import totimestamp, fromtimestamp
+from tornado.httpclient import HTTPRequest
+import hashlib
+from tornado import gen
+from auth import requires_auth
+
+try:
+    from tornado.curl_httpclient import CurlAsyncHTTPClient as AsyncHTTPClient
+except ImportError:
+    from tornado.simple_httpclient import SimpleAsyncHTTPClient as AsyncHTTPClient
+log = get_logger()
+
+
+class EntertainOrderHandler(BaseHtHandler):
+    """
+       活动下单
+       """
+
+    def __init__(self, application, request, **kwargs):
+        super(EntertainOrderHandler, self).__init__(application, request, **kwargs)
+        self.randomStorge = '123567890'
+        self.ziya_kefu = "0f3d707e70b311e58b9200163e0044d9"
+
+
+
+    @asynchronous
+    @gen.coroutine
+    def post(self):
+        log.info("EntertainOrderHandler.post is called:"+ str(self.request.body))
+        try:
+            url = options.local_weibo + "/activity_join"
+            request_dic = json.loads(self.request.body, encoding="utf-8")
+
+            mobile = request_dic.get("mobile","")
+            name = request_dic.get("name","")
+            join_people_count = request_dic.get("join_people_count","")
+            type = request_dic.get("type","")
+            id = request_dic.get("id","")
+            if not mobile or not name or not join_people_count or not type or not id:
+                self.fire_response_bad_content("common_error","param not right","参数输入有误")
+            mobile = request_dic.get("mobile","")
+            sms_key = "register_code:" + mobile
+            log.info("sms_key:"+sms_key)
+            register_code_correct=RedisClient.get(sms_key)
+            if register_code_correct is None:
+                ###检查数据的有效性
+                p = re.compile(r"1\d{10}")
+                if len(mobile) == 11 and p.match(request_dic["mobile"]) is not None:
+                    code = []
+                    for i in range(4):
+                        index = random.randint(0, 8)
+                        code.append(self.randomStorge[index])
+                    codes = ''.join(code)
+                    RedisClient.setex(sms_key, 60 * 60 * 24, codes)  # 600秒的有效期
+                    request_dic["code"]=codes
+                else:
+                    self.fire_response_bad_content("common_error","mobile error","手机号错误")
+                    return
+            else:
+                request_dic["code"] = register_code_correct
+            if request_dic["type"]=="account":
+                invite_code = request_dic["invite_code"]
+                where = {"invite_code":invite_code}
+                filter = {"username":1}
+                user_temp = MongoFront.find_one(where,"users",filter=filter)
+                if user_temp:
+                    account_where = {
+                        "username":user_temp["username"]
+                    }
+                    account_temp = MongoFront.find_one(account_where,"accounts")
+                    token = account_temp["token"]
+                else:
+                    self.fire_response_bad_content("common_error", "invite_code error", "请输入正确的子牙号")
+                log.info("url=" + url)
+                log.info("request_dic=" + str(request_dic))
+                response = self.request_post_json(url,request_dic,token)
+            elif request_dic["type"]=="new":
+                request_dic["origin"]="b"
+                request_dic["rm"]=self.ziya_kefu
+                log.info("url="+url)
+                log.info("request_dic="+str(request_dic))
+                response = self.request_post_json(url, request_dic)
+
+            result = yield response
+            code = result.code
+            if code == 200:
+                result_dic = json.loads(result.body, encoding='utf-8')
+                log.info("result_dic" + str(result_dic))
+                _id = result_dic["_id"]
+                response = {
+                    "_id":_id
+                }
+                self.set_status(result.code)
+                self.write(response)
+                self.finish()
+            else:
+                response_dic = json.loads(result.body, encoding='utf-8')
+                log.info("response_dic" + str(response_dic))
+                error_description = response_dic.get("error_description","")
+                error = response_dic.get("error","")
+                content = response_dic.get("content","")
+                self.fire_response_bad_content(error,error_description,content)
+                return
+
+        except Exception as e:
+            log.error("EntertainOrderHandler exception:" + e.message)
+            log.error(traceback.format_exc())
+            self.fire_response_sys_error()
+            return

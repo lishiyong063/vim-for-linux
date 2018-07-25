@@ -1,0 +1,302 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# @Date    : 2015-05-18 17:41:52
+# @Author  : Your Name (you@example.org)
+# @Link    : http://example.org
+# @Version : $Id$
+from handler_baseHt import BaseHtHandler
+from log import get_logger
+import tornado.web
+from tornado.web import asynchronous
+from tornado.options import options
+import json
+import hashlib
+import datetime
+import time
+import hashlib
+from bson import ObjectId
+import random
+from log import get_logger
+from model.comment import Comment
+from model.activities import Activities
+import optionsSetting
+from utils.secret import *
+import traceback
+import os
+from utils.redis_client import RedisClient
+from utils.mongo_front import MongoFront
+from mongo_field_encoder import MongoFieldEncoder
+from model.posts import Post
+from mongolog import MongoHandler
+from mongokit.helpers import totimestamp, fromtimestamp
+from utils.token_im import TokenService
+from tornado.httpclient import HTTPRequest
+from utils.mongo_client import MongoClient
+import pymongo
+from auth import requires_auth
+try:
+    from tornado.curl_httpclient import CurlAsyncHTTPClient as AsyncHTTPClient
+except ImportError:
+    from tornado.simple_httpclient import SimpleAsyncHTTPClient as AsyncHTTPClient
+log = get_logger()
+class StatisticsHandler(BaseHtHandler):
+
+    # 添加统计项和查看统计数据
+    # @requires_auth
+    @asynchronous
+    def post(self):
+        log.info("StatisticsHandler.post:"+self.request.body)
+        try:
+            body_dic = json.loads(self.request.body, encoding="utf-8")
+            project_name = body_dic.get("project_name", None)
+            model = body_dic.get("model", None)
+            method = body_dic.get("method", None)
+            regular = body_dic.get("regular", None)
+            domain = body_dic.get("domain", None)
+            objs = body_dic.get("obj", None)
+            date_type = body_dic.get("date_type", None)
+            statistics_id_array = body_dic.get("statistics_id_array", None)
+            now = datetime.datetime.utcnow()
+            #now = datetime.datetime(now.year, now.month, now.day)
+            '''
+            尝试获取前台提供的筛选条件和自定义变量的初始化
+            '''
+            where = {
+                #"regular": regular,
+                #"method": method,
+                #"domain": domain,
+                "rules" : objs,
+                "status": 1
+            }
+            '''
+            编辑插入查询条件 status等于1
+            是2就是已经删除的规则
+            '''
+
+
+            statistics_cursor = MongoFront.find_one(where, "statistics_project")
+            if statistics_cursor:
+                self.fire_response_error_info(
+                        "exists",
+                        "%s模块下的%s已经存在相同规则!" %
+                        (statistics_cursor["model"], statistics_cursor["project_name"]))
+                return
+            '''
+            插入的规则不能重复
+            '''
+            ins_val = {
+                "created": now,
+                "project_name": project_name,
+                "rules" : objs,
+                "model": model,
+                "status": 1
+            }
+            #redis_value = {now: objs}
+            result = MongoFront.insert(ins_val, "statistics_project")
+            response = {}
+            response["entities"] = "ok"
+            redis_value =  str(list(result)[0])
+            RedisClient.rpush("statistics_regular", redis_value)
+            self.write(json.dumps(response, indent=2, ensure_ascii=False, cls=MongoFieldEncoder))
+            self.finish()
+            '''
+            规则入库 返回前端判断结果
+            '''
+        except Exception as e:
+            log.info('LoginHtHandler.psot Exception:%s' % e.message)
+            log.error(traceback.format_exc())
+            self.fire_response_bad_response()
+            return
+
+    # 修改统计项
+    # @requires_auth
+    @asynchronous
+    def put(self):
+        log.info("StatisticsHandler.post:" + self.request.body)
+        try:
+            body_dic = json.loads(self.request.body, encoding="utf-8")
+            project_name = body_dic.get("project_name", None)
+            model = body_dic.get("model", None)
+            method = body_dic.get("method", None)
+            regular = body_dic.get("regular", None)
+            statistics_id = body_dic.get("statistics_id", "")
+            domain = body_dic.get("domain", "")
+
+            if statistics_id =="":
+                self.fire_response_error_info("statistics_id is None","statistics_id is None")
+
+            now = datetime.datetime.utcnow()
+            where = {
+                "_id": ObjectId(statistics_id),
+                "status": 1,
+             }
+            up_val = {
+                "$set":{
+                    "modify": now,
+                    "project_name": project_name,
+                    "method": method,
+                    "regular": regular,
+                    "domain": domain,
+                    "model": model,
+                }
+            }
+
+            MongoFront.update(where,up_val,"statistics_project")
+            response = {}
+            response["entities"] = "ok"
+            self.write(json.dumps(response, indent=2, ensure_ascii=False, cls=MongoFieldEncoder))
+            self.finish()
+        except Exception as e:
+            log.info('LoginHtHandler.psot Exception:%s' % e.message)
+            log.error(traceback.format_exc())
+            self.fire_response_bad_response()
+            return
+
+    # 查询统计项
+    @asynchronous
+    def get(self):
+        log.info("StatisticsHandler.get:")
+        try:
+            statistics_id = self.get_argument('statistics_id','')
+            type = self.get_argument('type','')
+            # 查询各个模块
+            if type and type==u"model":
+                self.featchStatisticModel()
+                return
+
+            if statistics_id and statistics_id!='':
+                self.featchStatistic(statistics_id)
+            else:
+                self.featchStatistics()
+
+        except Exception as e:
+            log.info('LoginHtHandler.psot Exception:%s' % e.message)
+            log.error(traceback.format_exc())
+            self.fire_response_bad_response()
+            return
+
+    # 删除统计项
+    @asynchronous
+    def delete(self):
+        log.info("StatisticsHandler.delete:"+self.request.body)
+        try:
+            request_dic = json.loads(self.request.body, encoding='utf-8')
+            statistics_id=request_dic["statistics_id"]
+            response = {}
+            if statistics_id:
+                where={
+                    "_id":ObjectId(statistics_id),
+                }
+                update_val = {
+                    "$set":{
+                        "status":2
+                    }
+                }
+                MongoFront.update(where,update_val,"statistics_project")
+                response["result"]="ok"
+                self.write(json.dumps(response,indent=2, ensure_ascii=False,cls=MongoFieldEncoder))
+                self.finish()
+
+        except Exception as e:
+            log.info('StatisticsHandler.delete Exception:%s' % e.message)
+            log.error(traceback.format_exc())
+            self.fire_response_bad_response()
+
+    def featchStatistics(self):
+        limit = int(self.get_argument('limit',10))
+        curr = self.get_argument('curr','')
+        response = {}
+        statistics_entity = []
+        where = {
+            "status": 1
+        }
+        if curr =="":
+            statistics_cursor = MongoFront.find(where, "statistics_project",orderby="",asc=0,index=0,count_pre_page=limit)
+        else:
+            statistics_cursor = MongoFront.find(where,
+                                                "statistics_project",
+                                                orderby="",asc=0,
+                                                index=(int(curr)-1)*limit,
+                                                count_pre_page=limit)
+        for statistics in statistics_cursor:
+            statistics_entity.append(statistics)
+        response["entities"]=statistics_entity
+        response["count"]=str(statistics_cursor.count())
+        self.write(json.dumps(response,indent=2, ensure_ascii=False,cls=MongoFieldEncoder))
+        self.finish()
+
+    def featchStatisticModel(self):
+        response = {}
+        statistics_entity = []
+        where = {
+            "status": 1
+        }
+        statistics_cursor = MongoFront.find_all(where,"statistics_project")
+
+        model_array = []
+        for statistics in statistics_cursor:
+            sub_model_array = []
+            sub_model_dic = {}
+            model_dic = {}
+            model = statistics["model"]
+            # id = str(statistics["_id"])
+            sub_model_dic["project_name"] = statistics["project_name"]
+            sub_model_dic["rules"] = statistics["rules"]
+            sub_model_dic["id"] = statistics["_id"]
+            if model_array:
+                j=0
+                for i in range(0,len(model_array)):
+                    model_cursor = model_array[i]
+                    if model == model_cursor["model"]:
+                        sub_model = model_cursor["sub_model"]
+                        sub_model.append(sub_model_dic)
+                        model_cursor["sub_model"] = sub_model
+
+                        break
+
+                    elif j==len(model_array)-1 :
+                        sub_model_array.append(sub_model_dic)
+                        model_dic["model"] = model
+                        model_dic["sub_model"] = sub_model_array
+                        model_array.append(model_dic)
+                    j += 1
+            else:
+                sub_model_array.append(sub_model_dic)
+                model_dic["model"] = model
+                model_dic["sub_model"] = sub_model_array
+                model_array.append(model_dic)
+
+        response["entities"]=model_array
+        response["count"]=str(statistics_cursor.count())
+        self.write(json.dumps(response,indent=2, ensure_ascii=False,cls=MongoFieldEncoder))
+        self.finish()
+
+    def statistics_data(self,statistics_id_array):
+        for statistics_id in statistics_id_array:
+            where = {
+                "_id":ObjectId(statistics_id)
+            }
+            statistics_cursor = MongoFront.find_one(where,"statistics_project")
+
+
+    def featchStatistic(self,statistics_id):
+        response = {}
+        where = {
+            "_id":ObjectId(statistics_id)
+        }
+        log.info("where##"+str(where))
+        statistics_cursor = MongoFront.find_all(where,"statistics_project")
+        statistics_array = []
+        for statistics in statistics_cursor:
+            statistics_array.append(statistics)
+
+
+        if statistics_array:
+            log.info("entities###"+str(statistics_array))
+            response["entities"]=statistics_array
+            self.write(json.dumps(response,indent=2, ensure_ascii=False,cls=MongoFieldEncoder))
+            self.finish()
+        else:
+            self.fire_response_bad_response()
+
+

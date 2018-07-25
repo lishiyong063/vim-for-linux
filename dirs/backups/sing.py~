@@ -1,0 +1,59 @@
+# -*- coding: utf-8 -*-
+# Created Time: 2018-04-17 10:32:31
+"""
+单例模式 确保一个类只有一个实例运行
+作用 避免资源浪费 比如读写日志
+"""
+#1 import 导入的实例其实就是单例
+#2 __new__ 方法实现单例模式
+
+class SingletonA(object):
+    def __new__(cls, *args, **kw):
+        if not hasattr(cls, "_instance"):
+            cls._instance = super(SingletonA, cls).__new__(cls, *args, **kw)
+
+        return cls._instance
+
+class Type1(SingletonA):
+    pass
+
+#3 使用装饰器
+def decrator(cls):
+    instance = {}
+    def func(*args, **kw):
+        if cls not in instance:
+            instance[cls] = cls( *args, **kw)
+        return instance[cls]
+    return func
+@decrator
+class SingletonB(object):
+    pass
+
+
+#4 使用元类
+class MateClass(type):
+
+    def __call__(self, *args, **kw):
+        if not hasattr(self, '_instance'):
+            self._instance = super().__call__(*args, **kw)
+
+        return self._instance
+
+class TypeC(metaclass=MateClass):
+    pass
+
+
+
+if __name__ == '__main__':
+    T1A = Type1()
+    T1B = Type1()
+    print("__new__方法单例模式:\n%s\n%s"%(id(T1A),id(T1B)))
+
+    T2A = SingletonB()
+    T2B = SingletonB()
+    print("共享属性和方法单例模式:\n%s\n%s"%(id(T2A),id(T2B)))
+
+
+    T3A = TypeC()
+    T3B = TypeC()
+    print("使用元类创建单例模式:\n%s\n%s"%(id(T3A),id(T3B)))

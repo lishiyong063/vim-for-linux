@@ -1,0 +1,130 @@
+#coding:utf8
+import commands
+from color import *
+import os
+
+
+# \xe5\xad\x98\xe5\x9c\xa8\xef\xbc\x9a : 存在的asc码
+
+os.system('clear')
+
+
+def diff_dir(sou, tar):
+    command = "diff -r %s %s | grep '只在' | grep -v 'svn\|stat\|pyc'"% (sou,tar)
+    print command
+    file_info = commands.getstatusoutput(command)
+
+    for i in file_info[1].split('\n'):
+        print i
+    for i in file_info[1].split('\n'):
+        if i:
+            print '\n',inPurple(i)
+            target = i.split()[1]                   # 文件所存在的目录
+            source = i.split()[2][9:]               # 文件名
+            target_dir = sou if target.startswith(tar) else tar  # 文件复制到哪个目录
+            source_dir = sou if not target.startswith(tar) else tar
+            raw = raw_input(inRed('是否将%s copy 至 %s(Y/N)'%(source, target_dir + target[len(source_dir):])))
+            if raw == 'N' or raw == 'n':
+                print inGreen('已跳过,继续执行下一个!')
+                continue
+            else:
+                print 'cp %s %s'%(target+source, target_dir + target[len(source_dir):])
+                com_info = commands.getstatusoutput('cp %s %s'%(target+'/'+source, target_dir + target[len(source_dir):]))
+                if com_info[0] == 0:
+                    print '%s 复制成功!!!'%source
+                else:
+                    print '%s 复制失败!!!'%source
+
+def add_svn():
+    file_dir = raw_input(inGreen('请输入即将要检查的目录:'))
+    file_info = commands.getstatusoutput('svn st %s'%file_dir)
+    file_list = file_info[1].split('\n')
+    for i in file_list:
+        if i.startswith('?'):
+            print inRed(i)
+    if len(file_info) == 0:
+        print inRed('没有要上传的文件!!!!!')
+        return
+    try:
+        for fl in file_list:
+            if fl.startswith('?'):
+                c = raw_input(inGreen('新增文件: %s 是否添加至svn?(Y/N)'%fl.replace('?', '').strip()))
+                if c == "Y" or c == "y" or len(c) == 0:
+                    up_info = commands.getstatusoutput('svn add %s'% fl.replace('?', '').strip())
+                    if up_info[0] == 0:
+                        next_ = raw_input('%s增加成功...是否继续?(Y/N)'%fl.replace('?', ''))
+                        if next_ != "Y" or next_ != "y" or len(next_) == 0:
+                            continue
+                        else:
+                            break
+                else:continue
+    except KeyboardInterrupt:
+        print '谢谢使用!!!!!!'
+
+def upsvn():
+    """　选择上传的文件至svn
+    """
+    pass
+
+def resoved(sou ,tar):
+    """ 对比相同文件中的内容
+        sou : 源目录  tar : 目标目录
+    """
+    results  =  []
+    info = commands.getstatusoutput('diff -r %s %s'%(sou,tar))[1].split('\n')
+    for i in info:
+        if i.startswith('diff') and 'svn' not in i:
+            if "\xe6\x96\x87\xe4\xbb\xb6\xe5\xb0\xbe\xe6\xb2\xa1\xe6\x9c\x89\xe6\x8d\xa2\xe8\xa1\x8c\xe7\xac\xa6" not in commands.getstatusoutput(i)[1]:
+                results.append(i)
+    if len(results) is 0:
+        print inRed('没有以diff开头的....')
+
+    for i in results:
+        print i.split()[2],'---------',i.split()[3]
+
+    for i in results:
+        info  =  i.split()
+        print '\n',inBlue(info[2]),inBlue(info[3])
+        a = raw_input(inGreen('是否开始编辑(Y/N):')).strip()
+        if a == 'Y' or  a == 'y' or len(a) == 0:
+            os.system('vimdiff %s %s'%(info[2],info[3]) )
+        else:
+            continue
+
+if __name__ == "__main__":
+    info = '''
+    1, 增加文件(svn add)
+    2, 合并文件(vimdiff)
+    3, 目录对比(diff -r)
+    '''
+    print inPurple(info)
+    while 1:
+        info_x = raw_input(inRed('请输入对应的操作:'))
+        if len(info_x) == 0:
+            continue
+        if not info_x.isdigit() and info_x not in ['1','2','3']:
+            print inRed('没有这个选项,请重新输入.....')
+            continue
+        info_x = int(info_x)
+        if info_x == 1:
+            add_svn()
+            continue
+        print inYellow('请输入目标文件夹注意以空格分离:')
+        while 1:
+            try:
+                source = raw_input('>>')
+                if len(source) == 0:
+                    continue
+                sou, tar = source.split()
+                if info_x == 2:
+                    resoved(sou, tar)
+                elif info_x == 3:
+                    diff_dir(sou, tar)
+            except KeyboardInterrupt:
+                print inPurple(info)
+                break
+            except ValueError:
+                print inRed('格式错误,请重新输入.....')
+                print inPurple(info)
+                break
+

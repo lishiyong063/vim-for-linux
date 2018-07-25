@@ -1,0 +1,53 @@
+# -*- coding: utf-8 -*-
+# Created Time: 2018-06-07 16:11:44
+import os
+import time
+import sys
+
+from urllib2 import urlopen
+from lxml import etree
+
+def Read(url):
+    doc = urlopen(url)
+    xpath_obj = etree.HTML(doc.read())
+
+
+    try:
+        tmp = ''
+        recard = ''
+        with open("/tmp/recard.txt", 'rb+') as f:
+            recard = f.read()
+
+        for i in xpath_obj.xpath("//*[@id='nr1']/text()"):
+            if not i.strip():
+                continue
+            if not recard or recard.decode("utf8") == i.strip():
+                tmp = i.strip()
+                with open("/tmp/recard.txt", 'wb') as f:
+                    f.write('')
+                print('\n'*38+i.strip())
+                #time.sleep(8)
+                raw_input()
+                os.system("clear")
+
+    except KeyboardInterrupt:
+        os.system("clear")
+        with open("/tmp/recard.txt", 'ab+') as f:
+            f.write(tmp.encode("utf8"))
+        sys.exit()
+    except Exception as e:
+        print(e.message)
+        sys.exit()
+        
+    href = xpath_obj.xpath("//*[@id='pb_next']/@href")
+    print(href)
+    if href:
+        Read(href[0])
+
+
+if __name__ == '__main__':
+    url = 'https://transcoder.baiducontent.com/tc?srd=1&dict=32&h5ad=1&bdenc=1&lid=11253411356515622065&title=%E8%87%B3%E5%B0%8A%E5%85%B5%E7%8E%8B%E6%9C%80%E6%96%B0%E7%AB%A0%E8%8A%82%E7%9B%AE%E5%BD%95-%E8%87%B3%E5%B0%8A%E5%85%B5%E7%8E%8B%E5%BF%AB%E7%9C%BC%E7%9C%8B%E4%B9%A6-%E8%87%B3%E5%B0%8A%E5%85%B5%E7%8E%8B...&nsrc=IlPT2AEptyoA_yixCFOxXnANedT62v3IGtiCQCVN2zSt95G7va02ChEsRGad2Sm5Sp3gbTf0sqcEuXWg0WUj7gwTaP1s'
+    Read(url)
+
+
+

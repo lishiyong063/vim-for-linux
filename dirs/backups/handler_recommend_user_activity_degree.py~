@@ -1,0 +1,139 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# @Date    : 2015-05-18 17:41:52
+# @Author  : Your Name (you@example.org)
+# @Link    : http://example.org
+# @Version : $Id$
+from handler_baseHt import BaseHtHandler
+from log import get_logger
+import tornado.web
+from tornado.web import asynchronous
+from tornado.options import options
+import json
+import hashlib
+import datetime
+from services.service_post import *
+import re
+import hashlib
+from bson import ObjectId
+import random
+import time
+from log import get_logger
+from model.city_partner import City_Partner
+from model.recommend_user import Recommend_User
+from model.city_partner_cash_apply_history import City_Partner_Cash_Apply
+import optionsSetting
+from utils.secret import *
+import traceback
+from utils.redis_client import RedisClient
+from utils.mongo_front import MongoFront
+from mongo_field_encoder import MongoFieldEncoder
+from mongolog import MongoHandler
+from mongokit.helpers import totimestamp, fromtimestamp
+from utils.token_im import TokenService
+from tornado.httpclient import HTTPRequest
+from utils.mongo_client import MongoClient
+import pymongo
+from auth import requires_auth
+from services.service_admin_log import save_log
+try:
+    from tornado.curl_httpclient import CurlAsyncHTTPClient as AsyncHTTPClient
+except ImportError:
+    from tornado.simple_httpclient import SimpleAsyncHTTPClient as AsyncHTTPClient
+log = get_logger()
+class RecommendUserActivityDegreeHandler(BaseHtHandler):
+
+    @asynchronous
+    @requires_auth
+    def get(self):
+        log.info("RecommendUserActivityDegreeHandler.get is called:")
+
+        limit=10
+        apply_id = self.get_argument('partner_id',"")
+        where={
+            "_id":ObjectId(apply_id)
+        }
+        city_partner=options.dbconn.City_Partner.find_one(where)
+
+        if city_partner:
+            username=city_partner.get("username",None)
+            if username:
+                where={
+                    "recommend_username":username,
+                    "type":1
+                }
+                sum_user_count=options.dbconn.Recommend_User.find(where).count()
+                where={
+                    "recommend_username":username,
+                    "status":1,
+                    "type":1
+                }
+                register_user_count=options.dbconn.Recommend_User.find(where).count()
+                where={
+                    "recommend_username":username,
+                    "status":1,
+                    "is_maturity":1,
+                    "type":1
+                }
+                maturity_user_count=options.dbconn.Recommend_User.find(where).count()
+
+                where={
+                    "recommend_username":username,
+                    "status":1,
+                    "type":1
+                }
+                # log.info("where:"+str(where))
+                sort = [('maturity_date', pymongo.DESCENDING)]
+                curr = self.get_argument('curr',"")
+                if curr=="":
+                    recommend_user_cursor = options.dbconn.Recommend_User.find(where).sort(sort).limit(limit)
+                else:
+                    recommend_user_cursor = options.dbconn.Recommend_User.find(where).sort(sort).skip((int(curr)-1)*limit).limit(limit)
+
+                maturity_username_array=[]
+                maturity_user_array=[]
+                for recommend_user in recommend_user_cursor:
+                    maturity_username_array.append(recommend_user["username"])
+                    maturity_user_array.append(recommend_user)
+
+                where={
+                    "username":{
+                        "$in":maturity_username_array
+                    }
+                }
+
+                user_activity_degreen_detail_cursor=MongoFront.find_all(where,"user_activity_degreen")
+
+                user_activity_degreen_detail_dic={}
+                for user_activity_degreen_detail in user_activity_degreen_detail_cursor:
+                    username=user_activity_degreen_detail["username"]
+                    user_activity_degreen_detail_dic[username]=user_activity_degreen_detail
+
+                where={
+                    "username":{
+                        "$in":maturity_username_array
+                    }
+                }
+
+                users_cursor=MongoFront.find_all(where,"users")
+
+                user_info_dic={}
+                for user_info in users_cursor:
+                    username=user_info["username"]
+                    user_info_dic[username]=user_info
+
+                for recommend_user in maturity_user_array:
+                    if user_activity_degreen_detail_dic.has_key(recommend_user["username"]):
+                        recommend_user["activity_degreen_detail"]=user_activity_degreen_detail_dic[recommend_user["username"]]
+                    if user_info_dic.has_key(recommend_user["username"]):
+                        recommend_user["user_info_detail"]=user_info_dic[recommend_user["username"]]
+
+                # log.info("maturity_user_array:"+str(maturity_user_array))
+                response={}
+                response["entities"]=maturity_user_array
+                response["sum_user_count"]=sum_user_count
+                response["register_user_count"]=register_user_count
+                response["maturity_user_count"]=maturity_user_count
+                response["count"]=str(recommend_user_cursor.count())
+                self.write(json.dumps(response,indent=2, ensure_ascii=False,cls=MongoFieldEncoder))
+        self.finish()

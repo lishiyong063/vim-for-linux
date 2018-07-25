@@ -1,0 +1,110 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# @Date    : 2014-08-15 17:04:53
+# @Author  : Your Name (you@example.org)
+# @Link    : http://example.org
+# @Version : $Id$
+
+
+import tornado.httpclient
+from tornado.web import HTTPError, asynchronous
+from tornado.httpclient import HTTPRequest
+import tornado.escape
+import json
+import threading
+from time import ctime,sleep
+from threading import Timer  
+import time  
+from tornado.options import options
+
+from tornado import gen
+
+from utils.redis_client import RedisClient
+import sys
+from utils.redis_weibo_client import RedisWeiboClient
+reload(sys)
+sys.setdefaultencoding('utf-8')
+from iget_client import *
+import globalConfig
+from utils.mongo_client import MongoClient
+from proccessor.mProccessorFactory import MProccessorFactory
+# import logging
+import time
+from utils.token_im import get_management_token
+from task.update_score import update_score
+from log import *
+from utils.redis_client import RedisClient
+from utils.redis_weibo_client import RedisWeiboClient
+try:
+    from pymongo.objectid import ObjectId
+except ImportError:
+    from bson.objectid import ObjectId
+CURRENT_DIR = os.path.dirname(__file__)
+LOG_FILE = os.path.abspath(os.path.join(CURRENT_DIR, "logs", "push_ziya_message_weather.log"))
+
+logging = getLogger(LOG_FILE)
+
+def message_push():
+    queue_name=globalConfig.redis_queue_message_weather
+    logging.info("queue listen:"+queue_name)
+    ###不断循环从队列头中获取最新消息，如果没有，就无限期等待
+    while True:
+        ##从队列里面获取消息
+       result=RedisWeiboClient.blpop(queue_name)
+    
+       try:   
+                # logging.info("result:"+result[1])
+            
+                mProccessor=MProccessorFactory.createMProccessor(result[1])
+                # TODO 获取此类消息的发送权限 和 消息的发送格式
+                if mProccessor!=None:
+                    mProccessor.createMessages()
+                    mProccessor.saveMessages()
+                    mProccessor.sendMessages()
+                    # logging.info(" message is end ")
+
+                    message_event_dic=json.loads(result[1], encoding="utf-8")
+                    message_monitor_id=message_event_dic.get("message_monitor_id","")
+                    if message_monitor_id:
+                        # logging.info("message_monitor_id:"+message_monitor_id)
+                        where={'_id':ObjectId(message_monitor_id)}
+                        update_value={
+                            "$set":{
+                                "end_milli":int(round(time.time() * 1000))
+                            }
+                        }
+                        MongoClient.update(where,update_value,"message_monitor")
+
+
+           
+       except Exception as e:
+            logging.info('Exception:%s' % e.message)
+            logging.error(traceback.format_exc())
+
+def main():
+    
+   
+    print ("redis_ip:"+globalConfig.redis_ip)
+    print ("redis_port:"+str(globalConfig.redis_port))
+    print ("redis_db:"+str(globalConfig.redis_db))
+    print ("redis_queue_message_event:"+globalConfig.redis_queue_message_event_activity_boutique)
+    print ("mongodb_host:"+str(globalConfig.mongodb_host))
+
+    ##redis初始化
+    RedisClient.init()
+    RedisWeiboClient.init()
+
+    #mongo初始化
+    MongoClient.init()
+
+    # 获取管理员token
+    get_management_token()
+    
+
+    
+    message_push()
+       
+
+
+if __name__ == "__main__":
+    main()

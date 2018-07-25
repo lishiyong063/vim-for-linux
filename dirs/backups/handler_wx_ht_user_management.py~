@@ -1,0 +1,162 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# @Date    : 2015-05-18 17:41:52
+# @Author  : Your Name (you@example.org)
+# @Link    : http://example.org
+# @Version : $Id$
+from handler_baseHt import BaseHtHandler
+from log import get_logger
+import tornado.web
+from tornado.web import asynchronous
+from tornado.options import options
+import json
+import hashlib
+from bson import ObjectId
+import hashlib
+import random
+import pymongo
+import time
+from log import get_logger
+from model.accounts_ht import Account_ht
+from model.users import Users
+import optionsSetting
+import datetime
+import  time
+from utils.secret import *
+import traceback
+from utils.redis_client import RedisClient
+from mongo_field_encoder import MongoFieldEncoder
+from mongolog import MongoHandler
+from mongokit.helpers import totimestamp, fromtimestamp
+from utils.token_im import TokenService
+from tornado.httpclient import HTTPRequest
+from utils.mongo_client import MongoClient
+from utils.mongo_front import MongoFront
+from auth import requires_auth
+import re
+import urlparse
+import urllib
+try:
+    from tornado.curl_httpclient import CurlAsyncHTTPClient as AsyncHTTPClient
+except ImportError:
+    from tornado.simple_httpclient import SimpleAsyncHTTPClient as AsyncHTTPClient
+log = get_logger()
+
+
+class WxHtUserManagementHandler(BaseHtHandler):
+    @asynchronous
+    @requires_auth
+    def get(self):
+        log.info("WxHtUserManagementHandler.get")
+        response = {}
+        username = self.get_argument('username', "")
+        id = self.get_argument('id', "")
+        where = {
+        }
+        if username:
+            where["username"] = username
+        if id:
+            where["_id"] = ObjectId(id)
+        curr = self.get_argument('curr', "") #分页
+        limit = 10
+        if curr == "":
+            data = MongoFront.find_all(
+                    where, "wx_ht_user_management").sort([('created', pymongo.ASCENDING)]).limit(limit)
+        else:
+            data = MongoFront.find_all(
+                    where, "wx_ht_user_management").sort([('created', pymongo.ASCENDING)]).skip(
+                    (int(curr)-1)*limit).limit(limit)
+
+        result_data = []
+        if data:
+            for i in data:
+                if i.get("username", ""):
+                    where = {
+                        "username": i["username"]
+                    }
+                    filter = {
+                        "_id": 0,
+                        "real_name": 1
+                    }
+                    result = MongoClient.find_one(where, "accounts", filter=filter)
+                    if result:
+                        i["name"] = result["real_name"]
+                    result_data.append(i)
+        response["entities"] = result_data
+        response["count"] = str(data.count())
+        response = json.dumps(response, indent=2, ensure_ascii=False, cls=MongoFieldEncoder)
+        self.write(response)
+        self.finish()
+
+    @asynchronous
+    @requires_auth
+    def post(self):
+        log.info("WxHtUserManagementHandler.post:"+self.request.body)
+        body = json.loads(self.request.body, encoding="utf-8")
+        now = datetime.datetime.utcnow()
+        ziya_code_list = body.get("ziya_code_list", "")
+        if ziya_code_list:
+            ziya_code_list = ziya_code_list.replace("，", ",")
+            ziya_code_list = ziya_code_list.split(",")
+            body["ziya_code_list"] = ziya_code_list
+        body["created"] = now
+        MongoFront.insert(body, "wx_ht_user_management")
+        response = json.dumps({"result": "ok"},
+                                  indent=2,
+                                  ensure_ascii=False,
+                                  cls=MongoFieldEncoder)
+        self.write(response)
+        self.finish()
+
+    @asynchronous
+    @requires_auth
+    def put(self):
+        log.info("WxHtUserManagementHandler.put")
+        body = json.loads(self.request.body, encoding="utf-8")
+        id = body.get("id", "")
+        if id:
+            where = {
+                "_id": ObjectId(id)
+            }
+            ziya_code_list = body.get("ziya_code_list", "")
+            if ziya_code_list:
+                ziya_code_list = ziya_code_list.replace("，", ",")
+                ziya_code_list = ziya_code_list.split(",")
+                body["ziya_code_list"] = ziya_code_list
+            body.pop("id", "")
+            update = {"$set": body}
+            MongoFront.update(where, update, "wx_ht_user_management")
+        response = json.dumps({"result": "ok"},
+                                  indent=2,
+                                  ensure_ascii=False,
+                                  cls=MongoFieldEncoder)
+        self.write(response)
+        self.finish()
+
+    @asynchronous
+    @requires_auth
+    def delete(self):
+        log.info("WxHtUserManagementHandler.delete")
+        body = json.loads(self.request.body, encoding="utf-8")
+        id = body.get("id", "")
+        if id:
+            where = {
+                "_id": ObjectId(id)
+            }
+            MongoFront.delete(where, "wx_ht_user_management")
+        response = json.dumps({"result": "ok"},
+                                  indent=2,
+                                  ensure_ascii=False,
+                                  cls=MongoFieldEncoder)
+        self.write(response)
+        self.finish()
+
+    def return_error_status(self, num):
+        status = num
+        response_dic = {"status": status}
+        response = json.dumps(response_dic,
+                                  indent=2,
+                                  ensure_ascii=False,
+                                  cls=MongoFieldEncoder)
+        self.write(response)
+        self.finish()

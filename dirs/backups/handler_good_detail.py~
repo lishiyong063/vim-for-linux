@@ -1,0 +1,205 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# @Date    : 2015-05-18 17:41:52
+# @Author  : Your Name (you@example.org)
+# @Link    : http://example.org
+# @Version : $Id$
+
+
+
+
+from bson import ObjectId
+from handler_baseHt import BaseHtHandler
+from log import get_logger, get_logger
+from model.informs import Inform
+from model.permissions_ht import Permissions_ht
+from mongo_field_encoder import MongoFieldEncoder
+from mongokit.helpers import totimestamp, fromtimestamp
+from mongolog import MongoHandler
+from tornado.httpclient import HTTPRequest
+from tornado.options import options
+from tornado.web import asynchronous
+import simplejson as json1
+
+from utils.mongo_client import MongoClient
+from utils.mongo_front import MongoFront
+from utils.redis_client import RedisClient
+from utils.secret import *
+from services.service_shop import *
+import datetime
+import hashlib
+import hashlib
+import json
+import optionsSetting
+import pymongo
+import random
+import time
+import tornado.web
+from tornado import gen
+import traceback
+from auth import requires_auth
+
+try:
+    from tornado.curl_httpclient import CurlAsyncHTTPClient as AsyncHTTPClient
+except ImportError:
+    from tornado.simple_httpclient import SimpleAsyncHTTPClient as AsyncHTTPClient
+log = get_logger()
+class GoodDetailHandler(BaseHtHandler):
+    @asynchronous
+    @requires_auth
+    @gen.coroutine
+    def post(self):
+        log.info("GoodDetailHandler.post:"+self.request.body)
+        body = json.loads(self.request.body, encoding='utf-8')
+        goods_url=body.get("goods_url","")
+        response = {}
+        if goods_url:
+            goods_detail_json=yield getGoodDetail(goods_url)
+            return_goods_detail={
+                "name":goods_detail_json.get("goods_name", ""),
+                "image_url":goods_detail_json.get("goods_thumb", ""),
+                "goods_url":goods_url
+            }
+            response["result"]="ok"
+            response["good_detail"]=return_goods_detail
+
+
+        self.write(json.dumps(response,indent=2, ensure_ascii=False,cls=MongoFieldEncoder))
+        self.finish()
+        
+    def getTagUrlByTag(self,tag,tag_url):
+        return_tag_url=tag_url
+        if tag == "guanfang":
+            return_tag_url = "http://7xjbxf.com2.z0.glb.qiniucdn.com/a06c05de655c11e7b25a48d705d33a1b.png"
+        if tag == "hot":
+            return_tag_url = "http://7xjbxf.com2.z0.glb.qiniucdn.com/cb344ca3655a11e7b03248d705d33a1b.png"
+        if tag == "new":
+            return_tag_url = "http://7u2o46.com1.z0.glb.clouddn.com/xinping.png"
+        if tag == "cuxiao":
+            return_tag_url = "http://7u2o46.com1.z0.glb.clouddn.com/cuxiao.png"
+        if tag == "tehui":
+            return_tag_url = "http://7u2o46.com1.z0.glb.clouddn.com/tehui.png"
+        return return_tag_url
+
+    @gen.coroutine
+    def getContentImageURLTargetURL(self,type,target,content,image_url):
+        return_content=content
+        return_image_url=image_url
+        target_url=""
+
+        if type == "post":
+            target_url = "ziya://exec/?action=harvest&id=" + target
+            where={
+                '_id':ObjectId(target)
+            }
+            post = MongoFront.find_one(where, "posts")
+            if post:
+                return_content=post.get("content","")
+                page = post.get("page", [])
+                if page:
+                    return_image_url = page[0].get("image_url", "")
+
+        if type == "article":
+            target_url = options.weibo_url + "/new_articles/" + target
+            where = {
+                '_id': ObjectId(target)
+            }
+            article = MongoFront.find_one(where, "article")
+            if article:
+                return_content = article.get("title", "")
+                images = article.get("images", [])
+                if images:
+                    return_image_url = images[0].get("image_url", "")
+
+
+        if type == "activity":
+            where = {
+                "activity_code": target
+            }
+            activity=MongoFront.find_one(where,"activities")
+            if activity:
+                target_url=options.weibo_url + "/activity_mobile/" + str(activity["_id"])
+                return_content=activity.get("title","")
+
+                page=activity.get("page",[])
+                if page:
+                    return_image_url=page[0].get("image_url","")
+
+        if type == "shop":
+            target_url = target
+            request_url = 'http://shop.ziyadiaoyu.com/goods_info.php'
+            data = {
+                "url": target_url
+            }
+            request = HTTPRequest(url=request_url, \
+                                  method="POST", \
+                                  body=json.dumps(data, \
+                                                  indent=2, \
+                                                  ensure_ascii=False), \
+                                  follow_redirects=False, \
+                                  request_timeout=3000)
+
+            result = {}
+            response = yield gen.Task(AsyncHTTPClient().fetch, request)
+            if response.code == 200:
+                # log.info("######response.body:"+response.body)
+                result = json1.loads(response.body, encoding="utf-8")
+                if result:
+                    return_content = result.get("goods_name", "")
+                    return_image_url = result.get("goods_thumb", "")
+
+
+        if type == "customer":
+            target_url = target
+
+        raise gen.Return([return_content,return_image_url,target_url])
+
+    @asynchronous
+    @requires_auth
+    def get(self):
+        log.info("LatestNoticeHandler.get is called")
+        response={}
+        where={
+
+        }
+        sorted=[("status",1),("end",-1)]
+        last_notice_cursor=MongoFront.find_all_sorted(where, "latest_notice",sorted=sorted)
+        response["entities"] = list(last_notice_cursor)
+        response["count"] = str(last_notice_cursor.count())
+        self.write(json.dumps(response, indent=2, ensure_ascii=False, cls=MongoFieldEncoder))
+        self.finish()
+
+    @asynchronous
+    @requires_auth
+    def delete(self):
+        log.info("LatestNoticeHandler.delete is called:"+str(self.request.query_arguments))
+        response = {}
+        notice_id = self.get_argument('notice_id', "")
+        if notice_id:
+            where = {
+                "_id":ObjectId(notice_id)
+            }
+            update_value={
+                "$set":{
+                    "status":1
+                }
+            }
+            MongoFront.update(where,update_value,"latest_notice")
+
+            response["entities"] = "ok"
+        self.write(json.dumps(response, indent=2, ensure_ascii=False, cls=MongoFieldEncoder))
+        self.finish()
+
+    def fire_response_bad_response(self):
+        """
+        返回登录请求错误响应
+        """
+        self.set_status(400)
+        response = {}
+        response["error"] = "invalid_grant"
+        response["error_description"] = "invalid data"
+        self.write(json.dumps(response, indent=2, ensure_ascii=False))
+        self.finish()
+
+
+   

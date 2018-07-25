@@ -1,0 +1,20 @@
+from django.db import models
+
+# Create your models here.
+
+class AllCityinfo(models.Model):
+    """ 城市招标 """
+
+    title = models.CharField(max_length=100, blank=True, null=True, verbose_name='招标信息')
+    url = models.UrlField(verbose_name='url', max_length=100)
+    citys = models.CharField(max_length=40, blank=True, null=True, verbose_name='城市')
+    time = models.DateTimeField(verbose_name='招标发布时间')
+    types = models.CharField(max_length=20, blank=True, null=True, verbose_name='类别')
+    remark = models.CharField(max_length=200, blank=True, null=True, verbose_name='备注')
+
+    class Meta:
+        unique_together = ('title', 'types',)
+        verbose_name_plural = verbose_name = "招标信息"
+
+    def __str__(self):
+        return "%s" % self.title

@@ -1,0 +1,102 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# @Date    : 2015-05-18 17:41:52
+# @Author  : Your Name (you@example.org)
+# @Link    : http://example.org
+# @Version : $Id$
+from handler_baseHt import BaseHtHandler
+from log import get_logger
+import tornado.web
+from tornado.web import asynchronous
+from tornado.options import options
+import json
+import hashlib
+import datetime
+import hashlib
+import random
+import time
+from log import get_logger
+from model.accounts_ht import Account_ht
+from model.permissions_ht import Permissions_ht
+import optionsSetting
+from utils.secret import *
+import traceback
+from utils.redis_client import RedisClient
+from mongo_field_encoder import MongoFieldEncoder
+from mongolog import MongoHandler
+from mongokit.helpers import totimestamp, fromtimestamp
+from utils.token_im import TokenService
+from tornado.httpclient import HTTPRequest
+
+try:
+    from tornado.curl_httpclient import CurlAsyncHTTPClient as AsyncHTTPClient
+except ImportError:
+    from tornado.simple_httpclient import SimpleAsyncHTTPClient as AsyncHTTPClient
+log = get_logger()
+class LoginHtHandler(BaseHtHandler):
+    @asynchronous
+    def get(self):
+        self.render('login.html')
+        
+    @asynchronous
+    def post(self):
+        log.info("LoginHandler.post:"+self.request.body)
+        self.set_header("Access-Control-Allow-Origin", "*")
+        """
+        用户登录处理
+        """
+        if self.request.body is '':
+            self.fire_response_bad_response()
+            return
+        real_username=""
+        username = self.get_argument('username','')
+        password = unicode(self.get_argument('password',''))
+        try:
+
+            lookup = {"username": username, "password": password,"activated" : 0}
+            log.info("lookup"+str(lookup))
+            filters = {'_id':0}
+            account = options.dbconn_ht.Account_ht.one(lookup, filters)
+            if account is None:
+                self.fire_response_bad_response()
+                return
+            real_username=account["username"]
+            
+            today = datetime.datetime.utcnow()
+            
+            token,token_expire=self.create_token(account)
+            self.set_cookie("houtai_token", token)
+            self.redirect("/static/index.html")
+        except Exception as e:
+            log.info('LoginHtHandler.psot Exception:%s' % e.message)
+            log.error(traceback.format_exc())
+            self.fire_response_bad_response()
+            return
+
+    def fire_response_bad_response(self):
+        """
+        返回登录请求错误响应
+        """
+        self.set_status(400)
+        response = {}
+        response["error"] = "invalid_grant"
+        response["error_description"] = "invalid username or password"
+        self.write(json.dumps(response, indent=2, ensure_ascii=False))
+        self.finish()
+
+
+
+    def create_token(self, account,token=None):
+        """
+        生成token
+        """
+        token_expire = datetime.datetime.utcnow() + datetime.timedelta(days=options.token_expire)
+        token_raw = '%s:%s:%u' % (account["username"], account["password"],
+                                  time.mktime(token_expire.timetuple()))
+        token_encrypt = encrypt(token_raw,options.token_key)
+
+        lookup = {'username':account["username"]}
+        option = {'$set':{'token':token_encrypt, 'token_expire':token_expire}}
+        account_update = options.dbconn_ht.Account_ht.find_and_modify(lookup, option)
+        return token_encrypt,token_expire
+      

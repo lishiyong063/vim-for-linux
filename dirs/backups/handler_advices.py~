@@ -1,0 +1,196 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# @Date    : 2015-05-18 17:41:52
+# @Author  : Your Name (you@example.org)
+# @Link    : http://example.org
+# @Version : $Id$
+from handler_baseHt import BaseHtHandler
+from log import get_logger
+import tornado.web
+from tornado.web import asynchronous
+from tornado.options import options
+import json
+import hashlib
+import datetime
+import hashlib
+from bson import ObjectId
+import random
+import time
+from log import get_logger
+from auth import requires_auth
+from model.advices import Advice
+from model.permissions_ht import Permissions_ht
+import optionsSetting
+from utils.secret import *
+import traceback
+from utils.redis_client import RedisClient
+from utils.mongo_front import MongoFront
+from mongo_field_encoder import MongoFieldEncoder
+from mongolog import MongoHandler
+from mongokit.helpers import totimestamp, fromtimestamp
+from utils.token_im import TokenService
+from tornado.httpclient import HTTPRequest
+from utils.mongo_client import MongoClient
+import pymongo
+from services.assemble_gps_json import *
+from services.service_user import *
+
+try:
+    from tornado.curl_httpclient import CurlAsyncHTTPClient as AsyncHTTPClient
+except ImportError:
+    from tornado.simple_httpclient import SimpleAsyncHTTPClient as AsyncHTTPClient
+log = get_logger()
+class AdvicesHandler(BaseHtHandler):
+    @asynchronous
+    @requires_auth
+    def get(self):
+        log.info("AdvicesHandler.get:"+self.request.body)
+
+        curr = self.get_argument('curr',"")
+        advice_type = self.get_argument('advice_type',-1)
+        try:
+            advice_type = int(advice_type)
+        except:
+            advice_type=1
+        where={}
+        if advice_type!=-1:
+            where["type"]=advice_type
+        limit=10
+        advice_cursor = MongoFront.find(where,"advices","created",0,(int(curr) - 1)*limit,limit)
+
+        advices=[]
+        if advice_cursor:
+            advices = self.getAdviceList(advice_cursor,advice_type)
+
+        # for advice in advice_cursor:
+        #     if advice_type==3:
+        #         gps_info = advice.get("gps_info","")
+        #         if gps_info:
+        #             advice["gps_info"] = assembleAddress(gps_info)
+        #     advices.append(advice)
+
+        response={}
+        response["count"]=advice_cursor.count()
+        response["entities"]=advices
+        log.info("len"+str(len(advices)))
+        self.write(json.dumps(response,indent=2, ensure_ascii=False,cls=MongoFieldEncoder))
+        self.finish()
+    
+    @asynchronous
+    @requires_auth
+    def put(self):
+        log.info("AdvicesHandler.put:"+self.request.body)
+
+        request_dic=  json.loads(self.request.body,encoding="utf-8")
+        message=request_dic["message"]
+        advice_id_array=request_dic["advice_id_array"]
+        user_array=request_dic["user"]
+
+        # ##如果一天以内已经给该用户发过消息，则不再发送
+        # lookup={
+        #     "is_reply":1,
+        #     "actor.username":{'$in':user_array},
+        #     "modified":{'$gt':datetime.datetime.utcnow()+datetime.timedelta(days=-1)}
+        # }
+        #
+        # # log.info("lookup:"+str(lookup))
+        # advice_cursor=options.dbconn.Advice.find(lookup)
+        # sended_user_array=[]
+        # for advice in advice_cursor:
+        #     sended_user_array.append(advice["actor"]["username"])
+        #
+        # no_send_user=[]
+        # for username in user_array:
+        #     if username not in sended_user_array:
+        #         no_send_user.append(username)
+
+        ##将建议设置成已处理
+        advice_objcet_id_array=self.to_object_id_array(advice_id_array)
+
+        lookup={
+            "_id":{"$in":advice_objcet_id_array}
+        }
+        updated={
+            '$set':{
+                "modified":datetime.datetime.utcnow(),
+                "is_reply":1
+            }
+        }
+        MongoFront.update(lookup,updated,"advices")
+        response={}
+        self.write(json.dumps(response,indent=2, ensure_ascii=False,cls=MongoFieldEncoder))
+        self.finish()
+
+        ###给发建议者发送建议回复的消息
+        # log.info("no_send_user:"+str(user_array))
+        if len(user_array)>0:
+            lookup={
+                "username":{"$in":user_array}
+            }
+            user_cursor=MongoFront.find_all(lookup,"users")
+            user_dic={}
+            for user in user_cursor:
+                user_dic[user["username"]]=user
+
+            for username in user_array:
+                nick=user_dic[username].get("nick","")
+                message_json={
+                     "message_type": "advice",#type change
+                     "content":nick+"钓友,你好!"+message,
+                     "to_usernames":[username],
+                     "target":"apoint"
+                 }
+
+                message_event = json.dumps(message_json,
+                                       indent=2,
+                                       ensure_ascii=False,
+                                       cls=MongoFieldEncoder)
+                queue_name=options.redis_queue_message_event
+                log.info("insert queue:%s"%queue_name)
+                log.info("insert message_event:%s"%message_event)
+                result =RedisClient.rpush(queue_name,message_event)
+
+    def to_object_id_array(self,str_array):
+        object_id_array=[]
+        for str in str_array:
+            object_id_array.append(ObjectId(str))
+
+        return object_id_array
+
+    def fire_response_bad_response(self):
+        """
+        返回登录请求错误响应
+        """
+        self.set_status(400)
+        response = {}
+        response["error"] = "invalid_grant"
+        response["error_description"] = "invalid username or password"
+        self.write(json.dumps(response, indent=2, ensure_ascii=False))
+        self.finish()
+
+    def getAdviceList(self,advice_cursor,advice_type):
+        advices=[]
+        username_array=[]
+        for advice in advice_cursor:
+            if advice_type==3:
+                gps_info = advice.get("gps_info","")
+                if gps_info:
+                    advice["gps_info"] = assembleAddress(gps_info)
+            advices.append(advice)
+            username_array.append(advice["actor"]["username"])
+
+        user_map = assembleActor(username_array)
+        for advice in advices:
+            actor_username = advice["actor"]["username"]
+            ###组装帖子的actor信息
+            if user_map is not None and user_map.has_key(actor_username):
+                ##合并新数据和原有actor数据
+                actor_user = user_map[actor_username]
+                advice["actor"] = {
+                    "username": actor_username,
+                    "nick": actor_user.get("nick", ""),
+                    "advicer_avatar_url": actor_user.get("avatar_url", ""),
+                    "invite_code": actor_user.get("invite_code", "")
+                }
+
+        return advices

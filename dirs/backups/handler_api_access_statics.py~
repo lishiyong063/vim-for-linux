@@ -1,0 +1,103 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# @Date    : 2015-05-18 17:41:52
+# @Author  : Your Name (you@example.org)
+# @Link    : http://example.org
+# @Version : $Id$
+from handler_baseHt import BaseHtHandler
+from log import get_logger
+import tornado.web
+from tornado.web import asynchronous
+from tornado.options import options
+import json
+import hashlib
+import datetime
+import hashlib
+from bson import ObjectId
+import random
+import time
+from log import get_logger
+from auth import requires_auth
+from model.advices import Advice
+from model.permissions_ht import Permissions_ht
+import optionsSetting
+from utils.secret import *
+import traceback
+from utils.redis_client import RedisClient
+from mongo_field_encoder import MongoFieldEncoder
+from mongolog import MongoHandler
+from mongokit.helpers import totimestamp, fromtimestamp
+from utils.token_im import TokenService
+from tornado.httpclient import HTTPRequest
+from utils.mongo_client import MongoClient
+from utils.mongo_front import MongoFront
+
+import pymongo
+
+try:
+    from tornado.curl_httpclient import CurlAsyncHTTPClient as AsyncHTTPClient
+except ImportError:
+    from tornado.simple_httpclient import SimpleAsyncHTTPClient as AsyncHTTPClient
+log = get_logger()
+class APIAccessStaticsHandler(BaseHtHandler):
+    @asynchronous
+    @requires_auth
+    def get(self):
+        log.info("APIAccessStaticsHandler.get:"+str(self.request.query_arguments))
+
+        date_value = int(self.get_argument('date',""))
+        project= self.get_argument('project',"")
+        duration = self.get_argument('duration', "")
+        sort_by = self.get_argument('sort_by', "access_count")
+        sort_val_req = int(self.get_argument('sort_val', "-1"))
+        sort_val=False
+        if sort_val_req==1:
+            sort_val=True
+
+        where={
+            "date":date_value,
+            "project" : project
+        }
+        if  duration=="1":
+            where["duration"]={
+                "$lt":200
+            }
+        if duration == "2":
+            where["duration"] = {
+                "$gt": 200,
+                "$lt": 600
+            }
+        if duration == "3":
+            where["duration"] = {
+                "$gt": 600,
+                "$lt": 1200
+            }
+
+        if duration == "4":
+            where["duration"] = {
+                "$gt": 1200
+            }
+
+
+        # log.info('where:'+json.dumps(where,indent=2, ensure_ascii=False,cls=MongoFieldEncoder))
+        limit = 20
+        curr = self.get_argument('curr', "")
+        # log.info("curr:"+curr)
+        # log.info("sort_by:"+sort_by)
+        # log.info("sort_val:" + str(sort_val))
+        if curr == "":
+            statistics_cursor = MongoFront.find(where, "monitor_api_result_statistics", sort_by, sort_val, 0, limit)
+        else:
+            statistics_cursor = MongoFront.find(where, "monitor_api_result_statistics", sort_by, sort_val, (int(curr) - 1) * limit, limit)
+        statistics_list=[]
+        for statistics_obj in statistics_cursor:
+            statistics_list.append(statistics_obj)
+        # log.info("monitor_api_result_statistics:"+json.dumps(statistics_list,indent=2, ensure_ascii=False,cls=MongoFieldEncoder))
+
+        response={
+            "entities":statistics_list,
+            "count":str(statistics_cursor.count())
+        }
+
+        self.write(json.dumps(response,indent=2, ensure_ascii=False,cls=MongoFieldEncoder))
+        self.finish()

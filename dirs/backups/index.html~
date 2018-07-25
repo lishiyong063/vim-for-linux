@@ -1,0 +1,713 @@
+﻿<!DOCTYPE HTML>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="renderer" content="webkit|ie-comp|ie-stand">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta name="viewport" content="width=device-width,initial-scale=1,minimum-scale=1.0,maximum-scale=1.0,user-scalable=no" />
+<meta http-equiv="Cache-Control" content="no-siteapp" />
+<LINK rel="Bookmark" href="favicon.ico" >
+<LINK rel="Shortcut Icon" href="favicon.ico" />
+  <link rel="stylesheet" href="css/style_hongdian.css"  type="text/css"/>
+  <script type="text/javascript" src="lib/html5.js"></script>
+<!--[if lt IE 9]>
+<script type="text/javascript" src="lib/respond.min.js"></script>
+<script type="text/javascript" src="lib/PIE_IE678.js"></script>
+<![endif]-->
+<link href="css/H-ui.min.css" rel="stylesheet" type="text/css" />
+<link href="css/H-ui.admin.css" rel="stylesheet" type="text/css" />
+<link href="css/style.css" rel="stylesheet" type="text/css" />
+<link href="lib/iconfont/iconfont.css" rel="stylesheet" type="text/css" />
+<link href="lib/font-awesome/font-awesome.min.css" rel="stylesheet" type="text/css" />
+<!--[if IE 7]>
+<link href="lib/font-awesome/font-awesome-ie7.min.css" rel="stylesheet" type="text/css" />
+<![endif]-->
+<!--[if IE 6]>
+<script type="text/javascript" src="lib/DD_belatedPNG_0.0.8a-min.js" ></script>
+<script>DD_belatedPNG.fix('*');</script>
+<![endif]-->
+<title>子牙钓鱼运营后台</title>
+<style>
+  .Hui-header{overflow: visible;}
+  .phone{position: relative;color:#65c14d;margin-right: 15px;cursor:pointer;}
+  .phone_alert{display:none;position: absolute;left: 50%;top: 0;width:220px;-moz-transform: translate(-50%,25%);-webkit-transform: translate(-50%,25%);transform: translate(-50%,25%);-moz-box-shadow: 0 0 4px #666;-webkit-box-shadow: 0 0 4px #666;box-shadow: 0 0 4px #666;text-align: center;background-color: #fff;}
+  .ptop{ line-height: 50px;background-color: #fafafa;color:#333;}
+  .ptran{position: absolute;top: 0;left: 50%;-moz-transform: translate(-50%,-95%);-webkit-transform: translate(-50%,-95%);transform: translate(-50%,-95%);height: 0;width: 0;border-bottom: 10px solid #fff;border-left: 8px solid transparent;border-right: 8px solid transparent;}
+  .close400{position: absolute;top: 2px;right: 2px;z-index: 2;width: 14px;}
+  .pmid{padding:20px 0;background-color:#fff;}
+  .pmid_p1{line-height: 40px;color:#666;margin: 0;font-size: 18px;}
+  .pmid_p2{color:#999;margin: 0;}
+  .pbtn{width: 100px;margin:10px auto 0;line-height: 30px;border-radius: 15px;background-color: #65c14d;color:#fff;}
+</style>
+</head>
+<body>
+<header class="Hui-header cl"> <a class="Hui-logo l" title="H-ui.admin v2.2" href="#">子牙钓鱼运营后台</a> <a class="Hui-logo-m l" href="/" title="H-ui.admin">H-ui</a> <span class="Hui-userbox"><span class="iconfont iconfont-shouji phone"><div class="phone_alert" id="phone_alert"><div class="ptran"></div><img class="close400" src="/static/images/close_ic.png" onclick="close400()"/><div class="ptop">呼入分机：<span id="callIn"></span></div><div class="pmid"><p class="pmid_p1" id="callInt"></p><p class="pmid_p2" id="callInp"></p><div class="pbtn" id="seeD" onclick="seeD(this)">详情</div></div></div></span><span class="c-white"><span id="user_real_name"></span>：<span id="user_name"></span></span> <a class="btn btn-danger radius ml-10" href="/logout" title="退出"><i class="icon-off"></i> 退出</a></span> <a aria-hidden="false" class="Hui-nav-toggle" href="#"></a> </header>
+<aside class="Hui-aside">
+  <input runat="server" id="divScrollValue" type="hidden" value="" />
+  <div class="menu_dropdown bk_2" id="model_list" style="display: none;">
+    <dl id="menu-user">
+      <dt>&nbsp;&nbsp;钓友管理<b></b></dt>
+      <dd>
+        <ul>
+          <li><a _href="user-list.html" href="javascript:;">钓友</a></li>
+          <li><a _href="vest-user-list.html" href="javascript:;">小号</a></li>
+          <li><a _href="chat-list.html" href="javascript:;">聊天</a></li>
+          <!--<li><a _href="group-chat-list.html" href="javascript:;">群聊</a></li>-->
+          <li><a _href="freeze-user-list.html" href="javascript:;">账号冻结申请</a></li>
+          <li><a _href="user-action-track.html" href="javascript:;">用户行为</a></li>
+          <li><a _href="user-invite-code.html" href="javascript:;">子牙号查询</a></li>
+          <li><a _href="chat-default-content-config.html" href="javascript:;">默认聊天配置</a></li>
+          <!--<li><a _href="user-register.html" href="javascript:;">用户注册</a></li>-->
+        </ul>
+      </dd>
+    </dl>
+    <dl id="menu-comments">
+      <dt></i>&nbsp;&nbsp;渔获管理<b></b></dt>
+      <dd>
+        <ul>
+          <li><a _href="post-send.html" href="javascript:;">发布渔获</a></li>
+          <li><a _href="post-list.html" href="javascript:;">最新渔获</a></li>
+          <li><a _href="post-boutique-list.html" href="javascript:void(0)">热门渔获</a></li>
+          <li><a _href="post-delete-list.html" href="javascript:void(0)">被删除渔获</a></li>
+          <li><a _href="new_act.html" href="javascript:;">最新评论渔获</a></li>
+          <li><a _href="link-post.html" href="javascript:;">外链渔获</a></li>
+          <li><a _href="post-sort.html" href="javascript:;">渔获排序调整</a></li>
+          <li><a _href="display-count-rule-config.html" href="javascript:;">浏览量配置</a></li>
+        </ul>
+      </dd>
+    </dl>
+    <dl id="menu-tools">
+      <dt></i>&nbsp;&nbsp;装备管理<b></b></dt>
+      <dd>
+        <ul>
+          <li><a _href="tools-list.html" href="javascript:;">装备列表</a></li>
+        </ul>
+      </dd>
+    </dl>
+    <dl id="menu-activity">
+      <dt>&nbsp;&nbsp;APP端活动<b></b></dt>
+      <dd>
+        <ul>
+          <li><a _href="activity-send.html" href="javascript:;">发布活动</a></li>
+          <li><a _href="activity-list.html" href="javascript:;">活动列表</a></li>
+          <!--<li><a _href="activity-boutique-list.html" href="javascript:void(0)">精品活动</a></li>-->
+          <li><a _href="activity-check-list.html" href="javascript:;">活动审核</a></li>
+          <li><a _href="activity-delete-list.html" href="javascript:;">活动删除</a></li>
+        </ul>
+      </dd>
+    </dl>
+      <dl id="MINA-activity">
+      <dt>&nbsp;&nbsp;小程序管理<b></b></dt>
+      <dd>
+        <ul>
+          <li><a _href="mina-activity-list.html" href="javascript:;">活动列表配置</a></li>
+        </ul>
+      </dd>
+    </dl>
+    <dl id="menu-group">
+      <dt>&nbsp;&nbsp;帮派管理<b></b></dt>
+      <dd>
+        <ul>
+          <li><a _href="group-send.html" href="javascript:;">创建帮派</a></li>
+          <li><a _href="group-list.html" href="javascript:;">帮派列表</a></li>
+          <li><a _href="group-active.html" href="javascript:;">热门帮派</a></li>
+          <li><a _href="group-advs-list.html" href="javascript:;">帮派公告审核</a></li>
+        </ul>
+      </dd>
+    </dl>
+
+    <dl id="menu-new-activity">
+      <dt>&nbsp;&nbsp;PC端活动<b></b></dt>
+      <dd>
+        <ul>
+          <li><a _href="new-activity-send.html" href="javascript:;">活动发布</a></li>
+            <li><a _href="new-activity-check-list.html" href="javascript:;">活动审核</a></li>
+            <li><a _href="new-activity-list.html" href="javascript:;">活动列表</a></li>
+            <li><a _href="activity-boutique-list.html" href="javascript:;">热门活动</a></li>
+          <li><a _href="new-activity-delete-list.html" href="javascript:void(0)">活动删除</a></li>
+          <li><a _href="new-activity-remind.html" href="javascript:void(0)">活动提醒</a></li>
+          <li><a _href="new-activity-order-list.html" href="javascript:void(0)">订单管理</a></li>
+          <li><a _href="new-activity-order-cancel-check.html" href="javascript:void(0)">订单取消审核</a></li>
+          <li><a _href="new-activity-order-refund.html" href="javascript:void(0)">订单退款审核</a></li>
+          <li><a _href="new-activity-order-remind.html" href="javascript:void(0)">订单提醒</a></li>
+          <li><a _href="new-activity-order-balance.html" href="javascript:void(0)">活动订单结算</a></li>
+          <li><a _href="deposit_apply_list.html" href="javascript:void(0)">提现申请审核</a></li>
+          <li><a _href="activity-customized-list.html" href="javascript:void(0)">私人定制列表</a></li>
+          <li><a _href="district-list.html" href="javascript:void(0)">活动区域管理</a></li>
+        </ul>
+    </dl>
+    <dl id="menu-check-code">
+      <dt>&nbsp;&nbsp;验证码管理<b></b></dt>
+      <dd>
+        <ul>
+          <li><a _href="check_code_query.html" href="javascript:void(0)">验证码查询</a></li>
+        </ul>
+      </dd>
+    </dl>
+    <dl id="activity_biz">
+      <dt>&nbsp;&nbsp;商家认证<b></b></dt>
+      <dd>
+        <ul>
+          <li><a _href="activity-biz-user-list.html" href="javascript:void(0)">商家列表</a></li>
+          <li><a _href="ad-biz-user-list.html" href="javascript:void(0)">广告商列表</a></li>
+          <li><a _href="shop-biz-user-list.html" href="javascript:void(0)">商城商家列表</a></li>
+        </ul>
+      </dd>
+    </dl>
+    <dl id="menu-article">
+      <dt>&nbsp;&nbsp;文章管理<b></b></dt>
+      <dd>
+        <ul>
+          <li><a _href="article.html" href="javascript:;">文章列表</a></li>
+        </ul>
+      </dd>
+    </dl>
+      <dl id="menu-recruit">
+          <dt>&nbsp;&nbsp;招聘管理<b></b></dt>
+          <dd>
+              <ul>
+                  <li><a _href="recruit-list.html" href="javascript:;">精英列表</a></li>
+              </ul>
+          </dd>
+      </dl>
+
+
+    <dl id="menu-programs">
+      <dt>&nbsp;&nbsp;节目管理<b></b></dt>
+      <dd>
+        <ul>
+          <li><a _href="video-channels-management.html" href="javascript:void(0)">频道管理</a></li>
+          <li><a _href="video-programs-management.html" href="javascript:void(0)">节目管理</a></li>
+          <li><a _href="user-video-channels-management.html" href="javascript:void(0)">用户频道审核</a></li>
+          <li><a _href="user-video-programs-management.html" href="javascript:void(0)">用户节目审核</a></li>
+        </ul>
+      </dd>
+    </dl>
+    <dl id="menu-version">
+      <dt>&nbsp;&nbsp;版本管理<b></b></dt>
+      <dd>
+        <ul>
+          <li><a _href="version-list.html" href="javascript:void(0)">版本列表</a></li>
+        </ul>
+      </dd>
+    </dl>
+    <dl id="menu-credit">
+      <dt>&nbsp;&nbsp;金币商城<b></b></dt>
+      <dd>
+        <ul>
+          <li><a _href="credit-list.html" href="javascript:void(0)">赚金币列表</a></li>
+        </ul>
+      </dd>
+    </dl>
+    <dl id="menu-advice">
+      <dt>&nbsp;&nbsp;建议管理<b></b></dt>
+      <dd>
+        <ul>
+          <li><a _href="advice-list.html" href="javascript:void(0)">用户建议</a></li>
+        </ul>
+      </dd>
+    </dl>
+    <dl id="menu-inform">
+      <dt>&nbsp;&nbsp;举报管理<b></b></dt>
+      <dd>
+        <ul>
+          <li><a _href="inform-list.html" href="javascript:void(0)">用户举报</a></li>
+        </ul>
+      </dd>
+    </dl>
+    <dl id="menu-push">
+      <dt>&nbsp;&nbsp;推送管理<b></b></dt>
+      <dd>
+        <ul>
+          <li><a _href="push-list.html" href="javascript:void(0)">用户推送</a></li>
+        </ul>
+      </dd>
+    </dl>
+    <dl id="menu-message-push">
+      <dt>&nbsp;&nbsp;消息管理<b></b></dt>
+      <dd>
+        <ul>
+          <li><a _href="admin-message-push.html" href="javascript:void(0)">消息推送管理</a></li>
+        </ul>
+      </dd>
+    </dl>
+    <dl id="menu-city">
+      <dt>&nbsp;&nbsp;同城管理<b></b></dt>
+      <dd>
+        <ul>
+          <li><a _href="edit_same_city.html" href="javascript:void(0)">同城数据管理</a></li>
+        </ul>
+      </dd>
+    </dl>
+      <dl id="menu-pop-up">
+          <dt>&nbsp;&nbsp;弹框管理<b></b></dt>
+          <dd>
+              <ul>
+                  <li><a _href="pop-up-manage.html" href="javascript:void(0)">弹框推送管理</a></li>
+              </ul>
+          </dd>
+      </dl>
+    <dl id="menu-statistic">
+      <dt>&nbsp;&nbsp;统计管理<b></b></dt>
+      <dd>
+        <ul>
+          <li><a _href="statistic-post.html" href="javascript:void(0)">渔获分布</a></li>
+          <li><a _href="statistic-admin.html" href="javascript:void(0)">运营人员考核</a></li>
+          <li><a _href="statistic-area-date.html" href="javascript:void(0)">区域数据统计</a></li>
+        </ul>
+      </dd>
+    </dl>
+      <dl id="anti-spam">
+          <dt>&nbsp;&nbsp;反垃圾信息<b></b></dt>
+          <dd>
+              <ul>
+                  <li><a _href="keywords-management.html" href="javascript:void(0)">关键词管理</a></li>
+                  <li><a _href="irregularity-info.html" href="javascript:void(0)">查看违规信息</a></li>
+              </ul>
+          </dd>
+    </dl>
+      <dl id="fishing-location">
+          <dt>&nbsp;&nbsp;钓场管理<b></b></dt>
+          <dd>
+              <ul>
+                  <li><a _href="fishing-location-add.html" href="javascript:void(0)">添加钓场</a></li>
+                  <li><a _href="fishing-location-list.html" href="javascript:void(0)">钓场列表</a></li>
+                  <li><a _href="fishing-location-check.html" href="javascript:;">钓场审核</a></li>
+                  <li><a _href="fishing-location-error.html" href="javascript:;">钓场报错</a></li>
+                  <li><a _href="fishing-location-img.html" href="javascript:;">钓场传图审核</a></li>
+                  <li><a _href="fishing-location-comment.html" href="javascript:;">钓场评论审核</a></li>
+              </ul>
+          </dd>
+      </dl>
+      <dl id="fishing-shop">
+          <dt>&nbsp;&nbsp;渔具店管理<b></b></dt>
+          <dd>
+              <ul>
+                  <li><a _href="fishing-shop-add.html" href="javascript:void(0)">添加渔具店</a></li>
+                  <li><a _href="fishing-shop.html" href="javascript:void(0)">渔具店列表</a></li>
+                  <li><a _href="fishing-shop-check.html" href="javascript:;">渔具店审核</a></li>
+                  <li><a _href="fishing-shop-error.html" href="javascript:;">渔具店报错</a></li>
+              </ul>
+          </dd>
+      </dl>
+      <dl id="offical-recommend">
+          <dt>&nbsp;&nbsp;渔乐号<b></b></dt>
+          <dd>
+              <ul>
+                  <li><a _href="offical-recommend-add.html" href="javascript:void(0)">创建渔乐号</a></li>
+                  <li><a _href="offical-recommend-list.html" href="javascript:void(0)">渔乐号历史</a></li>
+              </ul>
+          </dd>
+      </dl>
+    <dl id="menu-admin">
+      <dt>&nbsp;&nbsp;运营账号管理<b></b></dt>
+      <dd>
+        <ul>
+          <li><a _href="model-list.html" href="javascript:void(0)">模块列表</a></li>
+          <li><a _href="admin-role.html" href="javascript:void(0)">角色管理</a></li>
+          <li><a _href="admin-permission.html" href="javascript:void(0)">权限管理</a></li>
+          <li><a _href="admin-list.html" href="javascript:void(0)">运营账号列表</a></li>
+        </ul>
+      </dd>
+    </dl>
+
+    <dl id="menu-work-statics">
+      <dt>&nbsp;&nbsp;员工工作管理<b></b></dt>
+      <dd>
+        <ul>
+          <li><a _href="night-work-statics.html" href="javascript:void(0)">值班统计</a></li>
+          <li><a _href="pingri-work-statics.html" href="javascript:void(0)">平日工作统计</a></li>
+          <li><a _href="count-share-activity.html" href="javascript:void(0)">活动分享统计</a></li>
+          <li><a _href="wx_ht_user_list.html" href="javascript:void(0)">微信用户映射</a></li>
+        </ul>
+      </dd>
+    </dl>
+    <dl id="crm">
+      <dt>&nbsp;&nbsp;CRM<b></b></dt>
+      <dd>
+        <ul>
+          <li><a _href="extend_user_input.html" href="javascript:void(0)">用户录入</a></li>
+          <li><a _href="user_references_check.html" href="javascript:void(0)">用户判定</a></li>
+          <li><a _href="extend_user_list.html" href="javascript:void(0)">拉用户列表</a></li>
+        </ul>
+      </dd>
+    </dl>
+
+    <dl id="menu-adv">
+      <dt>&nbsp;&nbsp;广告管理<b></b></dt>
+      <dd>
+        <ul>
+          <li><a _href="adv-alert.html" href="javascript:void(0)">弹框广告</a></li>
+          <li><a _href="adv-startup.html" href="javascript:void(0)">启动页广告</a></li>
+          <li><a _href="adv-send.html" href="javascript:void(0)">创建广告</a></li>
+          <li><a _href="area-adv-list.html" href="javascript:void(0)">位置广告列表</a></li>
+          <li><a _href="adv-list.html" href="javascript:void(0)">广告列表</a></li>
+        </ul>
+      </dd>
+    </dl>
+
+    <dl id="statistics-project">
+      <dt>&nbsp;&nbsp;项目统计<b></b></dt>
+      <dd>
+        <ul>
+          <li><a _href="statistics-query.html" href="javascript:void(0)">查看统计项目</a></li>
+          <li><a _href="statistics-add.html" href="javascript:void(0)">添加统计项目</a></li>
+          <li><a _href="statistics-data.html" href="javascript:void(0)">查看统计数据</a></li>
+          <li><a _href="statistics-user-activity.html" href="javascript:void(0)">用户活跃度</a></li>
+          <li><a _href="statistics-user-browse.html" href="javascript:void(0)">展示次数统计</a></li>
+          <li><a _href="statistics-activity-refer.html" href="javascript:void(0)">活动相关数据统计</a></li>
+          <li><a _href="statistics-all-data.html" href="javascript:void(0)">总体数据统计</a></li>
+
+        </ul>
+      </dd>
+    </dl>
+    <dl id="latest_notice">
+      <dt>&nbsp;&nbsp;最新动态<b></b></dt>
+      <dd>
+        <ul>
+          <li><a _href="last-notice-add.html" href="javascript:void(0)">创建最新动态</a></li>
+          <li><a _href="last-notice-list.html" href="javascript:void(0)">最新动态列表</a></li>
+        </ul>
+      </dd>
+    </dl>
+    <dl id="menu-sign-in">
+      <dt>&nbsp;&nbsp;值班<b></b></dt>
+      <dd>
+        <ul>
+          <li><a _href="sign_in.html" href="javascript:void(0)">值班签到</a></li>
+        </ul>
+      </dd>
+    </dl>
+
+    <dl id="menu-shop-interactive">
+      <dt>&nbsp;&nbsp;商城对接<b></b></dt>
+      <dd>
+        <ul>
+          <li><a _href="goods_push.html" href="javascript:void(0)">好货推送</a></li>
+          <li><a _href="shop-comment.html" href="javascript:void(0)">商品评论</a></li>
+        </ul>
+      </dd>
+    </dl>
+
+    <dl id="recommend-user">
+      <dt>&nbsp;&nbsp;用户推荐管理<b></b></dt>
+      <dd>
+        <ul>
+          <li><a _href="recommend_user_statistics_summary.html" href="javascript:void(0)">每日数据统计</a></li>
+          <li><a _href="recommend_user_statistics.html" href="javascript:void(0)">用户数据统计</a></li>
+        </ul>
+      </dd>
+    </dl>
+    <dl id="city_hehuoren">
+      <dt>&nbsp;&nbsp;城市合伙人<b></b></dt>
+      <dd>
+        <ul>
+          <li><a _href="city-partner-list.html" href="javascript:void(0)">合伙人列表</a></li>
+        </ul>
+      </dd>
+    </dl>
+    <dl id="op_monitor">
+      <dt>&nbsp;&nbsp;运维与监控<b></b></dt>
+      <dd>
+        <ul>
+          <li><a _href="statistics-api-access.html" href="javascript:void(0)">接口访问统计</a></li>
+        </ul>
+      </dd>
+    </dl>
+  </div>
+</aside>
+<div class="dislpayArrow"><a class="pngfix" href="javascript:void(0);" onClick="displaynavbar(this)"></a></div>
+<section class="Hui-article-box">
+  <div id="Hui-tabNav" class="Hui-tabNav">
+    <div class="Hui-tabNav-wp">
+      <ul id="min_title_list" class="acrossTab cl">
+        <li class="active"><span title="我的桌面" data-href="welcome.html">我的桌面</span><em></em></li>
+      </ul>
+    </div>
+    <div class="Hui-tabNav-more btn-group"><a id="js-tabNav-prev" class="btn radius btn-default size-S" href="javascript:;"><i class="icon-step-backward"></i></a><a id="js-tabNav-next" class="btn radius btn-default size-S" href="javascript:;"><i class="icon-step-forward"></i></a></div>
+  </div>
+  <div id="iframe_box" class="Hui-article">
+    <div class="show_iframe">
+      <div style="display:none" class="loading"></div>
+      <iframe scrolling="yes" frameborder="0" src="welcome.html"></iframe>
+    </div>
+  </div>
+</section>
+<script type="text/javascript"> 
+ // function socketStart(str){
+  //  subscribe_object=str;
+  //  console.log(str);
+  //  websocketclient.connect();
+ // }
+</script>
+<script type="text/javascript" src="bizjs/map.js"></script>
+<script type="text/javascript" src="lib/jquery.min.js"></script> 
+<script type="text/javascript" src="lib/Validform_v5.3.2.js"></script> 
+<script type="text/javascript" src="lib/layer1.8/layer.min.js"></script>
+<script type="text/javascript" src="bizjs/base.js"></script>
+<script type="text/javascript" src="js/H-ui.js"></script>
+<script type="text/javascript" src="bizjs/index.js"></script>
+<script type="text/javascript" src="js/H-ui.admin.js?t=1"></script>
+<script type="text/javascript" src="js/H-ui.admin.doc.js"></script>
+
+<!--<script type="text/javascript" src="lib/jquery-1.9.1.js"></script>-->
+<script type="text/javascript" src="lib/json2.js"></script>
+<script type="text/javascript" src="lib/icomet.js"></script>
+
+<script src="bizjs/im/lodash.min.js"></script>
+<script src="bizjs/im/jquery.fancybox.min.js"></script>
+
+<script src="bizjs/im/foundation.min.js"></script>
+<script src="bizjs/im/foundation.forms.min.js"></script>
+<script src="bizjs/im/modernizr.min.js"></script>
+<script src="bizjs/im/moment.min.js"></script>
+<script src="bizjs/im/jquery.minicolors.min.js"></script>
+<script src="bizjs/im/mqttws31.js"></script>
+<script src="bizjs/im/encoder.js"></script>
+<!--<script src="bizjs/im/app.js"></script>-->
+
+<script>
+  get_username()
+  var data={
+
+  }
+  var remind_cout={
+        "freeze-user-list":0,
+        "deleted_post":0,
+        "great_post":0,
+        "activity_check":0,
+        "activity-biz-user-list":0,
+        "new-activity-check-list":0,
+        "new-activity-delete-list":0,
+        "new-activity-order-cancel-check":0,
+        "new-activity-order-refund":0,
+        "new-activity-order-remind":0,
+        "new-activity-remind":0,
+        "deposit_apply_list":0,
+        "new-activity-order-balance":0,
+        "link-post":0,
+        "irregularity-info":0,
+        "activity-customized-list":0,
+        "article_list":0,
+      "user_inform_model":0,
+      "user_advice_model":0,
+      "new-activity-order-list":0,
+      "user-video-channels-management":0,
+      "user-video-programs-management":0
+
+  }
+  $(function(){
+//    $.Huifold(".menu_dropdown dl dt",".menu_dropdown dl dd","fast",1,"click");
+
+//    loadLeftMenu();
+
+//    $.Huifold($(".menu_dropdown dl dt"),$(".menu_dropdown dl dd"),"fast",1,"click");
+    setALLCurrentDate()
+    setInterval(remind, (parseInt(Math.random()*30,10)+30)*1000);
+
+  })
+
+
+  function setDate(key,value){
+    data[key]=value
+  }
+
+  function setALLCurrentDate(){
+    var current_date_format=getCurrentDateFormat()
+    data={
+        "freeze-user-list":current_date_format,
+        "deleted_post":current_date_format,
+        "great_post":current_date_format,
+        "activity_check":current_date_format,
+        "activity-biz-user-list":current_date_format,
+        "new-activity-check-list":current_date_format,
+        "new-activity-delete-list":current_date_format,
+        "new-activity-order-cancel-check":current_date_format,
+        "new-activity-order-refund":current_date_format,
+        "new-activity-order-remind":current_date_format,
+        "deposit_apply_list":current_date_format,
+        "new-activity-order-balance":current_date_format,
+        "link-post":current_date_format,
+        "irregularity-info":current_date_format,
+        "activity-customized-list": current_date_format,
+        "article_list":current_date_format,
+        "user_inform_model":current_date_format,
+        "user_advice_model":current_date_format,
+        "new-activity-order-list":current_date_format,
+        "user-video-channels-management":current_date_format,
+        "user-video-programs-management":current_date_format
+
+    }
+  }
+
+  function getCurrentDateFormat(){
+    var current_date=new Date()
+    var current_date_format=current_date.getFullYear()+"-"+(current_date.getMonth()+1)+"-"+current_date.getDate()
+            +"-"+current_date.getHours()+"-"+current_date.getMinutes()+"-"+current_date.getSeconds()
+
+    return current_date_format
+  }
+
+  function remind(){
+
+    request_url = fishing_admin_Url + "/last_request_recod_count?condition="+JSON.stringify(data)
+    result = getRequest(request_url, '', 'GET', '', '')
+//    alert(JSON.stringify(result));
+    var model_count_map={
+
+    }
+    for(var key in result){
+      if (key==undefined){
+        continue;
+      }
+      if (result[key]>0){
+        $('#'+key+'_count').show()
+        $('#'+key+'_count').html(result[key])
+      }else{
+        $('#'+key+'_count').css("display","none")
+        $('#'+key+'_count').html('')
+      }
+
+//      alert("key:"+key)
+      model_name=sub_group_model_map[key]
+      if (model_name && model_name!=undefined){
+        model_name=sub_group_model_map[key]
+//        alert("model_name:"+model_name)
+        model_count=model_count_map[model_name]
+        if (model_count==undefined){
+          model_count_map[model_name]=result[key]
+        }else{
+          model_count_map[model_name]=model_count+result[key]
+        }
+      }
+
+    }
+    for(var key in model_count_map) {
+      if (key==undefined){
+        continue;
+      }
+//      alert("key:"+key)
+      model_count = model_count_map[key]
+      if (model_count>0){
+        $('#'+key+'_count').show()
+        $('#'+key+'_count').html(model_count)
+      }else{
+        $('#'+key+'_count').css("display","none")
+        $('#'+key+'_count').html('')
+      }
+    }
+
+  }
+  function clearCount(id){
+//    alert("id:"+id)
+    remind_count=$('#'+id+'_count').html()
+    if (remind_count && remind_count!=""){
+      remind_count_int=parseInt(remind_count)
+      $('#'+id+'_count').css("display","none")
+      $('#'+id+'_count').html('')
+      setDate(id,getCurrentDateFormat())
+
+      model_name=sub_group_model_map[id]
+      if (model_name && model_name!=undefined){
+        model_remind_count=$('#'+model_name+'_count').html()
+        if (model_remind_count && model_remind_count!=""){
+          model_remind_count_int=parseInt(model_remind_count)
+          model_remind_count=model_remind_count-remind_count_int
+          if (model_remind_count>0){
+            $('#'+model_name+'_count').show()
+            $('#'+model_name+'_count').html(model_remind_count)
+          }else{
+            $('#'+model_name+'_count').css("display","none")
+            $('#'+model_name+'_count').html('')
+          }
+        }
+      }
+    }
+  }
+  function receiveMsg(d){
+      $("#callIn").html(d.activity_code);
+      $("#callInp").html(d.input_tel_info);
+      $("#callInt").html(d.input_tel);
+      $("#seeD").attr("code",d.activity_code).attr("tel",d.input_tel);
+      $("#phone_alert").show();
+  }
+  function close400(){
+    $("#phone_alert").hide();
+  }
+  function seeD(obj){
+    obj = $(obj);
+    if( obj.attr("code") ){
+      var tel = obj.attr("tel");
+      var _href = location.origin+"/static/400detail.html?code="+obj.attr("code")+"&tel="+tel;
+      creatIframe(_href, tel);
+    };
+  }
+
+
+  function init_icomet(channel){
+
+    var comet = new iComet({
+    channel: channel,
+    signUrl: icomet_server,
+    subUrl: icomet_fornt,
+    //signUrl: "http://192.168.1.222:8000/sign",
+    //subUrl: "http://192.168.1.222:8100/sub",
+    callback: function(content){
+        // on server push
+        var content_arr = content.split(":");
+        if (content_arr[0]== "post"){
+            var onclick_url = "post-boutique-list.html?post_id="+content_arr[1]
+            notification.trigger('渔获排名过期提醒', onclick_url, content_arr[2])
+        }else{
+            content = JSON.parse(content);
+            receiveMsg(content)
+        }
+        //alert(content_arr[0]);
+        //onclick="layer_show('1000','500','渔获排名过期提醒',\'post-boutique-list.html?post_id=
+    }
+});
+    return comet;
+
+  }
+  var notification = {
+    init: Notification.requestPermission(),
+    url: '',
+    title: '',
+    trigger: function (title, url, content) {
+      var me = this;
+      me.title = title;
+      me.url = url;
+      if (Notification.permission === 'granted') {
+        var x = new Notification('' , { body: content, icon:"lib/子牙团队.png", renotify:false });
+        x.onclick = function () {
+            me.callback();
+        }
+      }
+    },
+    callback: function () {
+      var me = this;
+      layer_show('1000', '500', me.title, me.url);
+    }
+  };
+
+    function get_username(){
+
+	var requestURL = fishing_admin_Url+'/curr_user';
+	$.ajax({
+		url:requestURL,
+		type:'GET',
+		dataType:'json',
+		async:false,
+		error: function(jqXHR, textStatus, errorThrown) {
+			alert('访问服务器失败，请重试');
+			//alert("error:"+jqXHR.readyState+"  请求状态:"+jqXHR.status+" response:"+jqXHR.responseText)
+			//alert("textStatus:"+textStatus)
+		},
+		success: function(data, textStatus, jqXHR) {
+//			init_icomet(data.entities.username);
+		}
+	});
+    }
+</script>
+</body>
+</html>

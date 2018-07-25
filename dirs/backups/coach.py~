@@ -1,0 +1,389 @@
+# coding:utf8
+import datetime
+from apps.models import Gym
+from django.db.models import Q
+from django.conf import settings
+from apps.model.coach import Coach
+from apps.models import ClassProcess
+from apps.model.sysconf import Notice
+from apps.model.coursePs import CourPrs
+from lib.utils.supertime import SuperTime
+from apps.models import GdCoach, GdCourse
+from apps.model.pushcourse import PushTarget
+from apps.logics.gd_money import judge_total
+from apps.config.apps_config import pre_times
+from apps.model.classprocess import ClProcess
+from apps.models import Training, TrainingPlan
+from apps.model.gdcourse import GdCourObj
+from apps.tasks import _order_check_reward
+from apps.common.return_code import LogicException
+from apps.tasks import _push_to_user, _order_notice
+from apps.logics.questions import get_user_healthquestions
+
+
+def query_coachTime(time, uid=None, type=None):
+    """ 查询指定时间教练上课情况
+        type = all    # 所有的教练总数
+        type = None
+    """
+    if isinstance(time, datetime.datetime):
+        ktime = SuperTime(dt=time)
+    else:
+        ktime = SuperTime(ts=time)
+    # 给教练准备的时间
+    ktime_start = ktime.offset(hours=-settings.PRE_TIME)
+    ktime_end = ktime.offset(hours=settings.PRE_TIME)
+    # 找今天与第二天开始之间的 已经接的单
+    if type == 'all':
+        # 查找这个时间段的新订单和正在进行中的
+        gd_obj = GdCourse.objects.filter(Q(pre_time__gte=ktime_start.datetime) &
+                                         Q(pre_time__lt=ktime_end.datetime),
+                                         Q(gd_status=2) | Q(gd_status=1))
+        # 返回这个时间段 上课的所有教练
+        uids = [i.get('who_rec_id') for i in gd_obj.values('who_rec_id').distinct() if i.get('who_rec_id')]
+        return uids
+
+    gd_obj = GdCourse.objects.filter(Q(pre_time__gte=ktime_start.datetime) &
+                                     Q(pre_time__lt=ktime_end.datetime),
+                                     gd_status=2,
+                                     who_rec_id=uid)
+    if gd_obj:
+        # 这个时间段教练没有时间
+        return False
+
+    return True
+
+
+def _modify_passwd(uid, old_passwd, new_passwd):
+    """ 修改密码
+    """
+    Coach.modify_passwd(uid, old_passwd, new_passwd)
+
+
+def _accept_order(order_id, coach_id):
+    from apps.tasks import deal_to_message
+    try:
+        order_obj = GdCourse.objects.get(order_id=order_id)
+    except GdCourse.DoesNotExist:
+        raise LogicException(46)
+    if order_obj.who_rec_id == coach_id and order_obj.status == 1:
+        # 已接单 不能重复接单
+        raise LogicException(47)
+    if order_obj.gd_status in [3, 4, 5]:
+        # 如果已经退款
+        raise LogicException(50)
+    # 如果接单教练 不是分配的教练
+    if order_obj.who_rec_id != coach_id:
+        raise LogicException(58)
+    pre_time = order_obj.pre_time  # 约课时间
+    # 如果教练再这个时间段有订单那么推送到下一个
+    if not query_coachTime(pre_time, coach_id):
+        PushTarget.pushToNextId(coach_id, order_id, pre_time, order_obj.course.classes_id)
+        # 该时间点已经接单推送到下一个
+    # 接单 订单状态正在进行中
+    GdCourObj.acceptOrder(order_id, coach_id)
+    # 推送到客户端告知以接单
+    user_id = order_obj.user.uid
+    _push_to_user.delay(user_id=user_id, info='教练已经接单啦!', types='accept_order', extra={'order_id': order_id})
+    deal_to_message.delay(1, order_id)
+
+
+def _refused_order(order_id, coach_id):
+    try:
+        order_obj = GdCourse.objects.get(order_id=order_id)
+    except GdCourse.DoesNotExist:
+        raise LogicException(46)
+    if order_obj.status and order_obj.who_rec_id != coach_id:
+        raise LogicException(58)
+    elif order_obj.gd_status != 1:
+        raise LogicException(58)
+    elif order_obj.course_time:
+        # 已经出门不能退单 (not del)
+        raise LogicException(57)
+    class_id = order_obj.course.classes_id
+    PushTarget.pushToNextId(coach_id, order_id, order_obj.pre_time, class_id)
+
+
+def _coach_out(coach_id, order_id):
+    now = datetime.datetime.now()
+    gd_obj = GdCourse.objects.get(order_id=order_id)
+    userid = gd_obj.user_id
+    if not gd_obj:
+        raise LogicException(35)
+    gd_obj.course_time = now
+    gd_obj.save()
+    _push_to_user.delay(user_id=userid, info='教练出门啦!', types='coach_out', extra={'coache_id': coach_id})
+
+
+def _course_set(order_id, course_start=None, course_stop=None, course_time=None):
+    try:
+        gd_obj = GdCourse.objects.get(order_id=order_id)
+    except GdCourse.DoesNotExist:
+        raise LogicException(35)
+    now = datetime.datetime.now()
+    if course_start:
+        gd_obj.course_start = now
+    elif course_time:
+        gd_obj.course_time = now
+    elif course_stop:
+        gd_obj.course_stop = now
+    gd_obj.save()
+
+
+def _upload(coach_id, order_id):
+    try:
+        gd_obj = ClassProcess.objects.get(order_id=order_id)
+    except ClassProcess.DoesNotExist:
+        # 会员运动资料会员记录表格运动区域任保存一项则不会出现30
+        raise LogicException(30)
+
+    from apps.tasks import add_to_message
+    add_to_message.delay(2, order_id)
+
+    # 提醒用户坚持锻炼
+    _order_notice.delay(gd_obj.order_id)
+    # 检查用户是否是推荐用户给予奖励
+    _order_check_reward.delay(gd_obj.order.user.mobilePhone)
+    user_id = gd_obj.order.user_id
+    health_data = get_user_healthquestions(user_id)
+    if not health_data:
+        # 检查健康问卷是否完成
+        raise LogicException(31)
+    # 运动区域情况
+    if not gd_obj.sport_area:
+        raise LogicException(34)
+    # 运动纪录表格
+    if not gd_obj.sport_record:
+        raise LogicException(33)
+    # 身体测试只有第一次时候会提醒
+    if not ClProcess.history_info(order_id):
+        raise LogicException(32)
+    if not gd_obj.body_test:
+        gd_obj.body_test_id = ClProcess.latestBodytestId(user_id)
+        gd_obj.save()
+    # 增加教练上课次数
+    gc_obj = GdCoach.objects.get(pk=coach_id)
+    gc_obj.class_times += 1
+    gc_obj.save()
+
+    order_obj = GdCourse.objects.get(order_id=order_id)
+    user_id = order_obj.user.uid
+    # 课程是否完成
+    if order_obj.course_status != 1:
+        # order_obj.gd_status = 4      # 订单状态
+        order_obj.gd_status = 7      # 订单状态 待评价
+        order_obj.course_status = 1  # 上课状态
+        order_obj.save()
+        # 随机发代金卷累计7次随机获得一次
+        gd_money = judge_total(7, user_id)
+
+        if gd_money:
+            _push_to_user.delay(user_id=user_id,
+                                info=u'恭喜您获得一张价值%s元的代金卷!' % gd_money,
+                                types='gdmoney',
+                                extra={'order_id': order_id})
+    # 上传成功后用户填写反馈消息推送
+    # _push_to_user.delay(user_id=user_id,
+    #                    info=u'请对我们的教练作出评价吧!',
+    #                    types='upload',
+    #                    extra={'order_id': order_id,
+    #                           'coach_id': coach_id})
+
+    # 反馈
+    Notice.save_feedback(user_id, order_id, coach_id, 'upload')
+    # 课程完成后加一节课
+    class_id = order_obj.course.classes_id
+    if class_id:
+        couObj = CourPrs(class_id)
+        couObj.addCourseNumber()
+
+
+def _button(order_id):
+    try:
+        order_obj = GdCourse.objects.get(order_id=order_id)
+    except GdCourse.DoesNotExist:
+        raise LogicException(35)
+
+    isdoor = 0 if not order_obj.course_time else 1
+    isstart = 0 if not order_obj.course_start else 1
+    isstop = 0 if not order_obj.course_stop else 1
+
+    data = {'isdoor': isdoor,
+            'isstart': isstart,
+            'isstop': isstop}
+
+    return data
+
+
+def _orders(coach_id, course_st=None):
+    """ 历史订单
+    """
+    orders = GdCourse.objects.filter(Q(who_rec_id=coach_id) & (Q(gd_status=2) | Q(gd_status=4) | Q(gd_status=7))).order_by('-pre_time')
+    data_list = []
+    for obj in orders:
+        data = {}
+        data['process'] = obj.course_status
+        data['name'] = obj.name
+        data['course'] = obj.course.name
+        data['number'] = obj.number
+        data['place'] = obj.place
+        data['pre_time'] = SuperTime(dt=obj.pre_time).timestamp
+        data['gender'] = obj.user.gender
+        data['order_id'] = obj.order_id
+        data['order_type'] = dict(GdCourse.TYPE)[obj.course_type]
+        data['course_number'] = obj.course_num
+        data_list.append(data)
+    return data_list
+
+
+def _install_new_user(gym_id, username, teacher_info, id_card):
+    """ 生成新的用户
+        注:新增加店的时候一定要先注册店家信息
+        gym_id 健身房id
+    """
+    # 初始工号第一位１代表果动2-4位城市区号5-6位代表分店号7-9代表教练号码
+    init_id = '001'
+    new_uid = ''
+
+    gym_obj = Gym.objects.get(pk=gym_id)
+
+    latest_id = GdCoach.objects.filter(gym_id=gym_id)
+    if latest_id:
+        uid = latest_id.latest('uid').uid
+        new_uid = str(int(uid)+1)
+    else:
+        number = gym_obj.number
+        new_uid = '1' + str('%05d' % number)  # 不足5位由0填充
+        new_uid += init_id
+    coach_obj = GdCoach(uid=str(new_uid),
+                        username=username,
+                        passwd=settings.DEFAULT_PASSWD,  # 默认密码
+                        teacher_info=teacher_info,
+                        id_card=id_card,
+                        gym=gym_obj,
+                        class_times=0)
+    coach_obj.save()
+    return new_uid
+
+
+def _change_status(coach_id, status):
+    gc_obj = GdCoach.objects.get(uid=coach_id)
+    status = int(status)
+    if gc_obj.status != status:
+        gc_obj.status = status
+        gc_obj.save()
+
+
+def coach_info(coach_id):
+    """ 获取教练的详细信息
+    """
+    try:
+        coach_obj = GdCoach.objects.get(uid=coach_id)
+    except GdCoach.DoesNotExist:
+        raise LogicException(13)
+    data = dict()
+    data['headimg'] = coach_obj.headimg.url
+    data['offline'] = coach_obj.status
+    data['id_card'] = coach_obj.id_card
+    data['status'] = coach_obj.status
+    data['uid'] = coach_obj.uid
+    data['gender'] = coach_obj.gender
+    data['username'] = coach_obj.username
+    data['class_times'] = coach_obj.class_times
+    city_name = Gym.objects.get(pk=coach_obj.gym_id).city.region_name
+    data['city'] = city_name
+
+    # 教练负责的课程
+    data['coachCourse'] = '，'.join([i.get('name') for i in coach_obj.course.values() if i.get('rmb') == 0])
+
+    return data
+
+
+def totalCoach(class_id, isonline=None):
+    """ 该类别所有的教练
+    """
+    if isonline:
+        # 在线的所有教练
+        all_coach = GdCoach.objects.filter(course__class_id=class_id, status=0).distinct()
+    else:
+        all_coach = GdCoach.objects.filter(course__class_id=class_id).distinct()
+    uids = [i.get('uid') for i in all_coach.values('uid')]
+    return uids
+
+def allCoach():
+    #all_coach = GdCoach.objects.filter(istrain=False, isleave=False)
+    all_coach = GdCoach.objects.filter(isleave=False)
+    return list(all_coach.values('username', 'uid'))
+
+
+def _my_training():
+    info = Training.objects.all().order_by('-priority')
+    data_list = []
+    for tra in info:
+        data = {}
+        data['train_type'] = tra.train_type
+        data['plan'] = list(tra.trainingplan_set.all().values('plan_name', 'id'))
+        data_list.append(data)
+
+    return data_list
+
+
+def _training(plan_id):
+    try:
+        plan_obj = TrainingPlan.objects.get(pk=plan_id)
+    except TrainingPlan.DoesNotExist:
+        raise LogicException(1100)
+    data_list = list(plan_obj.traininglevel_set.all().values('level_name', 'content'))
+
+    return data_list
+
+
+def queryCoachHasTime(class_id, date):
+    """
+    @Args:
+        date : 某一天的时间 格式如:20150603
+    """
+    # 所有的教练
+    coach_info = []
+
+    all_coach = GdCoach.objects.filter(course__class_id=class_id).distinct()
+    for co in all_coach:
+        course_time = dict.fromkeys([int(i[:-9]) for i in pre_times], 'NO')
+        coach = {}
+        # 找今天与第二天开始之间的 已经接的单
+        gd_obj = GdCourse.objects.filter(Q(pre_time__gte=date.datetime) &
+                                         Q(pre_time__lt=date.tomorrow.datetime),
+                                         status=1,
+                                         who_rec=co.uid,)
+        # 上课时间
+        keys = course_time.keys()
+        keys.sort()
+        if gd_obj:
+            for gd in gd_obj:
+                # 已经上课的时间
+                hour = gd.pre_time.time().hour
+                if hour in keys:
+                    course_time[hour] = 'YES'
+                    index = keys.index(hour)
+                    for i in range(settings.PRE_TIME):
+                        try:
+                            value = keys[index+(i+1)]
+                            course_time[value] = 'PRET'
+                        except:
+                            continue
+
+                    for i in range(settings.PRE_TIME):
+                        try:
+                            length = index - (i+1)
+                            if length >= 0:
+                                value = keys[index-(i+1)]
+                                course_time[value] = 'PRET'
+                        except:
+                            continue
+
+        coach['info'] = course_time
+        coach['name'] = co.username
+        coach['uid'] = co.uid
+        coach_info.append(coach)
+
+    return coach_info

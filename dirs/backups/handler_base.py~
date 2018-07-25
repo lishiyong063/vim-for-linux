@@ -1,0 +1,388 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# @Date    : 2014-12-05 21:05:00
+# @Author  : Your Name (you@example.org)
+# @Link    : http://example.org
+# @Version : $Id$
+
+import tornado.web
+from tornado.options import options
+import json
+import traceback
+import hashlib
+from tornado import gen
+from tornado.httpclient import HTTPRequest
+from log import get_logger
+from utils.secret import *
+from distutils.version import LooseVersion
+from services.service_credit import *
+from utils.redis_client import RedisClient
+from utils.banner import getBanner
+
+try:
+    from tornado.curl_httpclient import CurlAsyncHTTPClient as AsyncHTTPClient
+except ImportError:
+    from tornado.simple_httpclient import SimpleAsyncHTTPClient as AsyncHTTPClient
+log = get_logger()
+
+
+class BaseHandler(tornado.web.RequestHandler):
+
+    def __init__(self, application, request, **kwargs):
+        super(BaseHandler, self).__init__(application, request, **kwargs)
+        self._me = None
+        self._username=None
+        self._act_random=None
+        self._token=None
+        self._udid=None
+        self._decode_value_dic=None
+        self.New_Version="1.8"
+        self.New_Version_android="1.8"
+        self.New_Version_ios="1.8"
+
+    @property
+    def me(self):
+        if self._me is None:
+            # token = self.request.headers.get("Authorization", None)
+            # try:
+            #     token = token.split(' ')[1]
+            # except:
+            #     return self._me
+            
+            # lookup = {'token': token} 
+            # filters = {'_id':0, 'username':1}
+            # account = options.dbconn.Account.find_one(lookup, filters)
+            # if account is None:
+            #     return self._me
+            # username = account["username"]
+            lookup = {'username':self.username}
+            filters = {"_id":0,"invite_source":0,"location":0,"status":0,"notify":0,"ip_info":0}
+            self._me = options.dbconn.User.find_one(lookup, filters)
+        return self._me
+
+    @property
+    def username(self):
+        if self._username is None:
+            try:
+                token=self.token
+                real_token=decrypt(token,options.token_key)
+                token_array=real_token.split(":")
+                self._username=token_array[0]
+            except:
+                return self._username
+        return self._username
+
+    @property
+    def token(self):
+        if self._token is None:
+            token = self.request.headers.get("Authorization", None)
+            # log.info("Authorization_token"+token)
+
+            try:
+                if token!=None:
+                     token = token.split(' ')[1]
+                else:
+                    token=self.get_argument("ziyatoken",None)
+                    if token!=None:
+                        token = str(token)
+                self._token=token
+            except:
+                return self._token
+        return self._token
+    
+    @property
+    def act_random(self):
+        if self._username is None:
+            token = self.request.headers.get("Authorization", None)
+            try:
+                token = token.split(' ')[1]
+            except:
+                return self._username
+            
+            real_token=decrypt(token,options.token_key)
+            token_array=real_token.split(":")
+            self._act_random=token_array[3]
+
+        return self._act_random
+
+    def fire_response_sys_error(self):
+        self.set_status(400)
+        response = {}
+        response["error"] = "sys_error"
+        response["error_description"] = "System Exception,please retry"
+        self.write(json.dumps(response, indent=2, ensure_ascii=False))
+        self.finish()
+
+    def fire_response_bad_request(self, key_required=None):
+        self.set_status(400)
+        response = {}
+        response["error"] = "bad_request"
+        if key_required is None:
+            response["error_description"] = "page and location are required"
+        else:
+            response["error_description"] = "%s is required" % key_required
+        self.write(json.dumps(response, indent=2, ensure_ascii=False))
+        self.finish()
+
+    def fire_response_post_not_found(self, key_required=None):
+        self.set_status(400)
+        response = {}
+        response["error"] = "resource_not_found"
+        if key_required is None:
+            response["error_description"] = "post is not exist or deleted"
+        else:
+            response["error_description"] = "%s is required" % key_required
+        self.write(json.dumps(response, indent=2, ensure_ascii=False))
+        self.finish()
+        
+        
+    def fire_response_bad(self,error,des):
+        self.set_status(400)
+        response = {}
+        response["error"] = error
+        response["error_description"] = des
+        self.write(json.dumps(response, indent=2, ensure_ascii=False))
+        self.finish()
+
+    def fire_response_bad_content(self,error,des,content):
+        self.set_status(400)
+        response = {}
+        response["error"] = error
+        response["error_description"] = des
+        response["content"] = content
+        self.write(json.dumps(response, indent=2, ensure_ascii=False))
+        self.finish()
+
+    def fire_response_bad_response(self):
+        self.set_status(400)
+        response = {}
+        response["error"] = "bad_request"
+        response["error_description"] = "invalid data"
+        self.write(json.dumps(response, indent=2, ensure_ascii=False))
+        self.finish()
+
+    def fire_not_have_permission(self):
+        self.set_status(401)
+        response = {}
+        response["error"] = "unauthorized"
+        response["error_description"] = "Subject does not have permission"
+        self.write(json.dumps(response, indent=2, ensure_ascii=False))
+        self.finish()
+
+    def isNewVersion(self):
+        try:
+            os,version=self.getClientVersion()
+            if os=="ios":
+                return LooseVersion(version)>=LooseVersion(self.New_Version_ios)
+            if os=="android":
+                return LooseVersion(version)>=LooseVersion(self.New_Version_android)
+
+            return False
+        except Exception as e:
+            log.info(traceback.format_exc())
+            log.info('BaseHandler.get Exception:%s' % e.message)
+            return False
+
+    def isAddCredits(self):
+        try:
+            os,version=self.getClientVersion()
+            if version:
+                if os=="ios":
+                    return LooseVersion(version)>LooseVersion(options.credits_Version_ios)
+                if os=="android":
+                    return LooseVersion(version)>LooseVersion(options.credits_Version_android)
+            return False
+        except Exception as e:
+            log.info(traceback.format_exc())
+            log.info('BaseHandler.get Exception:%s' % e.message)
+            return False
+
+    def isTicketVersion(self):
+        try:
+            os,version=self.getClientVersion()
+            if version:
+                if os=="ios":
+                    return LooseVersion(version)>=LooseVersion(options.ticket_Version_ios)
+                if os=="android":
+                    return LooseVersion(version)>=LooseVersion(options.ticket_Version_android)
+            return False
+        except Exception as e:
+            log.info(traceback.format_exc())
+            log.info('BaseHandler.get Exception:%s' % e.message)
+            return False
+
+    ###获得当前APP版本号和操作系统
+    def getClientVersion(self):
+        version=self.request.headers.get("Version","")
+        version2=""
+
+        User_Agent=self.request.headers.get("User-Agent","")
+
+        if User_Agent:
+            User_Agent_array=User_Agent.split(" ")
+            if len(User_Agent_array)>=1:
+                version_addtion=User_Agent_array[0]
+                version_addtion_array=version_addtion.split("/")
+                if len(version_addtion_array)==2:
+                    if version_addtion_array[0]=="Fish":
+                        version2=version_addtion_array[1]
+
+        if version2:
+            return "ios",version2
+        else:
+            return "android",version
+
+    def getClientInfo(self):
+        try:
+            client_info={}
+
+            app_version = self.request.headers.get("Version", "")
+            User_Agent = self.request.headers.get("User-Agent", "")
+            if User_Agent:
+                User_Agent_array = User_Agent.split(" ")
+                if len(User_Agent_array) >= 1:
+                    version_addtion = User_Agent_array[0]
+                    version_addtion_array = version_addtion.split("/")
+                    if len(version_addtion_array) == 2:
+                        if version_addtion_array[0] == "Fish":
+                            mobile_type=User_Agent_array[1].strip().replace("(","").replace(";","")
+                            os_version=User_Agent_array[3].replace(";","")
+
+                            os="ios"
+                            client_info = {
+                                "os": os,
+                                "app_version": app_version,
+                                "mobile_type":mobile_type,
+                                "os_version":os_version
+                            }
+                    else:
+                        os = "android"
+                        mobile_model=User_Agent_array[1]
+                        os_version = self.request.headers.get("OS-Version", "")
+                        client_info={
+                            "os":os,
+                            "mobile_model":mobile_model,
+                            "app_version":app_version
+                        }
+                        if os_version:
+                            client_info["os_version"]=os_version
+
+        except Exception as e:
+            client_info = {}
+            log.info('BaseHandler.getClientInfo Exception:%s' % e.message)
+            log.info(traceback.format_exc())
+            return False
+        return client_info
+
+    def getEarnText(self,username):
+        user_key = username+"::daytask"
+        finish = int(RedisClient.get(user_key)or 0)
+        credits_rules_dic = get_credits_rules_dic()
+
+        user_reward_key = username+"::rewardtask"
+        finish_reward = int(RedisClient.get(user_reward_key)or 0)
+        task_count = credits_rules_dic["count"]-finish_reward  #总数中，悬赏任务完成后需要减去
+
+        no_finish_count = task_count-finish
+        earn_text = ""
+        if no_finish_count>0:
+            earn_text = str(no_finish_count)+"个任务未完成"
+        return earn_text
+
+    @property
+    def udid(self):
+        if self._udid is None:
+
+            if self.decode_value_dic:
+                self._udid=self.decode_value_dic.get("udid",None)
+        return self._udid
+
+    @property
+    def decode_value_dic(self):
+        if self._decode_value_dic is None:
+            value = self.request.headers.get("value", None)
+            sign=self.request.headers.get("sign", None)
+            if value and sign:
+                # hashlib.md5(encrypt_str.encode('utf-8')).hexdigest()
+                encrypt_value=hashlib.md5(aes_base64_encrypt(value,options.client_key).encode('utf-8')).hexdigest()
+                # log.info("encrypt_value:"+encrypt_value)
+                # log.info("sign:"+sign)
+                # log.info("value:"+value)
+                if sign==encrypt_value:
+                    self._decode_value_dic=self.value_dic(value)
+                    # log.info("_decode_value_dic11:"+str(self._decode_value_dic))
+
+        return self._decode_value_dic
+
+    def value_dic(self, content):
+        decode_value_dic={}
+        content_array=content.split(";")
+        for content_property in content_array:
+            property_array=content_property.split("=")
+            decode_value_dic[property_array[0]] = property_array[1].split("&")[0]
+        return decode_value_dic
+
+    def getAddressIP(self):
+        ip = ""
+        try:
+            ip = self.request.remote_ip
+        except:
+            ip = ""
+
+        if ip is None or ip == "" or ip == "127.0.0.1":
+            try:
+                ip = self.request.headers['X-Real-Ip']
+            except:
+                pass
+        return ip
+###http get请求
+    @gen.coroutine
+    def request_get_json(self, url, token=None, host=None):
+        headers = {}
+        if host:
+            headers["Host"] = host
+        else:
+            headers["Host"] = options.api_host
+        if token:
+            headers["Authorization"] = " Bearer %s" % (token)
+        request = HTTPRequest(url=url, \
+                              method="GET", \
+                              headers=headers, \
+                              follow_redirects=False, \
+                              request_timeout=3000)
+
+        response = yield gen.Task(AsyncHTTPClient().fetch, request)
+        # log.info("response.code:"+str(response.code))
+        # log.info("response.body:"+str(response.body))
+        raise gen.Return(response)
+
+    def get_banner_ad(self,area):
+        os, version = self.getClientVersion()
+        banner_ad_array=getBanner(area)
+        for banner_ad in banner_ad_array:
+            ziya_url=banner_ad.get("ziya_url", "")
+            if ziya_url and version and LooseVersion(version) >= LooseVersion("2.1.7"):
+                banner_ad["onclick_url"] = ziya_url
+
+        return banner_ad_array
+
+    ###将渔获里的图片和小视频的域名由ziyafish改为ziyadiaoyu
+    def post_fish_to_diaoyu(self, request_body):
+        image_domain_fish = "fishimage.ziyafish.com"
+        image_new_domain = "fishimage.ziyadiaoyu.com"
+
+        video_domain_fish = "sight.ziyafish.com"
+        video_new_domain = "sight.ziyadiaoyu.com"
+
+        page = request_body.get("page", [])
+        if page:
+            for image_obj in page:
+                image_url = image_obj.get("image_url", "")
+                if image_url and image_domain_fish in image_url:
+                    image_obj["image_url"] = image_url.replace(image_domain_fish, image_new_domain)
+
+        video = request_body.get("video", {})
+        if video:
+            video_url = video.get("video_url", "")
+            if video_url and video_domain_fish in video_url:
+                video["video_url"] = video_url.replace(video_domain_fish, video_new_domain)

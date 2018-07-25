@@ -1,0 +1,147 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# @Date    : 2015-05-18 17:41:52
+# @Author  : Your Name (you@example.org)
+# @Link    : http://example.org
+# @Version : $Id$
+from handler_baseHt import BaseHtHandler
+from log import get_logger
+import tornado.web
+from tornado.web import asynchronous
+from tornado.options import options
+import json
+import hashlib
+import datetime
+import hashlib
+from bson import ObjectId
+import random
+import time
+from log import get_logger
+from auth import requires_auth
+from model.advices import Advice
+from model.permissions_ht import Permissions_ht
+import optionsSetting
+from utils.secret import *
+import traceback
+from utils.redis_client import RedisClient
+from utils.mongo_front import MongoFront
+from mongo_field_encoder import MongoFieldEncoder
+from mongolog import MongoHandler
+from mongokit.helpers import totimestamp, fromtimestamp
+from utils.token_im import TokenService
+from tornado.httpclient import HTTPRequest
+from utils.mongo_client import MongoClient
+import pymongo
+
+try:
+    from tornado.curl_httpclient import CurlAsyncHTTPClient as AsyncHTTPClient
+except ImportError:
+    from tornado.simple_httpclient import SimpleAsyncHTTPClient as AsyncHTTPClient
+log = get_logger()
+
+
+class BizUserTypeHandler(BaseHtHandler):
+
+    @requires_auth
+    @asynchronous
+    def post(self):
+        log.info("BizUserTypeHandler.post:"+self.request.body)
+        body_dic = json.loads(self.request.body,encoding="utf-8")
+        username = str(body_dic.get("username",None))
+        user_type = str(body_dic.get("user_type",None))
+        user_level = str(body_dic.get("user_level",None))
+        settlement_cycle = str(body_dic.get("settlement_cycle",1))
+        response={}
+        if username is None or user_type is None:
+            self.fire_response_bad_response()
+        lookup = {
+            "username":username
+        }
+        check_index=0
+        try:
+            user_type = int(user_type)
+            check_index=1
+            user_level = int(user_level)
+            check_index=2
+            if user_level!=0:
+                settlement_cycle = int(settlement_cycle)
+        except:
+            if check_index==0:
+                self.fire_response_error_info("user_type error","user_type is not num")
+                return
+            if check_index==1:
+                self.fire_response_error_info("user_level error","user_level  is not num")
+                return
+            if check_index==2:
+                self.fire_response_error_info("settlement_cycle error","settlement_cycle  is not num")
+                return
+        # user_type  0：精品 1：待定 2：取消 3：恢复
+        unset={}
+        # 取消商家
+        if user_type==2:
+            update = {
+                "status": 3
+            }
+            unset = {
+                "user_type": "",
+                "user_level": "",
+                "settlement_cycle": "",
+            }
+        # 恢复商家
+        elif user_type==3:
+            update= {
+                "status": 1
+            }
+        # 精品、待定商家
+        else:
+            update = {
+                "user_type": user_type,
+                "status":1
+            }
+            # 商家星级
+            update["user_level"] = user_level
+            # 结算周期
+            update["settlement_cycle"] = settlement_cycle
+
+        try:
+            if update:
+                update_val = {
+                    "$set":update
+                }
+            if unset:
+                update_val["$unset"]= unset
+            # 修改商家数据库
+            MongoFront.update(lookup,update_val,"biz_user")
+            response["result"] = "ok"
+            self.write(json.dumps(response, indent=2, ensure_ascii=False,
+                                  cls=MongoFieldEncoder))
+            self.finish()
+        except:
+            self.fire_response_error_info("mongo error","mongo error")
+
+        # 修改用户的商家标识
+        if user_type==2:
+            user_update = {
+                "$unset": {
+                    "biz_role": ""
+                }
+            }
+        else:
+            user_update = {
+                "$set": {
+                    "biz_role": "biz_manager"
+                }
+            }
+        MongoFront.update(lookup, user_update, "users")
+
+
+    def fire_response_bad_response(self):
+        """
+        返回登录请求错误响应
+        """
+        self.set_status(400)
+        response = {}
+        response["error"] = "invalid_grant"
+        response["error_description"] = "invalid username or password"
+        self.write(json.dumps(response, indent=2, ensure_ascii=False))
+        self.finish()

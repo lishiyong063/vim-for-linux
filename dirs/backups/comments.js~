@@ -1,0 +1,961 @@
+var tool_type_dic=new Map();
+var tool_type_array=new Array()
+function getToolType(){
+    var request_url=fishing_admin_Url+"/proxy_server?server_url="+fishing_front_Url+"/tools/category";
+    var result=getRequest(request_url,'','GET','','')
+    for (i in result.entities){
+        var tool_type_json=result.entities[i];
+        var code=tool_type_json["code"];
+        var value=tool_type_json["value"]
+        tool_type_array.push(tool_type_json);
+        tool_type_dic.put(code,value)
+    }
+}
+
+function vest_change(){
+    $('#content').focus();
+}
+
+function get_posts_detail(){
+    $("#loading").show()
+    $("#image_list").hide()
+    post_id = queryString("post_id")
+
+    request_url=fishing_admin_Url+"/proxy_server?server_url="+fishing_front_Url+"/posts/"+post_id
+    result=getRequest(request_url,'','GET','','')
+    if (result.error){
+        alert("帖子不存在")
+        return
+    }
+
+    posts = result.entities[0]
+    post_detail=result.entities[0]
+
+    var image_html_template ='<div class="image_div"><img src="{image_url}" class="img-square" />' +
+        '<div class="closeLayer" onclick=delete_image("{post_id}","{image_url}") > <img  style="width:20px;height:20px;cursor:pointer;" src="images/delete-image.png"> </div></div><div style="clear:both"></div>'
+    var image_html = ""
+    var post_content = ""
+    if (posts.content){
+        post_content=posts.content
+    }
+    var post_label = "";
+    if (posts.label){
+        post_label=posts.label
+    }
+
+    var nick = ""
+    var username = ""
+    if (posts.actor){
+        nick = posts.actor.nick
+        username=posts.actor.username
+    }
+
+    var address = "";
+    if(posts.gps_info){
+        if(posts.gps_info.address){
+            address = posts.gps_info.address
+        }
+    }
+
+    image_html = '<div><strong>渔获发布者：</strong>' + nick + '</div>'
+    if (posts.tag_tool && posts.tag_tool==1){
+        ////带标签的装备
+        var title=posts.title?posts.title:"";
+        var desc=posts.desc?posts.desc:"";
+        var price=posts.price?posts.price:"";
+        var oldth=posts.oldth?posts.oldth:"";
+        var contact_tel=posts.contact_tel?posts.contact_tel:"";
+
+        image_html+='<div><strong>装备标题：</strong><span id="title_text">' + title + '</span><input type="text" id="title_input"  style="display: none" value="'+title+'" style="width:320px;">'
+            + '&nbsp;&nbsp;&nbsp;<input type="button" value="修改" onclick="toEdit(\'title\')" id="title_button"><input hidden type="button" value="提交" onclick="to_Edit_submit(\'title\')" id="title_submit"></div>'
+
+        image_html+='<div><strong>装备描述：</strong><span id="desc_text">' + desc + '</span><textarea id="desc_input"  style="display: none" cols="80">' + desc + '</textarea>'
+            + '&nbsp;&nbsp;&nbsp;<input type="button" value="修改" onclick="toEdit(\'desc\')" id="desc_button"><input hidden type="button" value="提交" onclick="to_Edit_submit(\'desc\')" id="desc_submit"></div>'
+
+        var oldth_str=""
+        if (oldth==10){
+            oldth_str="全新";
+        }else{
+            oldth_str=oldth+"成新";
+        }
+        image_html+='<div><strong>新旧程度：</strong><span id="oldth_text">' + oldth_str + '</span><input type="text" value="'+oldth+'"  id="oldth_input"  style="display: none" style="width:320px;">'
+            + '&nbsp;&nbsp;&nbsp;<input type="button" value="修改" onclick="toEdit(\'oldth\')" id="oldth_button"><input hidden type="button" value="提交" onclick="to_Edit_submit(\'oldth\')" id="oldth_submit"></div>'
+
+        image_html+='<div><strong>装备价格：</strong><span id="price_text">' + price + '</span><input type="text" id="price_input" value="'+price+'"  style="display: none" style="width:320px;">'
+            + '&nbsp;&nbsp;&nbsp;<input type="button" value="修改" onclick="toEdit(\'price\')" id="price_button"><input hidden type="button" value="提交" onclick="to_Edit_submit(\'price\')" id="price_submit"></div>'
+        image_html+='<div><strong>联系电话：</strong><span id="content_text">' + contact_tel + '</span></div>'
+
+    }else {
+        ////渔获和旧版本装备
+        image_html += '<div><strong>渔获内容：</strong><span id="content_text">' + post_content + '</span><textarea id="content_input"  style="display: none" cols="80">' + post_content + '</textarea>'
+            + '&nbsp;&nbsp;&nbsp;<input type="button" value="修改" onclick="toEdit(\'content\')" id="content_button"><input hidden type="button" value="提交" onclick="to_Edit_submit(\'content\')" id="content_submit"></div>'
+        image_html += '<div><strong>标签：</strong><span id="label_text">' + post_label + '</span><textarea id="label_input"  style="display: none" cols="80">' + post_label + '</textarea>'
+            + '&nbsp;&nbsp;&nbsp;<input type="button" value="修改" onclick="toEdit(\'label\')" id="label_button"><input hidden type="button" value="提交" onclick="to_Edit_submit(\'label\')" id="label_submit"></div>'
+        image_html += '<div><strong>地址：</strong><span id="address_text">' + address + '</span>'
+            + '&nbsp;&nbsp;&nbsp;<input type="button" value="修改" onclick="layer_show(\'800\',\'\',\'地图详情\',\'post-map-modify.html?post_id='+post_id+'\')" id="address_button">'
+    }
+    if (posts.tool_type) {
+        image_html += '<div><strong>装备分类：</strong><span id="tool_type_text">' + getToolTypeName(posts.tool_type) + '</span></div><input type="button" value="修改" onclick="toEdit(\'content\')" id="content_button">'
+    }
+
+
+    if (posts.at_user_list && posts.at_user_list.length>0){
+
+        image_html+='<div><strong>@用户列表：</strong>'
+        for (j in posts.at_user_list) {
+            var at_user_info = posts.at_user_list[j];
+            if (at_user_info.nick){
+                image_html+='<span id="at_usr">' +'<u style="cursor:pointer" class="text-primary" title="查看用户资料" onclick="layer_show(\'1000\',\'\',\''+at_user_info.nick+'\',\'user-show.html?username='+at_user_info.username+'\')">@'+ at_user_info.nick+'</u>' + '</span>&nbsp;&nbsp;&nbsp;&nbsp;'
+            }
+        }
+        image_html+='</div>'
+    }
+    var image_group_html=""
+    if (posts.page){
+        page = posts.page
+
+        if(page.length>0){
+            image_url=page[0].image_url;
+            image_group_html = image_group_html +'<div><strong>渔获：</strong><br>'
+            for(var i=0;i<page.length ;i++){
+
+                //if(i<3) {
+                image_group_html = image_group_html +"&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;" +image_html_template.replace("{post_id}", post_id).replaceAll("{image_url}", page[i].image_url+"?imageMogr2/quality/30!")        //}else{
+                  //  break
+                //}
+
+                if (i>0 && (i+1)%3==0){
+                    image_group_html=image_group_html+'<div style="clear:both"></div><br>'
+                }
+            }
+
+            image_group_html = image_group_html +'</div>'
+
+        }
+    }
+
+    var image_display=""
+    if(posts.type == "video"){
+        var img = image_url;
+        var vid = posts.video.video_url;
+        var file_name_array=vid.split("/");
+        var file_name=file_name_array[file_name_array.length-1]
+        image_display = '<div class="for_fish_video"><img src="'+img+'" video-path="'+vid+'" /><div class="play_video"></div></div>';
+    }
+
+    $("#image_list").append(image_html+image_group_html+image_display)
+    $("#loading").hide()
+    $("#image_list").show()
+
+    if(posts.product_detail_array!=undefined){
+        var item_url=''
+        var ziya_url=''
+        var price=''
+        var sale_num=''
+        var image_url=''
+        var sale_num=''
+
+        product_detail = (posts.product_detail_array[0])
+        image_url = product_detail["images"][0]
+        item_url = product_detail["item_url"]
+        //var link_template = "<div>商品链接：<a target='_blank' href='{item_url}'>"+item_url+"</a></div>"
+        ////商品链接
+        var link_template = '<div><strong>商品链接：</strong><span id="url_text"><a target="_blank" href="{item_url}">' + item_url + '</a></span><textarea id="url_input"  style="display: none" cols="100" rows="3">' + item_url + '</textarea>'
+        + '&nbsp;&nbsp;&nbsp;<input type="button" value="修改" onclick="toEdit(\'url\')" id="url_button">&nbsp;&nbsp;&nbsp;<input type="button" value="删除" onclick="toDelete(\'url\')" id="url_delete">&nbsp;&nbsp;&nbsp;<input hidden type="button" value="导入" onclick="import_link(\'url\',\'{username}\')" id="url_import">&nbsp;&nbsp;&nbsp;<input hidden type="button" value="提交" onclick="to_edit_link_url(\'url\')" id="url_submit"></div>'
+        link_template =link_template+'<div style="float: left"><img src="{image_url}" width="100" height="50" onclick="window.open(\'{item_url}\')"/></div>'
+
+        name = product_detail["name"]
+
+        if (product_detail.ziya_url){
+            ziya_url = product_detail.ziya_url
+        }
+        if (product_detail.price){
+            price = product_detail.price
+            link_html =link_template +"<div>"+name+"</div><div style='color: red'>"+price+"</div>"
+        }
+        if (product_detail.sale_num){
+            sale_num = product_detail.sale_num
+            link_html =link_html +"<div>有<font color='red'>"+sale_num+"</font>人已跟随购买</div>"
+        }
+
+        link_html =link_html +"<div style='clear:both'></div><div>ziya_url："+ziya_url+"</div>"
+        link_html = link_html.replace("{image_url}",image_url+"?imageMogr2/quality/30!").replaceAll("{item_url}",item_url).replace("{username}",username)
+        $("#link_info").append(link_html)
+    }
+
+    if(posts.comment) {
+        comments_html=getCommentListHtml(posts.comment.content)
+        $('#commentList').html(comments_html);
+        if(posts.comment&&posts.comment.cursor){
+            cursor = posts.comment.cursor
+            html = '<div id="more'+cursor+'"><span  style="color:#00F" onclick=getMoreComment('+cursor+')>点击获取更多评论</span></div>'
+            $('#commentList').append(html)
+
+        }
+
+
+    }
+
+
+
+}
+function getToolTypeName(tool_type_array){
+    var tool_type_list_text="";
+    for(i in tool_type_array)
+        tool_type_list_text+=tool_type_dic.get(tool_type_array[i]);
+    return tool_type_list_text
+}
+function toEdit(el_name){
+    $("#"+el_name+"_text").hide()
+    $("#"+el_name+"_button").hide()
+    $("#"+el_name+"_delete").hide()
+    $("#"+el_name+"_input").show()
+    $("#"+el_name+"_submit").show()
+    $("#"+el_name+"_import").show()
+}
+
+function toDelete(){
+    var msg = "您真的确定要删除链接吗？\n\n请确认！";
+    if (confirm(msg)==true){
+        d={
+            "post_id":queryString("post_id")
+        }
+        //alert(JSON.stringify(d))
+        request_url = fishing_admin_Url + "/product_url_detail"
+        reusult = getRequest(request_url, d, 'delete', '', '修改成功')
+        $("#link_info").html("")
+    }
+}
+
+function import_link(el_name,username){
+    var link_new = $("#"+el_name+"_input").val()
+    d={
+        "url":link_new,
+        "username":username
+    }
+    var request_url = fishing_admin_Url+"/product_url_detail"
+    token = getTokenByUsername(username)
+    result = getRequest(request_url, d, 'post', token, '')
+    if (result){
+        var product_detail = result.entities[0]
+        var item_url=''
+        var ziya_url=''
+        var price=''
+        var sale_num=''
+        var image_url=''
+        var sale_num=''
+
+        image_url = product_detail["images"][0]
+        item_url = product_detail["item_url"]
+        //var link_template = "<div>商品链接：<a target='_blank' href='{item_url}'>"+item_url+"</a></div>"
+        ////渔获和旧版本装备
+        var link_template = '<div><strong>商品链接：</strong><span id="url_text"><a target="_blank" href="{item_url}">' + item_url + '</a></span><textarea id="url_input"  style="display: none" cols="100" rows="3">' + item_url + '</textarea>'
+            + '&nbsp;&nbsp;&nbsp;<input type="button" value="提交" onclick="to_edit_link_url(\'{username}\',\'{link_new}\')" id="url_submit"></div>'
+        link_template =link_template+'<div style="float: left"><img src="{image_url}" width="100" height="50" onclick="window.open(\'{item_url}\')"/></div>'
+
+        name = product_detail["name"]
+
+        if (product_detail.ziya_url){
+            ziya_url = product_detail.ziya_url
+        }
+        if (product_detail.price){
+            price = product_detail.price
+            link_html =link_template +"<div>"+name+"</div><div style='color: red'>"+price+"</div>"
+        }
+        if (product_detail.sale_num){
+            sale_num = product_detail.sale_num
+            link_html =link_html +"<div>有<font color='red'>"+sale_num+"</font>人已跟随购买</div>"
+        }
+
+        link_html =link_html +"<div style='clear:both'></div><div>ziya_url："+ziya_url+"</div>"
+        link_html = link_html.replace("{image_url}",image_url+"?imageMogr2/quality/30!").replaceAll("{item_url}",item_url)
+            .replaceAll("{username}",username).replace("{product_detail}",product_detail).replace("{link_new}",link_new)
+        $("#link_info").html(link_html)
+    }else{
+        alert("链接地址无法解析")
+    }
+}
+
+function to_Edit_submit(el_name){
+    d={
+        "update":el_name,
+        "post_id":queryString("post_id"),
+        "value":$("#"+el_name+"_input").val()
+    }
+    //alert(JSON.stringify(d))
+    request_url = fishing_admin_Url + "/posts"
+    reusult = getRequest(request_url, d, 'PUT', '', '修改成功')
+}
+
+function to_edit_link_url(username,link_url){
+    d={
+        "username":username,
+        "url":link_url,
+        "post_id":queryString("post_id")
+    }
+    //alert(JSON.stringify(d))
+    request_url = fishing_admin_Url + "/product_url_detail"
+    reusult = getRequest(request_url, d, 'PUT', '', '修改成功')
+}
+
+is_vest="<span style='color:#f00;'>（小号）</span>"
+function getCommentListHtml(contents){
+    comments_html = ''
+    comments_html_template = '<div {indent} comment_group="{comment_group_comment_id}" id="comm_{comment_id}"><li class="item cl"> <a href="#"><i class="avatar size-L radius"><img title="查看该用户资料"  src={avatar_url} onclick="layer_show(\'800\',\'\',\'{nick}\',\'user-show.html?username={username}\')"></i></a>'
+        + '<div class="comment-main">'
+        + '<header class="comment-header">'
+        + '<div class="comment-meta"><a class="comment-author" href="#">{nick}</a>{vest_flg} {act_type}于'
+        + '<time >{created}</time>'
+        +'<div  style="float:right"><input {reply_button_display} type="button" value="回复" onclick="pre_reply(\'{nick}\',\'{comment_id}\')"/>'
+        +'&nbsp;&nbsp;<input style="float:right" type="button" value="删除" onclick="del_reply(\'{has_replay}\',\'{comment_id}\')"/>'
+        +'</div>'
+        + ' </div>'
+        + ' </header>'
+        + ' <div class="comment-body">'
+        + ' <p>{content}</p>'
+        + '</div>'
+        + '</div>'
+        + '</li></div>'
+    reply__html_template='<div style="padding-left:100px">'
+        +comments_html_template+'</div>'
+
+    username_array=new Array()
+    for (i in contents){
+        content = contents[i]
+        if (content.actor){
+            actor = content.actor
+            username = actor.username
+            username_array.push(username)
+        }
+    }
+
+    var user_type_dic=new Map()
+    if (username_array.length>0)
+    {
+        request_url = fishing_admin_Url + "/user_type?usernames="+username_array.join(",")
+        result = getRequest(request_url, '', 'GET', '', '')
+        if (result.entities){
+            user_type_array=result.entities
+            for (i in user_type_array){
+                user_type_json=user_type_array[i]
+                user_type_dic.put(user_type_json.username,user_type_json.user_type)
+
+            }
+        }
+    }
+
+    for (i in contents) {
+        content = contents[i]
+        nick = ''
+        avatar_url = ''
+        username = ''
+        if (content.actor) {
+            actor = content.actor
+            nick = actor.nick
+            avatar_url = actor.avatar_url+"?imageMogr2/quality/30!";
+            username = actor.username
+        }
+        comment_id=''
+        if(content._id){
+            comment_id = content._id
+        }
+        created = ''
+        if (content.created) {
+            created = new Date(content.created).pattern("yyyy-MM-dd HH:mm:ss")
+        }
+        con = ''
+        if (content.content) {
+            con = content.content
+        }
+        vest_flg=""
+        if (user_type_dic.containsKey(username)){
+            user_type=user_type_dic.get(username)
+            if (user_type && user_type=="2"){
+                vest_flg=is_vest
+            }
+        }
+
+        comment_group_comment_id=comment_id;
+
+        comments_html = comments_html + comments_html_template.replaceAll("{comment_id}",comment_id).replace("{avatar_url}", avatar_url).replaceAll("{nick}", nick)
+                .replace("{created}", created).replace("{content}", con).replace("{username}",username).replace('{has_replay}',"1")
+                .replace('{act_type}','评论').replace('{indent}',"").replace('{reply_button_display}',"")
+                .replace('{comment_group_comment_id}',comment_group_comment_id).replace("{vest_flg}",vest_flg);
+
+        if(content.reply){
+            reply = content.reply
+            for(i in reply){
+                content = reply[i]
+                nick = ''
+                avatar_url = ''
+                username = ''
+                if (content.actor) {
+                    actor = content.actor
+                    nick = actor.nick
+                    avatar_url = actor.avatar_url+"?imageMogr2/quality/30!";
+                    username = actor.username
+                }
+                comment_id=''
+                if(content._id){
+                    comment_id = content._id
+                }
+                created = ''
+                if (content.created) {
+                    created = new Date(content.created).pattern("yyyy-MM-dd HH:mm:ss")
+                }
+                con = ''
+                if (content.content) {
+                    con = content.content
+                }
+
+                vest_flg_reply=""
+                if (user_type_dic.containsKey(username)){
+                    user_type=user_type_dic.get(username)
+                    if (user_type && user_type=="2"){
+                        vest_flg_reply=is_vest
+                    }
+                }
+
+                //comments_html = comments_html + reply__html_template.replace('<input style="float:right" type="button" value="回复" onclick="pre_reply(\'{nick}\',\'{comment_id}\')"/>',"")
+                //        .replace("评论","回复").replace("{avatar_url}", avatar_url).replaceAll("{nick}", nick)
+                //        .replace("{created}", created).replace("{content}", con);
+
+                comments_html = comments_html + comments_html_template.replaceAll("{comment_id}",comment_id).replace("{avatar_url}", avatar_url).replaceAll("{nick}", nick)
+                        .replace("{created}", created).replace("{content}", con).replace("{username}",username).replace('{has_replay}',"0")
+                        .replace('{act_type}','回复').replace('{indent}','style="padding-left:100px"')
+                        .replace('{reply_button_display}','style="display: none"')
+                        .replace('{comment_group_comment_id}',comment_group_comment_id).replace('{vest_flg}',vest_flg_reply);
+            }
+        }
+    }
+
+    return comments_html;
+}
+
+function down(x,y){ return (x.d > y.d) ? 1 : -1 }
+
+function myVestOrderByNear(post){
+
+    var request_url=fishing_admin_Url+"/vestSearchOrderByPostDistance?post_id="+post._id
+
+    var coordinates=""
+    if(post.gps_info){
+    if (post.gps_info.country != "" && post.gps_info.location && post.gps_info.location.coordinates){
+        coordinates = post.gps_info.location.coordinates
+    }}
+    if (coordinates){
+        request_url=request_url+"&longitude="+coordinates[0]+"&latitude="+coordinates[1]
+    }
+
+    var result=getRequest(request_url,'','GET','','')
+    var vests = result.entities
+    var username_array=new Array()
+
+    var near_vest_array=new Array()
+    var no_distance_array=new Array()
+
+    if (vests.length>0) {
+
+        $("#myVests").prepend('<option value="-1" selected>请选择小号</option>')
+        for (i in vests) {
+            //vest_map.put(vest.username,vest)
+
+            var vest = vests[i]
+
+            if (isOfficeAccount(vest.username)){
+                continue;
+            }
+            city = ""
+            if (vest.gps_info && vest.gps_info.city) {
+                city = "  (" + vest.gps_info.city + ")"
+            }
+            comment_info=""
+            value_style=""
+            if (vest.is_comment && vest.is_comment==1) {
+                value_style='class="c-red"'
+                comment_info="   评论数:"+vest.comment_count+"   最后评论时间:"+new Date(vest.comment_created).pattern("yyyy-MM-dd HH:mm")
+            }
+            if (vest.post_count){
+                comment_info=comment_info+"  已发帖："+vest.post_count+"个 "
+            }
+            if (vest.last_post_date){
+                comment_info=comment_info+"  最近发帖时间："+new Date(vest.last_post_date).pattern("yyyy-MM-dd")
+            }
+
+            $("#myVests").append('<option value="' + vest.username+'" '+value_style + '>' + vest.nick + city+comment_info + '</option>')
+
+
+        }
+        $("#myVests").append(getOfficeAccountHtml())
+    }
+}
+
+function splice_near_array(coordinates,vest,near_vest_array){
+    var index=0
+    var vest_coordinates=vest.gps_info.location.coordinates
+    var distance=getDistance(coordinates,vest_coordinates)
+    //for(var i=0;i<near_vest_array.length;i++){
+    //    vest_tmp=near_vest_array[i]
+    //    vest_tmp_coordinates=vest_tmp.gps_info.location.coordinates
+    //    var vest_tmp_distance=getDistance(coordinates,vest_tmp_coordinates)
+    //    if (distance<vest_tmp_distance) {
+    //        index = i
+    //        break;
+    //    }
+    //}
+    //near_vest_array.splice(index, 0, vest);
+    vest["d"]=distance
+    near_vest_array.push(vest)
+}
+
+function getToken()
+{
+    username = $('#myVests').val()
+    if(username =='') return '';
+    var d={"grant_type":"password","username":username}
+    request_url=fishing_admin_Url+"/login_front"
+    user_data=""
+
+    reusult=getRequest(request_url,d,'POST','','')
+
+    access_token=reusult.access_token
+
+    return access_token;
+}
+
+function getTokenByUsername(username)
+{
+    if(username =='') return '';
+    var d={"grant_type":"password","username":username}
+    request_url=fishing_admin_Url+"/login_front"
+    user_data=""
+
+    reusult=getRequest(request_url,d,'POST','','')
+
+    access_token=reusult.access_token
+
+    return access_token;
+}
+
+function pre_reply(nick,comment_id){
+    //$("#content").attr("placeholder","@ "+nick)
+    $("#content").val("@ "+nick+" ")
+    $('#content').focus()
+    $('#comment_id').val(comment_id)
+}
+
+function clear_placeholder() {
+    if ($("#content").val() == "") {
+        $("#content").attr("placeholder", "")
+        $('#comment_id').val("")
+    }
+}
+
+
+$("#comment").click(function(){
+    var nowTime = new Date().getTime();
+    var clickTime = $(this).attr("ctime");
+    if( clickTime != 'undefined' && (nowTime - clickTime < 4000)){
+        return false;
+    }else{
+        $(this).attr("ctime",nowTime);
+        comment()
+    }
+});
+
+
+$("#sold_out").click(function(){
+    if (confirm("确认要下架？")) {
+        post_id = queryString("post_id")
+        var d={
+            "post_id":post_id
+        }
+        request_url=fishing_admin_Url+'/post_sold_out'
+        reusult = getRequest(request_url, d, 'POST', '', '')
+        alert('下架成功',1,1);
+        parent.remove_curr_tr(post_id)
+
+    }
+});
+
+function comment(){
+    myVests=$('#myVests').val()
+    if (myVests=="-1"){
+        alert("请选择小号")
+        return;
+    }
+
+
+    post_id = queryString("post_id")
+    token = getToken()
+    if (token==''){
+        alert("请选择一个小号")
+        return
+    }
+    content = $("#content").val()
+    if(content==""){
+        alert("请输入内容")
+        return
+    }
+    comment_id = $('#comment_id').val()
+    if(comment_id=="") {
+        d = {
+            "post_id": post_id,
+            "content": content
+        }
+        request_url = fishing_admin_Url + "/proxy_server?server_url=" + fishing_front_Url + "/comment"
+        var result = getRequest(request_url, d, 'POST', token, '评论成功')
+
+        if (result.entities){
+            var entities=result.entities
+            if (entities.length==1){
+                submit_comment=entities[0]
+                if (submit_comment){
+                    redraw_single_comment(submit_comment)
+                }
+
+            }
+
+        }
+
+
+    }else{
+        d = {
+            "to": post_id,
+            "content": content,
+            "to_index":[comment_id]
+        }
+        request_url = fishing_admin_Url + "/proxy_server?server_url=" + fishing_front_Url + "/reply"
+        var result = getRequest(request_url, d, 'POST', token, '回复成功')
+
+        if (result.entities) {
+            var entities = result.entities
+            if (entities.length == 1) {
+                entity=entities[0]
+                if (entity.reply){
+                    redraw_single_reply(entity.reply)
+                }
+
+            }
+        }
+    }
+    $('#content').val('')
+    $('#comment_id').val('')
+    //location.reload()
+}
+
+
+function redraw_single_comment(comment){
+    comments_html=""
+    comments_html_template = '<div {indent} comment_group="{comment_group_comment_id}" id="comm_{comment_id}"><li class="item cl"> <a href="#"><i class="avatar size-L radius"><img title="查看该用户资料"  src={avatar_url} onclick="layer_show(\'1260\',\'\',\'{nick}\',\'user-show.html?username={username}\')"></i></a>'
+        + '<div class="comment-main">'
+        + '<header class="comment-header">'
+        + '<div class="comment-meta"><a class="comment-author" href="#">{nick}</a>{vest_flg} {act_type}于'
+        + '<time >{created}</time>'
+        +'<div  style="float:right"><input {reply_button_display} type="button" value="回复" onclick="pre_reply(\'{nick}\',\'{comment_id}\')"/>'
+        +'&nbsp;&nbsp;<input style="float:right" type="button" value="删除" onclick="del_reply(\'{has_replay}\',\'{comment_id}\')"/>'
+        +'</div>'
+        + ' </div>'
+        + ' </header>'
+        + ' <div class="comment-body">'
+        + ' <p>{content}</p>'
+        + '</div>'
+        + '</div>'
+        + '</li></div>'
+
+    nick = ''
+    avatar_url = ''
+    username = ''
+    if (comment.actor) {
+        actor = comment.actor
+        nick = actor.nick
+        avatar_url = actor.avatar_url
+        username = actor.username
+    }
+    comment_id=''
+    if(comment._id){
+        comment_id = comment._id
+    }
+    created = ''
+    if (comment.created) {
+        created = new Date(comment.created).pattern("yyyy-MM-dd HH:mm:ss")
+    }
+    con = ''
+    if (comment.content) {
+        con = comment.content
+    }
+    vest_flg=is_vest
+
+    comment_group_comment_id=comment_id;
+
+    comments_html = comments_html + comments_html_template.replaceAll("{comment_id}",comment_id).replace("{avatar_url}", avatar_url).replaceAll("{nick}", nick)
+            .replace("{created}", created).replace("{content}", con).replace("{username}",username).replace('{has_replay}',"1")
+            .replace('{act_type}','评论').replace('{indent}',"").replace('{reply_button_display}',"")
+            .replace('{comment_group_comment_id}',comment_group_comment_id).replace("{vest_flg}",vest_flg);
+
+    $('#commentList').prepend(comments_html)
+}
+
+
+function redraw_single_reply(reply) {
+    comments_html=""
+    comments_html_template = '<div {indent} comment_group="{comment_group_comment_id}" id="comm_{comment_id}"><li class="item cl"> <a href="#"><i class="avatar size-L radius"><img title="查看该用户资料"  src={avatar_url} onclick="layer_show(\'1260\',\'\',\'{nick}\',\'user-show.html?username={username}\')"></i></a>'
+        + '<div class="comment-main">'
+        + '<header class="comment-header">'
+        + '<div class="comment-meta"><a class="comment-author" href="#">{nick}</a>{vest_flg} {act_type}于'
+        + '<time >{created}</time>'
+        +'<div  style="float:right"><input {reply_button_display} type="button" value="回复" onclick="pre_reply(\'{nick}\',\'{comment_id}\')"/>'
+        +'&nbsp;&nbsp;<input style="float:right" type="button" value="删除" onclick="del_reply(\'{has_replay}\',\'{comment_id}\')"/>'
+        +'</div>'
+        + ' </div>'
+        + ' </header>'
+        + ' <div class="comment-body">'
+        + ' <p>{content}</p>'
+        + '</div>'
+        + '</div>'
+        + '</li></div>'
+
+    var to_comment_id=""
+    for(i in reply) {
+        content = reply[i]
+
+        nick = ''
+        avatar_url = ''
+        username = ''
+        if (content.actor) {
+            actor = content.actor
+            nick = actor.nick
+            avatar_url = actor.avatar_url
+            username = actor.username
+        }
+        comment_id = ''
+        if (content._id) {
+            comment_id = content._id
+        }
+        created = ''
+        if (content.created) {
+            created = new Date(content.created).pattern("yyyy-MM-dd HH:mm:ss")
+        }
+        con = ''
+        if (content.content) {
+            con = content.content
+        }
+
+        vest_flg_reply = is_vest
+
+        to_comment_id = content.to_comment_id
+
+        comments_html = comments_html + comments_html_template.replaceAll("{comment_id}", comment_id).replace("{avatar_url}", avatar_url).replaceAll("{nick}", nick)
+                .replace("{created}", created).replace("{content}", con).replace("{username}", username).replace('{has_replay}', "0")
+                .replace('{act_type}', '回复').replace('{indent}', 'style="padding-left:100px"')
+                .replace('{reply_button_display}', 'style="display: none"')
+                .replace('{comment_group_comment_id}', comment_group_comment_id).replace('{vest_flg}', vest_flg_reply);
+
+        $('#comm_'+comment_id).remove()
+    }
+
+    if (comments_html){
+
+        $('#comm_'+to_comment_id).after(comments_html)
+    }
+
+
+
+}
+
+function getToken()
+{
+    username = $('#myVests').val()
+    if(username =='') return '';
+    var d={"grant_type":"password","username":username}
+    request_url=fishing_admin_Url+"/login_front"
+    user_data=""
+
+    reusult=getRequest(request_url,d,'POST','','')
+
+    access_token=reusult.access_token
+
+    return access_token;
+}
+
+
+function getMoreComment(last_cursor){
+    more_id = "#more"+last_cursor
+    $(more_id).empty()
+    post_id = queryString("post_id")
+    request_url = fishing_admin_Url + "/proxy_server?server_url=" + fishing_front_Url + "/comment?post_id="+post_id+"&cursor="+last_cursor
+    result=getRequest(request_url,'','GET','','')
+    entities = result.entities
+
+
+    comments_html=getCommentListHtml(entities)
+    $('#commentList').append(comments_html);
+    if(result.cursor){
+        cursor = result.cursor
+        html = '<div id="more'+cursor+'"><span  style="color:#00F" onclick=getMoreComment('+cursor+')>点击获取更多评论</span></div>'
+        $('#commentList').append(html)
+
+    }
+
+
+}
+
+function del_reply(is_comment,comment_id){
+    if (is_comment=="1"){
+        if(window.confirm('您删除的是一个评论，如果该评论有回复，回复也会被删除，确定删除吗？')){
+
+        }else{
+            return;
+        }
+    }
+    d = {
+        "comment_id": comment_id,
+        "content": content,
+        "to_index":[comment_id]
+    }
+    request_url = fishing_admin_Url + "/comments?comment_id="+comment_id
+    reusult = getRequest(request_url, d, 'delete', '', '')
+
+
+    if (is_comment=="1"){
+        alert("评论删除成功")
+        $("div[comment_group="+comment_id+"]").remove()
+    }else {
+        alert("回复删除成功")
+        $("#comm_"+comment_id).remove()
+    }
+
+}
+
+
+function delete_image(post_id,image_url){
+    if( confirm('确定要删除点击的图片？') ) {
+
+        if (image_url.indexOf("?")>0){
+            image_url=image_url.substr(0,image_url.indexOf("?"))
+        }
+        d = {
+            "post_id": post_id,
+            "image_url": image_url
+        }
+        request_url = fishing_admin_Url + "/delete_image"
+        reusult = getRequest(request_url, d, 'post', '', '')
+        location.reload()
+        layer.msg('图片删除成功', 1, 1);
+    }
+
+}
+
+
+
+//图片上传与截图开始
+$("#file").change(function(){
+    var objUrl = getObjectURL(this.files[0]) ;
+    console.log("objUrl = "+objUrl) ;
+    if (objUrl) {
+        $("#img0").attr("src", objUrl) ;
+
+    }
+}) ;
+
+
+//建立一個可存取到該file的url
+function getObjectURL(file) {
+    var url = null ;
+    if (window.createObjectURL!=undefined) { // basic
+        url = window.createObjectURL(file) ;
+    } else if (window.URL!=undefined) { // mozilla(firefox)
+        url = window.URL.createObjectURL(file) ;
+    } else if (window.webkitURL!=undefined) { // webkit or chrome
+        url = window.webkitURL.createObjectURL(file) ;
+    }
+    return url ;
+}
+
+
+$("#file_button").click(function(){
+    $("#file").trigger("click")
+});
+
+$("#img0").load(function(){
+    $("#image_div").show()
+});
+
+
+var image_ary = new Array();
+var width_ary =  new Array();
+var height_ary = new Array();
+$("#upload").click(function(){
+
+    request_url = fishing_admin_Url + '/images_upload?type=1'
+
+
+    $.ajaxFileUpload({
+        url: request_url,
+        type: 'get',
+        secureuri: false, //一般设置为false
+        fileElementId: 'file', // 上传文件的id、name属性名
+        dataType: 'json',//返回值类型，一般设置为json、application/json
+        contentType: "application/json; charset=utf-8",
+        success:function (data, status) {
+            var filePath = data.filename
+            var width = data.width
+            var height = data.height
+            image_ary.push(filePath)
+            width_ary.push(width)
+            height_ary.push(height)
+            save_image()
+        },
+        error:function (data, status, e) {
+            alert("服务器异常，请刷新页面重试")
+        }
+    });
+
+})
+
+
+function save_image(){
+    post_id = queryString("post_id")
+    d = {
+        "post_id":post_id,
+        "image_div":{
+             "is_cover" : false,
+             "width" :width_ary[0] ,
+             "image_url" : image_ary[0],
+            "height" : height_ary[0]
+        }
+    }
+    request_url = fishing_admin_Url + "/post_image"
+    reusult = getRequest(request_url, d, 'post', '', '')
+    location.reload()
+    layer.msg('渔获图片上传成功', 1, 1);
+}
+
+function save_image2(image_url,width,height,index){
+    post_id = queryString("post_id")
+    d = {
+        "index":index,
+        "post_id":post_id,
+        "image_div":{
+            "width" : width,
+            "image_url" : image_url,
+            "height" : height
+        }
+    }
+    request_url = fishing_admin_Url + "/post_image"
+    reusult = getRequest(request_url, d, 'put', '', '')
+    location.reload()
+
+}
+
+$(function(){
+    $(document).on("click",".for_fish_video",function(){
+        var video_url = $(this).find("img").attr("video-path");
+        $("#fish_video").html('<video src="'+video_url+'" controls="controls"></video>').show();
+        $("#fish_videos").css({display:"block"});
+    });
+    $(document).on("click", "#video_bg", function(){
+        $("#fish_video").html("");
+        $("#fish_videos").css({display:"none"});
+    });
+});

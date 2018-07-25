@@ -1,0 +1,490 @@
+
+#-*- coding: utf8 -*-
+"""时间处理
+"""
+import time
+import datetime
+
+
+class SuperTime():
+    # 常用的一些时间格式
+    SIMPLE_DATETIME_FORMAT = '%Y-%m-%d %H:%M:%S'
+    SIMPLE_DATE_FORMAT = '%Y-%m-%d'
+    SIMPLE_TIME_FORMAT = '%H:%M:%S'
+    CLEAN_DATETIME_FORMAT = '%Y%m%d%H%M%S'
+    CLEAN_DATE_FORMAT = '%Y%m%d'
+    CLEAN_TIME_FORMAT = '%H%M%S'
+
+    # 时间间隔类型
+    #INTERVAL_YEAR = 201
+    #INTERVAL_MONTH = 202
+    INTERVAL_WEEK = "weeks"
+    INTERVAL_DAY = "days"
+    INTERVAL_HOUR = "hours"
+    INTERVAL_MINUTE = "minutes"
+    INTERVAL_SECOND = "seconds"
+
+    def __init__(self, ts=None, dt=None):
+        """
+        @args:
+            dt      - datetime 类型对象
+            ts      - 时间戳
+        """
+        self._datetime = dt
+        self._timestamp = ts
+        self._clock = None
+        self._date = None
+
+    @classmethod
+    def t(self,
+          year,
+          month=1,
+          day=1,
+          hour=0,
+          minute=0,
+          second=0,
+          microsecond=0):
+        return SuperTime(dt=datetime.datetime(year, month, day, hour, minute,
+                                              second, microsecond))
+
+    def __str__(self):
+        return "<%s | %s | %s>" % ("SuperTime", self.datetime, self.timestamp)
+
+    def __unicode__(self):
+        return self.__str__()
+
+    def __repr__(self):
+        return self.__str__()
+
+    def __int__(self):
+        return int(self.timestamp)
+
+    def __gt__(self, other):
+        """判断self对象是否大于other对象
+        """
+        return isinstance(other,
+                          SuperTime) and self.timestamp > other.timestamp
+
+    def __lt__(self, other):
+        """判断self对象是否小于other对象
+        """
+        return isinstance(other,
+                          SuperTime) and self.timestamp < other.timestamp
+
+    def __ge__(self, other):
+        """判断self对象是否大于或者等于other对象
+        """
+        return isinstance(other,
+                          SuperTime) and self.timestamp >= other.timestamp
+
+    def __le__(self, other):
+        """判断self对象是否小于或者等于other对象
+        """
+        return isinstance(other,
+                          SuperTime) and self.timestamp <= other.timestamp
+
+    def __eq__(self, other):
+        """判断self对象是否等于other对象
+        """
+        return isinstance(other,
+                          SuperTime) and self.timestamp == other.timestamp
+
+    @property
+    def timestamp(self):
+        if self._timestamp is None:
+            self._timestamp = time.mktime(self._datetime.timetuple())
+        return self._timestamp
+
+    @property
+    def datetime(self):
+        if self._datetime is None:
+            self._datetime = datetime.datetime.fromtimestamp(self._timestamp)
+        return self._datetime
+
+    @property
+    def date(self):
+        if not self._date:
+            self._date = self.datetime.date()
+        return self._date
+
+    @property
+    def clock(self):
+        if self._clock is None:
+            self._clock = Clock(hour=self.datetime.hour,
+                                minute=self.datetime.minute,
+                                second=self.datetime.second,
+                                microsecond=self.datetime.microsecond)
+        return self._clock
+
+    @property
+    def yesterday(self):
+        """昨天当前钟点的时间对象
+        """
+        return self.offset(days=-1)
+
+    @property
+    def tomorrow(self):
+        """明天当前钟点的时间对象
+        """
+        return self.offset(days=1)
+
+    @classmethod
+    def now(cls):
+        now = datetime.datetime.now()
+        supertime = cls(dt=now)
+        return supertime
+
+    @classmethod
+    def today_start(cls):
+        """当天0点时间对象
+        """
+        return cls(ts=time.mktime(datetime.datetime.now().date().timetuple()))
+
+    def day_start(self):
+        """当天0点时间对象
+        """
+        return self.__class__(ts=time.mktime(self.datetime.date().timetuple()))
+
+    @classmethod
+    def init(cls, year, month=1, day=1, hour=0, minute=0, second=0):
+        """通过年月日时分秒生成时间对象
+        """
+        return cls(datetime.datetime(year, month, day, hour, minute, second))
+
+    @classmethod
+    def from_strtime(cls, strtime, strformat):
+        """字符串转supertime对象
+        """
+        dt = datetime.datetime.strptime(strtime, strformat)
+        return cls(dt=dt)
+
+    @classmethod
+    def from_date_and_clock(cls, date, clock):
+        """由日期对象和钟点对象生成SuperTime对象
+        """
+        dt = datetime.datetime(date.year, date.month, date.day, \
+                    clock.hour, clock.minute, clock.second, clock.microsecond)
+        return cls(dt=dt)
+
+    def today_seconds(self):
+        """获取当天已过去的秒数
+        """
+        dt = self.datetime
+        return dt.hour * 3600 + dt.minute * 60 + dt.second
+
+    def today_rest_seconds(self):
+        """获取当天剩余的秒数
+        """
+        return 86400 - self.today_seconds()
+
+    def this_week_rest_seconds(self):
+        """获取本周剩余的秒数
+        """
+        return self.today_rest_seconds() + (6 - self.date.weekday()) * 86400
+
+    def this_month_rest_seconds(self):
+        """获取本月剩余的秒数
+        """
+        if self.datetime.month == 12:
+            next_month_1st = datetime.datetime(self.datetime.year + 1, 1, 1)
+        else:
+            next_month_1st = datetime.datetime(self.datetime.year,
+                                               self.datetime.month + 1, 1)
+        return self.__class__(dt=next_month_1st).timestamp - self.timestamp
+
+    def timeratio(self):
+        """以当天的总时间当作1, 返回当天过去时间所占百分比
+        """
+        return self.today_seconds() / 86400.0
+
+    def is_today(self):
+        """判断是否在当天
+        """
+        return self.datetime.date() == datetime.date.today()
+
+    def is_between(self, start, end, include_start=True, include_end=False):
+        """判断是否在 start 和 end 之间
+        @args:
+            start    - 起始时间（kktime对象）
+            end      - 结束时间（kktime对象）
+            include_start - 是否包含起始时间
+            include_end   - 是否包含结束时间
+        """
+        if include_start:
+            greater_than_start = self.datetime >= start.datetime
+        else:
+            greater_than_start = self.datetime > start.datetime
+        if not greater_than_start:
+            return False
+        if include_end:
+            return self.datetime <= end.datetime
+        return self.datetime < end.datetime
+
+    def is_between_time(self,
+                        start,
+                        end,
+                        include_start=True,
+                        include_end=False):
+        """判断是否在 start 和 end 之间，只比较钟点时间，不比较日期
+        @args:
+            start    - 起始时间（kktime对象）
+            end      - 结束时间（kktime对象）
+            include_start - 是否包含起始时间
+            include_end   - 是否包含结束时间
+        """
+        if include_start:
+            greater_than_start = self.datetime.time() >= start.datetime.time()
+        else:
+            greater_than_start = self.datetime.time() > start.datetime.time()
+        if not greater_than_start:
+            return False
+        if include_end:
+            return self.datetime.time() <= end.datetime.time()
+        return self.datetime.time() < end.datetime.time()
+
+    def offset(self, **offset_parameters):
+        """返回偏移时间对象
+        @args:
+            days            - 偏移天数
+            weeks           - 偏移周数
+            hours           - 偏移小时数
+            minutes         - 偏移分钟数
+            seconds         - 偏移秒数
+            milliseconds    - 偏移毫秒数
+            microseconds    - 偏移微秒数
+        @return:
+            计算偏移后的 SuperTime 对象
+        """
+        return self.__class__(
+            dt=self.datetime + datetime.timedelta(**offset_parameters))
+
+    def to_string(self, time_format=SIMPLE_DATETIME_FORMAT):
+        """格式化字符串
+        @args:
+            time_format: 时间格式
+            scenods: 毫秒数
+        """
+        return time.strftime(time_format, time.localtime(int(self.timestamp)))
+
+    @classmethod
+    def mk_timestamp(cls, times):
+        """ 将2015-02-03 8:00
+            格式化为时间戳
+        """
+        try:
+            target = time.strptime(times, '%Y-%m-%d %H:%M')
+            tar = int(time.mktime(target))
+        except:
+            raise '时间格式错误 使用 "2015-02-03 8:00" 这样的格式'
+        return tar
+
+    @classmethod
+    def timestamp_to_date(cls, timestamp, format='%Y-%m-%d %H:%M:%S'):
+        """ 将时间戳化为指定格式
+        """
+        t = time.localtime(timestamp)
+        timeStr = time.strftime(format, t)
+        return timeStr
+
+    @classmethod
+    def time_generator(cls, start, end, interval_type, interval=1):
+        """时间循环产生器
+        @args:
+            start           - 开始时间
+            end             - 结束时间
+            interval_type   - 间隔类型  INTERVAL_DAY ...
+            interval        - 间隔数值
+        """
+        up = interval > 0
+        if (start > end) if up else (start < end):
+            return
+        cursor = start
+        while (cursor <= end) if up else (cursor >= end):
+            yield cursor
+            cursor = cursor.offset(**{interval_type: interval})
+
+    #str转化成datetime
+    def str_to_datetime(self, datestr, format):
+        """格式化时间数据
+        """
+        return datetime.datetime.strptime(datestr, format)
+
+    def date_diff(self, bd, ed):
+        """两个时间间隔的天数
+        """
+        # TODO: 没有考虑 begin_date > end_date 的情况，真坑爹
+        if not isinstance(bd, datetime.datetime):
+            bd = self.str_to_datetime(bd, self.SIMPLE_DATE_FORMAT)
+        if not isinstance(ed, datetime.datetime):
+            ed = self.str_to_datetime(ed, self.SIMPLE_DATE_FORMAT)
+        bd = bd.date()
+        ed = ed.date()
+        if bd > ed:
+            return -1
+        count = 0
+        while bd != ed:
+            ed = ed - datetime.timedelta(days=1)
+            count += 1
+        return count
+
+    def secs2str(self, secs):
+        """时间戳获取时间
+        """
+        return time.strftime(self.SIMPLE_DATE_FORMAT, time.localtime(secs))
+
+    def last_clock(self, hour, minute=0, second=0):
+        """获取上一个钟点的时间，比如：上一个10:05
+        """
+        today_clock = self.t(self.year,
+                             self.month,
+                             self.day,
+                             hour=hour,
+                             minute=minute,
+                             second=second)
+        if self > today_clock:
+            return today_clock
+        yesterday = self.yesterday
+        return self.t(yesterday.year,
+                      yesterday.month,
+                      yesterday.day,
+                      hour=hour,
+                      minute=minute,
+                      second=second)
+
+    def next_clock(self, hour, minute=0, second=0):
+        """获取下一个钟点的时间，比如：下一个10:05
+        """
+        today_clock = self.t(self.year,
+                             self.month,
+                             self.day,
+                             hour=hour,
+                             minute=minute,
+                             second=second)
+        if self < today_clock:
+            return today_clock
+        tomorrow = self.tomorrow
+        return self.t(tomorrow.year,
+                      tomorrow.month,
+                      tomorrow.day,
+                      hour=hour,
+                      minute=minute,
+                      second=second)
+
+    @classmethod
+    def friendlyTime(cls, times):
+        if isinstance(times, str):
+            times = int(times)
+        elif isinstance(times, datetime.datetime):
+            times = cls(dt=times).timestamp
+
+        interval = (('31536000', '年'),
+                    ('2592000', '个月'),
+                    ('604800', '星期'),
+                    ('86400', '天'),
+                    ('3600', '小时'),
+                    ('60', '分钟'),
+                    ('1', '秒'), )
+        t = int(time.time()) - times
+        if t <= 1:
+            return "1秒前"
+        for k, v in interval:
+            _interval = int(t / int(k))
+            if _interval != 0:
+                return "%s%s前" % (_interval, v)
+    @classmethod
+    def intervalTime(cls, times, types='m'):
+        """ m   月 
+		    y   年
+			d   日
+        """		
+        if isinstance(times, str):
+            times = int(times)
+        elif isinstance(times, datetime.datetime):
+            times = int(cls(dt=times).timestamp)
+        else:
+            times = int(times.timestamp)
+			
+			
+			
+        print(times)
+
+        t = int(time.time()) - times
+        if types == 'm':
+            _interval = 2592000
+        elif types == 'y':
+            _interval = 31536000
+        elif types == 'd':
+            _interval = 86400
+ 
+        interval = int(t / int(_interval))
+   
+        return interval
+
+
+class Clock(object):
+    """钟点类
+    """
+
+    def __init__(self, hour, minute=0, second=0, microsecond=0):
+        assert hour < 24 and hour >= 0 and \
+                minute >= 0 and minute < 60 and \
+                second >= 0 and second < 60
+        self.hour = hour
+        self.minute = minute
+        self.second = second
+        self.microsecond = microsecond
+
+    def __str__(self):
+        return "<Clock | %02d:%02d:%02d.%s>" % self.timetuple()
+
+    def __unicode__(self):
+        return self.__str__()
+
+    def __repr__(self):
+        return self.__str__()
+
+    def __gt__(self, other):
+        """判断self对象是否大于other对象
+        """
+        return isinstance(other,
+                          Clock) and self.timetuple() > other.timetuple()
+
+    def __lt__(self, other):
+        """判断self对象是否小于other对象
+        """
+        return isinstance(other,
+                          Clock) and self.timetuple() < other.timetuple()
+
+    def __ge__(self, other):
+        """判断self对象是否大于或者等于other对象
+        """
+        return isinstance(other,
+                          Clock) and self.timetuple() >= other.timetuple()
+
+    def __le__(self, other):
+        """判断self对象是否小于或者等于other对象
+        """
+        return isinstance(other,
+                          Clock) and self.timetuple() <= other.timetuple()
+
+    def __eq__(self, other):
+        """判断self对象是否等于other对象
+        """
+        return isinstance(other,
+                          Clock) and self.timetuple() == other.timetuple()
+
+    def timetuple(self):
+        """返回一个元组，格式： (hour, minute, second, microsecond)
+        """
+        return (self.hour, self.minute, self.second, self.microsecond)
+
+
+if __name__ == '__main__':
+    now = SuperTime.now()
+    print(now.today_seconds())
+    print(now.today_rest_seconds())
+    print(now.timeratio())
+    print(now.is_today())
+
+    print(now.to_string(now.CLEAN_DATETIME_FORMAT, now.timestamp))
+    print(now.to_string(now.SIMPLE_DATETIME_FORMAT, t))

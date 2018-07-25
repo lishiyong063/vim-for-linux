@@ -1,0 +1,371 @@
+# -*- coding: utf-8 -*-
+# Created Time: 2018-07-17 14:59:31
+"""
+    网络请求类
+"""
+import traceback
+import json
+import datetime
+from urllib.parse import urlencode
+from lxml import etree
+import requests
+
+# 省会Url
+provincial_url = [
+        {
+            "name": "河北", 
+            "url": "http://www.hebpr.cn/inteligentsearch/rest/inteligentSearch/getFullTextDataNew",
+            # pn 页数 从第一页开始 0 间隔 10 第二页 10  20
+            "data": {"token":"","pn":0,"rn":10,"sdt":"","edt":"","wd":"","inc_wd":"","exc_wd":"","fields":"title",
+                     "cnum":"001;002","sort":"{\"showdate\":\"0\"}","ssort":"title","cl":200,"terminal":"",
+                     "condition":[],"time":"null","highlights":"title","statistics":"null",
+                     "unionCondition":"null","accuracy":"","noParticiple":"0",
+                     "searchRange":"null","isBusiness":1},
+            "type": "POST",
+            "nick": "hebei",
+            "origin": "provincial",
+        },
+        {
+            "name": "北京-", 
+            # index_0 - index_10 按下标查询 更新
+            "url": "http://www.ccgp-beijing.gov.cn/xxgg/sjzfcggg/sjzbgg/index_0.html", 
+            "type": "GET",
+            "nick": "beijing",
+            "data": {},
+            "origin": "provincial",
+        },
+        {
+            "nick": "tianjing",
+            "data": {},
+            "type": "GET",
+            "name": "天津", 
+            "url": "http://www.tjgpc.gov.cn/webInfo/getWebInfoList1.do?fkWebInfoclassId=W001_001_001&page=1&pagesize=10",
+            "origin": "provincial",
+        },
+        # page 1-10 查询最新
+        {
+            "name": "内蒙古", 
+            "url": "http://www.nmgzfcg.gov.cn/nmzc/jygg/zbgkyqgg/A094401web_1.htm",
+            "data": {},
+            "nick": "sanxi",
+            "type": "GET",
+            "origin": "provincial",
+        },
+
+        # page 1-10 查询最新
+        {
+            "name": "山西", 
+            "url": "http://www.ccgp-shanxi.gov.cn/view.php?app=&type=&nav=100&page=1",
+            "data": {},
+            "nick": "sanxi",
+            "type": "GET",
+            "origin": "provincial",
+        },
+
+        {
+            "name": "北京", 
+            "url": "http://search.ccgp.gov.cn/bxsearch?searchtype=1&bidSort=&buyerName=&projectId=&pinMu=&bidType=1&dbselect=bidx&kw=&timeType=0&pppStatus=0&agentName=",
+            "data": {},
+            "nick": "sanxi",
+            "type": "GET",
+            "origin": "country",
+        },
+
+]
+
+
+def get_json(url, type="get", data=None):
+    headers = {'Accept': '*/*',
+            'Accept-Language': 'en-US,en;q=0.8',
+            'Cache-Control': 'max-age=0',
+            'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/48.0.2564.116 Safari/537.36',
+            'Connection': 'keep-alive',
+            'Referer':'http://www.baidu.com/'}
+    try:
+        if type == "post":
+            respone = requests.post(url, timeout=10, headers=headers, data=json.dumps(data))
+        else:
+            respone = requests.get(url, timeout=10, headers=headers)
+        if respone.status_code != 200:
+        
+            return 
+    except:
+        return
+    return respone
+
+
+def diff_time(s_time, format="%Y-%m-%d"):
+    """ 比较时间是否是今天的时间
+    """
+    today = datetime.datetime.now().strftime(format)
+    return today == s_time
+
+
+
+def parse_tianjing_to_pr():
+    """ 天津的数据
+    """
+    url = "http://www.tjgpc.gov.cn/webInfo/getWebInfoList1.do?fkWebInfoclassId=W001_001_001&page=1&pagesize=40"
+
+    response = get_json(url)
+    if not response:
+        return
+    xpath_obj = etree.HTML(response.content)
+    info_list = xpath_obj.xpath("//div[@class='cur']//tr")
+    all_info_list = []
+    for info in info_list:
+        dic = {}
+        dic["title"] = info.findall("td")[1].findall("a")[1].text.strip()
+        dic["url"] = info.findall("td")[1].findall("a")[1].attrib.get("href")
+        dic["time"] = datetime.datetime.strptime(info.findall("td")[2].text.replace("]",'').replace("[", ""), "%Y-%m-%d")
+        # 只选中当天的时间
+        if not diff_time(dic["time"]):
+            return all_info_list
+        dic["citys"] = "天津市"
+        # 省级
+        dic["types"] = "provincial"
+        print(dic)
+        all_info_list.append(dic)
+    return all_info_list
+
+
+def parse_neimenggu_to_pr():
+    """ 内蒙古的数据
+    """
+    url = "http://www.nmgzfcg.gov.cn/nmzc/jygg/zbgkyqgg/A094401web_{index}.htm"
+    all_url = []
+    for i in range(1, 5):
+        _url = url.format(index="%s"%i)
+        all_url.append(_url)
+
+    for url in all_url:
+        print(url)
+        response = get_json(url)
+        if not response:
+            continue
+        xpath_obj = etree.HTML(response.content)
+        info_list = xpath_obj.xpath("//td/li")
+        all_info_list = []
+        for info in info_list:
+            dic = {}
+            info_a = info.find("a")
+            dic["title"] = info_a.attrib.get("title")
+            dic["url"] = "http://www.nmgzfcg.gov.cn" + info_a.attrib.get("href")
+            dic["time"] = datetime.datetime.strptime(info.find("span").text, "%Y-%m-%d")
+            dic["citys"] = "内蒙古"
+            # 省级
+            dic["types"] = "provincial"
+            print(dic)
+            all_info_list.append(dic)
+    return all_info_list
+
+
+def parse_hebei_to_pr():
+    """ 河北省的数据
+    """
+    url = "http://www.hebpr.cn/inteligentsearch/rest/inteligentSearch/getFullTextDataNew"
+    data = {"token":"","pn":0,"rn":100,"sdt":"","edt":"","wd":"","inc_wd":"","exc_wd":"","fields":"title",
+             "cnum":"001;002","sort":"{\"showdate\":\"0\"}","ssort":"title","cl":200,"terminal":"",
+             "condition":[],"time":"null","highlights":"title","statistics":"null",
+             "unionCondition":"null","accuracy":"","noParticiple":"0",
+             "searchRange":"null","isBusiness":1}
+
+    all_info_list = []
+    response = get_json(url, "post", data)
+    if not response:
+        return
+    response_content = json.loads(response.content)
+    record_list = response_content["result"]['records']
+    for info in record_list:
+        if "资审公告" not in info.get("categoryname"):
+            continue
+        # 只要今天的数据
+        if not diff_time(info.get("showdate")[:10]):
+            continue
+        dic = {}
+        dic["title"] = info.get("title")
+        dic["url"] = "http://www.hebpr.cn" + info.get("linkurl")
+        dic["time"] = datetime.datetime.strptime(info.get("showdate"), '%Y-%m-%d %H:%M:%S')
+        dic["citys"] = "河北省"
+        # 省级
+        dic["types"] = "provincial"
+        all_info_list.append(dic)
+        print(dic)
+    return all_info_list
+
+
+
+def parse_sanxi_to_pr():
+    """ 山西省的数据
+    """
+    url_1 = "http://www.ccgp-shanxi.gov.cn/view.php?app=&type=&nav=100&page={index}"
+    all_url = []
+    for i in range(5):
+        url = url_1.format(index="%s"%i)
+        all_url.append(url)
+
+    all_info_list = []
+    for url_obj in all_url:
+        dic = {}
+        response = get_json(url_obj)
+        if not response:
+            continue
+        xpath_obj = etree.HTML(response.content)
+        info_list = xpath_obj.xpath("//table[@id='node_list']//tbody//tr")
+        for info in info_list:
+            dic["title"] = info.findall("td")[0].find('a').attrib.get("title")
+            dic["url"] = "http://www.ccgp-shanxi.gov.cn/" + info.findall("td")[0].find('a').attrib.get("href")
+            dic["time"] = datetime.datetime.strptime(info.findall("td")[3].text.replace(']',"").replace('[', ""), "%Y-%m-%d")
+
+            if not diff_time(dic["time"]):
+                continue
+            dic["citys"] = "山西省"
+            # 省级
+            dic["types"] = "provincial"
+            print(dic)
+            all_info_list.append(dic)
+
+    return all_info_list
+
+def parse_beijing_to_pr():
+    """ 北京省的数据
+    """
+    # 区级招标
+    url_1 = "http://www.ccgp-beijing.gov.cn/xxgg/qjzfcggg/index{index}.html"
+    # 市级招标
+    url_2 = "http://www.ccgp-beijing.gov.cn/xxgg/sjzfcggg/sjzbgg/index{index}.html"
+    all_url = []
+    for i in range(5):
+        if i == 0:
+            url = url_1.format(index='')
+            url2 = url_2.format(index='')
+        else:
+            url = url_1.format(index="_%s"%i)
+            url2 = url_2.format(index="_%s"%i)
+        all_url.append({"name": "区级招标", "url": url})
+        all_url.append({"name": "市级招标", "url": url2})
+
+    all_info_list = []
+    for url_obj in all_url:
+        response = get_json(url_obj.get("url"))
+        if not response:
+            continue
+        xpath_obj = etree.HTML(response.content)
+        info_list = xpath_obj.xpath("//ul[@class='xinxi_ul']/li")
+        for info in info_list:
+            dic = {}
+            info_a = info.find("a")
+            dic["title"] = info_a.text
+            if url_obj.get("name") == "区级招标":
+                dic["url"] = "http://www.ccgp-beijing.gov.cn/xxgg/qjzfcggg" + info_a.attrib.get("href").replace("./", "")
+            else:
+                dic["url"] = "http://www.ccgp-beijing.gov.cn/xxgg/sjzfcggg/sjzbgg/" + info_a.attrib.get("href").replace("./", "")
+            dic["time"] = datetime.datetime.strptime(info.find("span").text, "%Y-%m-%d")
+            dic["citys"] = "北京市"
+            # 省级
+            dic["types"] = "provincial"
+            # 备份
+            dic["remark"] = url_obj.get("name")
+            print(dic)
+            all_info_list.append(dic)
+    return all_info_list
+
+
+def parse_to_country(dic):
+    """ 全国五个省的数据
+    """
+    today = datetime.datetime.now()
+    today_time = today.strftime("%Y-%m-%d")
+    # displayZone=河北省&zoneId=13
+    origin_url = dic.get("url")
+    sub_pr = [
+        {"displayZone": "北京市", "zoneId": 11},
+        {"displayZone": "天津市", "zoneId": 12},
+        {"displayZone": "河北省", "zoneId": 13}, 
+        {"displayZone": "山西省", "zoneId": 14}, 
+        {"displayZone": "内蒙古", "zoneId": 15}, 
+    ]
+    all_url = []
+    for sub_url in sub_pr:
+        sub_url["start_time"] = today_time
+        sub_url["end_time"] = today_time
+        for i in range(10):
+            sub_url["paege_index"] = i
+            url_parmas = urlencode(sub_url)
+            all_url.append(origin_url+"&"+url_parmas)
+
+    content = []
+    for url in all_url:
+        response = get_json(url)
+        if not response:
+            continue
+        xpath_obj = etree.HTML(response.content)
+        city = xpath_obj.xpath("//input[@id='inpDisplayZone']/@value")[0]
+        info_list = xpath_obj.xpath("//ul[@class='vT-srch-result-list-bid']/li")
+        for info in info_list:
+            dic = {}
+            dic["title"] = info.find("a").text.strip()
+            dic["url"] = info.find("a").attrib.get("href")
+            dic["time"] = datetime.datetime.strptime(info.find("span").text.split("|")[0].strip(), "%Y.%m.%d %H:%M:%S")
+            dic["citys"] = city
+            # 来源 国家级
+            dic["types"] = "country"
+            print(dic)
+            content.append(dic)
+        print(content)
+    return content
+
+if __name__ == "__main__":
+    import os
+    os.environ.setdefault("DJANGO_SETTINGS_MODULE", "crawl.settings")
+    import django
+    django.setup()
+    # 导入model包需要在setup后面导入
+    from app.models import AllCityinfo
+    # for i in parse_to_country(provincial_url[-1]):
+        # try:
+            # c = AllCityinfo(**i)
+            # c.save()
+        # except Exception as e:
+            # print(traceback.format_exc())
+            # continue
+
+    # for i in parse_beijing_to_pr():
+        # try:
+            # c = AllCityinfo(**i)
+            # c.save()
+        # except Exception as e:
+            # print(traceback.format_exc())
+            # continue
+
+    # for i in parse_tianjing_to_pr():
+        # try:
+            # c = AllCityinfo(**i)
+            # c.save()
+        # except Exception as e:
+            # print(traceback.format_exc())
+            # continue
+
+    # for i in parse_neimenggu_to_pr():
+        # try:
+            # c = AllCityinfo(**i)
+            # c.save()
+        # except Exception as e:
+            # print(traceback.format_exc())
+            # continue
+
+    # for i in parse_hebei_to_pr():
+        # try:
+            # c = AllCityinfo(**i)
+            # c.save()
+        # except Exception as e:
+            # print(traceback.format_exc())
+            # continue
+
+    for i in parse_sanxi_to_pr():
+        try:
+            c = AllCityinfo(**i)
+            c.save()
+        except Exception as e:
+            print(traceback.format_exc())
+            continue

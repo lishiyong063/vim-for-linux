@@ -1,0 +1,7 @@
+
+REPOS="$1"
+REV="$2"
+PROJECT="/root/projects/hello"
+PASSWD="/root/projects/save/svn_admin"
+
+svn update -q $PROJECT --non-interactive --username admin --password `cat $PASSWD`

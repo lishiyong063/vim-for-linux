@@ -1,0 +1,148 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# @Date    : 2014-12-05 15:45:20
+# @Author  : Your Name (you@example.org)
+# @Link    : http://example.org
+# @Version : $Id$
+
+from __future__ import division
+import tornado.web
+from tornado.web import asynchronous
+from tornado.options import options
+import simplejson
+
+from mongokit import *
+from services.service_new_activities import *
+from services.service_activity_assemble_json import assemble_return_activity_json
+from mongokit.helpers import totimestamp, fromtimestamp
+import pymongo
+from utils.mongo_client import MongoClient
+from mongo_field_encoder import MongoFieldEncoder
+from handler_base import BaseHandler
+from auth import requires_auth
+from services.service_activity import *
+import traceback
+import json
+import bson
+from bson import ObjectId
+import datetime
+import time
+import random
+from log import get_logger
+from utils.redis_client import RedisClient
+from utils.gps_info import *
+from paramAuth import param_auth
+from distutils.version import LooseVersion
+import copy
+from services.service_ip_address import *
+log = get_logger()
+
+
+class NewActivityListHandler(BaseHandler):
+    """
+    新版活动列表处理类
+    """
+    def __init__(self, application, request, **kwargs):
+        super(NewActivityListHandler, self).__init__(application, request, **kwargs)
+
+    @asynchronous
+    @gen.coroutine
+    def get(self):
+        self.set_header('Content-Type', 'application/json; charset=UTF-8')
+        area_code = self.get_argument("area_code", "")
+
+        loc_info = yield self.getCurrLoc()
+        coordinates = [loc_info.get("lon"), loc_info.get("lat")]
+
+        # 活动数据
+        posts_list, cursor = self.get_data_from_area(area_code, coordinates) 
+        # 附近， 热门， 海外
+        title_dic = [
+                {"title": "附近", "area_code": "14", "selected": "14" == area_code},
+                {"title": "热门", "area_code": "12", "selected": "12" == area_code},
+                {"title": "海外", "area_code": "10", "selected": "10" == area_code}
+        ]
+
+        response_dic = {"cursor": cursor,
+                        "entities": posts_list,
+                        "title_dic": title_dic}
+
+        response = json.dumps(response_dic,
+                              indent=2,
+                              ensure_ascii=False,
+                              cls=MongoFieldEncoder)
+        self.write(response)
+        self.finish()
+
+
+    ####获取客户端经纬度：如果传过来经纬度，则使用传过来的经纬度
+    #######如果没有传入，则通过ip地址获取，如果再没有，则默认青岛
+    @gen.coroutine
+    def getCurrLoc(self):
+        try:
+            lon = self.get_argument("lon", "")
+            lat = self.get_argument("lat", "")
+
+            if lon =="" or  lat=="":
+                # ip = self.getAddressIP()
+                ip = self.get_argument('ip', "")
+                if ip:
+                    loc = yield ipAddaressBelonge(ip)
+                    if loc:
+                        location = loc.get("location", {})
+                        if location:
+                            lng_tmp = location.get("lng", 0)
+                            lat_tmp = location.get("lat", 0)
+                            if lng_tmp and lat_tmp:
+                                lon, lat = lng_tmp, lat_tmp
+
+
+            ####如果根据IP地址无法获取经纬度，
+            ####则使用默认青岛的经纬度来查询数据
+            if lon == "" or lat == "":
+                lat=36.06623
+                lon=120.38299
+        except Exception as e:
+            log.info('Exception:%s' % e.message)
+            log.error(traceback.format_exc())
+        result = {
+            "lon": float(lon),
+            "lat": float(lat)
+        }
+        # log.info("result:"+str(result))
+        raise gen.Return(result)
+
+
+    def get_data_from_area(self, area_code="12", coordinates=[], limit=10,):
+        """ 通过 area_code 返回团购数据
+        """
+        base_where = {
+            "status": 1,
+            "activity_type": 0
+        }
+
+        # 附近
+        request_cursor = self.get_argument("cursor", "")
+        if area_code == "14":
+            # 附近通过IP地址解析经纬度默认为青岛的
+            min = 0.0
+            if request_cursor:
+                min = float(request_cursor)
+            activity_list, cursor = getNearActivitiess(where=base_where, center=coordinates, min=min,
+                                                       maxDistance=300 * 1000, limit=limit)
+        # 热门活动
+        elif area_code == "12":
+            base_where["boutique"] = "2"
+            activity_list, cursor = getBoutiqueActivityList(base_where, request_cursor, limit)
+        else:
+            base_where["belonge_area"] = area_code
+            activity_list, cursor = getNewActivityList(base_where, request_cursor, limit)
+
+        activity_array = []
+
+        ###组装返回的活动信息
+        for activity in activity_list:
+            activity_json = assemble_return_activity_json(activity)
+            activity_array.append(activity_json)
+        return activity_array, cursor
+

@@ -1,0 +1,111 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="renderer" content="webkit|ie-comp|ie-stand">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width,initial-scale=1,minimum-scale=1.0,maximum-scale=1.0,user-scalable=no" />
+    <meta http-equiv="Cache-Control" content="no-siteapp" />
+    <!--[if lt IE 9]>
+    <script type="text/javascript" src="lib/html5.js"></script>
+    <script type="text/javascript" src="lib/respond.min.js"></script>
+    <script type="text/javascript" src="lib/PIE_IE678.js"></script>
+    <![endif]-->
+    <link href="css/H-ui.min.css" rel="stylesheet" type="text/css" />
+    <link href="css/H-ui.admin.css" rel="stylesheet" type="text/css" />
+    <link href="css/style.css" rel="stylesheet" type="text/css" />
+    <link href="lib/font-awesome/font-awesome.min.css" rel="stylesheet" type="text/css" />
+    <!--[if IE 7]>
+    <link href="lib/font-awesome/font-awesome-ie7.min.css" rel="stylesheet" type="text/css" />
+    <![endif]-->
+    <link href="lib/iconfont/iconfont.css" rel="stylesheet" type="text/css" />
+    <!--[if IE 6]>
+    <script type="text/javascript" src="lib/DD_belatedPNG_0.0.8a-min.js" ></script>
+    <script>DD_belatedPNG.fix('*');</script>
+    <![endif]-->
+    <title>分类管理</title>
+</head>
+<body>
+<nav class="breadcrumb"><i class="iconfont">&#xf012b;</i> 首页 <span class="c-gray en">&gt;</span> 钓场管理 <span class="c-gray en">&gt;</span> 钓场 </nav>
+<div class="pd-20 text-c">
+    <form class="Huiform" action="/" method="post">
+        <div  style="float: left;margin-top: 20px;" class="hd-nav">
+            <label style="float: left">按城市查询：</label>
+                <span id="city_select">
+            </span>
+            <label >&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;钓场名：</label>
+            <input type="text" id="location_search">
+
+            <label >&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;手机号：</label>
+            <input type="text" id="tel">
+
+            &nbsp;&nbsp;钓场状态：
+            <select size="1" name="status" datatype="*" nullmsg="全部" id="status">
+                <option value="1" selected>上架</option>
+                <option value="2" >下架</option>
+                <option value="0">全部</option>
+            </select>
+
+
+            &nbsp;&nbsp;<button type="button" class="btn btn-success" id="" name="" onclick=loadFishingLocation()><i class="icon-search"></i> 查询</button>
+        </div>
+        <br>
+    </form>
+    <br>
+    <div class="article-class-list cl mt-20">
+        <div class="cl bg-1 bk-gray mt-20"> <span class="l"></span> <span class="r"><a href="javascript:;" onclick="loadFishingLocation();layer.msg('刷新成功',1,1);" class="btn btn-primary radius">刷新</a>&nbsp;&nbsp;&nbsp;&nbsp;共有数据：<strong id="count">0</strong> 条&nbsp;</span> </div>
+
+        <table class="table table-border table-bordered table-hover table-bg">
+            <thead>
+            <tr class="text-c" id="tab_div">
+                <th width="80">钓场名称</th>
+                <th width="80">封面图片</th>
+                <th width="100">详细地址</th>
+                <th width="40">电话</th>
+                <th width="200">详情</th>
+                <th width="80">价格</th>
+                <th width="40">操作</th>
+
+            </tr>
+            </thead>
+
+            <tbody id="loading">
+            <tr class="text-c">
+                <td width="10" colspan="11"><img src="images/downloading.gif" alt="image" ></td>
+            </tr>
+            </tbody>
+
+            <tbody id="location_list">
+
+            </tbody>
+
+        </table>
+
+    </div>
+</div>
+<div id="pageComponent" ></div>
+
+<script type="text/javascript" src="lib/jquery.min.js"></script>
+<script type="text/javascript" src="lib/Validform_v5.3.2.js"></script>
+<script type="text/javascript" src="lib/layer1.8/layer.min.js"></script>
+<script type="text/javascript" src="lib/laypage/laypage.js"></script>
+<script type="text/javascript" src="js/H-ui.js"></script>
+<script type="text/javascript" src="js/H-ui.admin.js"></script>
+<script type="text/javascript" src="js/H-ui.admin.doc.js"></script>
+<script type="text/javascript" src="bizjs/base.js"></script>
+<script type="text/javascript" src="bizjs/map.js"></script>
+<script type="text/javascript" src="bizjs/fishing-location-list.js?t=3333"></script>
+<script type="text/javascript" src="lib/jquery.provincesCity.js"></script>
+<script type="text/javascript" src="lib/provincesData.js"></script>
+
+<script>
+    var chargeCity= new Array()
+    $(function(){
+        loadFishingLocation();
+        loadChargeCity()
+
+    })
+
+</script>
+</body>
+</html>

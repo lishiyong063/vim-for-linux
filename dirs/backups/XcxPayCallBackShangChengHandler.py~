@@ -1,0 +1,101 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
+import textwrap
+
+import tornado.httpserver
+import tornado.ioloop
+import tornado.options
+import tornado.web
+import os
+from utils.secret import *
+from order.orderFactory import OrderFactory
+from pip._vendor.requests.packages.urllib3 import request
+from tornado.template import Template
+
+from tornado.options import define, options
+
+from WxPayConf_pub import Notify_pub, WxPayConf_pub
+from log import get_logger
+log = get_logger()
+
+FAIL, SUCCESS = "FAIL", "SUCCESS"
+
+"""小程序商城 微信支付成功后, 会回调服务器的一个接口, 使用这个 handler 进行签名验证 """
+class XcxPayCallBackHandler(tornado.web.RequestHandler):
+    def data_received(self, chunk):
+        pass
+
+    @tornado.web.asynchronous
+    def get(self, *args, **kwargs):
+        log.info("XcxPayCallBackHandler get")
+        self.write("{'key':'value'}")
+
+    def post(self, *args, **kwargs):
+        log.info("XcxPayCallBackHandler post")
+        xml = self.request.body
+
+        # 微信支付成功返回结果
+        # < xml > < appid > <![CDATA[wx03e068c1e26382b9]] > < / appid >
+        # < bank_type > <![CDATA[CFT]] > < / bank_type >
+        # < cash_fee > <![CDATA[1]] > < / cash_fee >
+        # < fee_type > <![CDATA[CNY]] > < / fee_type >
+        # < is_subscribe > <![CDATA[N]] > < / is_subscribe >
+        # < mch_id > <![CDATA[1363639902]] > < / mch_id >
+        # < nonce_str > <![CDATA[17oqtrlckr2r7hs3ey424jhi4skex3bf]] > < / nonce_str >
+        # < openid > <![CDATA[o4cztwnflQo1P8JIG7lkmsBNWqjA]] > < / openid >
+        # < out_trade_no > <![CDATA[wx03e068c1e26382b9147078392254]] > < / out_trade_no >
+        # < result_code > <![CDATA[SUCCESS]] > < / result_code >
+        # < return_code > <![CDATA[SUCCESS]] > < / return_code >
+        # < sign > <![CDATA[601E88B68E59FDABC143A9FC21703BD4]] > < / sign >
+        # < time_end > <![CDATA[20160810070535]] > < / time_end >
+        # < total_fee > 1 < / total_fee >
+        # < trade_type > <![CDATA[APP]] > < / trade_type >
+        # < transaction_id > <![CDATA[4009112001201608100990447353]] > < / transaction_id >
+        # < / xml >
+        # < xml > < return_code > <![CDATA[SUCCESS]] > < / return_code > < / xml >
+        # [I 160810 07:05:36
+        # web:1816] 200
+        # POST / weixinpaycallback(127.0
+        # .0
+        # .1) 1.49
+        # ms
+
+        # 使用通用通知接口
+        notify = Notify_pub()
+        notify.saveData(xml)
+        log.info("body:" + xml)
+        # 验证签名，并回应微信。
+        # 对后台通知交互时，如果微信收到商户的应答不是成功或超时，微信认为通知失败，
+        # 微信会通过一定的策略（如30分钟共8次）定期重新发起通知，
+        # 尽可能提高通知的成功率，但微信不保证通知最终能成功
+        if not notify.checkSign():
+            notify.setReturnParameter("return_code", FAIL)  # 返回状态码
+            notify.setReturnParameter("return_msg", "签名失败")  # 返回信息
+        else:
+            result = notify.getData()
+
+            if result["return_code"] == FAIL:
+                notify.setReturnParameter("return_code", FAIL)
+                notify.setReturnParameter("return_msg", "通信错误")
+            elif result["result_code"] == FAIL:
+                notify.setReturnParameter("return_code", FAIL)
+                notify.setReturnParameter("return_msg", result["err_code_des"])
+            else:
+                notify.setReturnParameter("return_code", SUCCESS)
+                out_trade_no = result["out_trade_no"]  # 商户系统的订单号，与请求一致。
+                total_fee = float(result["total_fee"]) / 100
+                transaction_id = result["transaction_id"]
+                back_order = {
+                    "order_id":out_trade_no,
+                    "price":total_fee,
+                    "channel":6,  #1：支付宝app  2：微信app  3:子牙钓鱼券   4:减免券  5.支付宝网页  6.微信js
+                    "notify_id":transaction_id
+                }
+                order = OrderFactory.createOrder("activity_order")
+                order.update_status(back_order)
+                ###检查订单号是否已存在,以及业务代码(业务代码注意重入问题)
+        responseXML = notify.returnXml()
+        log.info("responseXML:"+responseXML)
+        self.write(responseXML)
+        self.finish()

@@ -1,0 +1,396 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# @Date    : 2015-07-13 11:05:00
+# @Author  : Your Name (you@example.org)
+# @Link    : http://example.org
+# @Version : $Id$
+
+from __future__ import division
+import tornado.web
+from tornado.web import asynchronous
+from tornado.options import options
+from handler_baseHt import BaseHtHandler
+import pymongo
+from model.activities import Activities
+import re
+import json
+import datetime
+from services.service_activities import *
+from utils.mongo_front import MongoFront
+from mongo_field_encoder import MongoFieldEncoder
+from mongokit.helpers import totimestamp, fromtimestamp
+from services.service_recently_activity import *
+from utils.redis_client import RedisClient
+from auth import requires_auth
+from log import get_logger
+log = get_logger()
+
+class ActivityHandler(BaseHtHandler):
+
+    """
+    活动
+    """
+    def __init__(self, application, request, **kwargs):
+        super(ActivityHandler, self).__init__(application, request, **kwargs)
+
+    @asynchronous
+    @requires_auth
+    def get(self):
+        type = self.get_argument('type','')
+
+        if type=='begin_date':
+            self.activityBeginDate()
+        else:
+            self.activity()
+
+
+    def activityBeginDate(self):
+
+        type = ""
+        timestamp = 0
+
+        cursor=self.get_argument("cursor","")
+        log.info("request_cursor:"+cursor)
+        if cursor!="":
+             cursor_ary = cursor.split(",")
+             type = cursor_ary[0]
+             time = int(cursor_ary[1])
+             if time!=0 and time!="":
+                timestamp = fromtimestamp(time)
+
+
+
+        limit = int(self.get_argument("limit",10))
+
+        posts,cursor,count = getActivity(limit,type,timestamp,self.username)
+
+
+
+        response_dic = {}
+        response_dic["entities"] = posts
+        if cursor!="":
+            response_dic["cursor"] = cursor
+
+        response_dic["count"] = str(count)
+        response = json.dumps(response_dic,
+                              indent=2,
+                              ensure_ascii=False,
+                              cls=MongoFieldEncoder)
+        self.write(response)
+        self.finish()
+
+
+    def activity(self):
+        #初始化
+        where = { 'deleted': {'$ne': True},"check":"1","activity_type":1}
+        sort= {}
+        sort_by = 'created'
+        sort_value = pymongo.DESCENDING
+        entities = []
+        response = {}
+
+        #查询参数设置
+        limit = int(self.get_argument('limit',10))
+        curr = self.get_argument('curr','')
+        datemin = self.get_argument('datemin',None)
+        datemax = self.get_argument('datemax',None)
+        post_type = self.get_argument('post_type','')
+        city = self.get_argument('city',None)
+        username = self.get_argument('username',None)
+        rank = self.get_argument('rank',None)
+        begin_datemin = self.get_argument('begin_datemin',None)
+        begin_datemax = self.get_argument('begin_datemax',None)
+        activity_type = self.get_argument('activity_type',None)
+
+        if activity_type:
+            if activity_type=="hot":
+                where["hot"] = 1
+            if activity_type=="deepSea":
+                where["deepSea"] = 1
+            if activity_type=="awaySea":
+                where["awaySea"] = 1
+
+
+        if username is not None:
+            where["actor.username"] = username
+
+        if datemin != None:
+           log.info("datemin:"+datemin)
+           datemin = datetime.datetime.strptime(datemin, "%Y-%m-%d")
+           where["created"] = {"$gte":datemin}
+ 
+        if datemax != None:
+           log.info("datemax:"+datemax)
+           datemax = datetime.datetime.strptime(datemax, "%Y-%m-%d")
+           between={}
+           if where.has_key("created"):
+               between=where["created"]
+
+           between["$lte"]=datemax
+           where["created"]=between
+
+        if begin_datemin != None:
+           log.info("begin_datemin:"+begin_datemin)
+           begin_datemin = datetime.datetime.strptime(begin_datemin, "%Y-%m-%d")-datetime.timedelta(hours=8)
+           where["begin_date"] = {"$gte":begin_datemin}
+
+        if begin_datemax != None:
+           log.info("begin_datemax:"+begin_datemax)
+           begin_datemax = datetime.datetime.strptime(begin_datemax, "%Y-%m-%d")-datetime.timedelta(hours=8)
+           between={}
+           if where.has_key("begin_date"):
+               between=where["begin_date"]
+
+           between["$lte"]=begin_datemax
+           where["begin_date"]=between
+
+
+        if post_type != "":
+            if post_type == "2":
+                where["post_type"] = "2"
+            elif post_type == "1":
+                where["post_type"] = {"$ne":"2"}
+
+        #按照活动发布者子牙号或昵称搜索活动
+        nick = self.get_argument('nick','')
+        if nick!='':
+            user_list = self.get_username(nick)
+            where["actor.username"] = {"$in":user_list}
+
+
+        self.city_deal(city,where)
+        
+        province = self.get_argument('province',None)
+        if province!=None:
+            log.info("province:"+province)
+            where['gps_info.province']=province
+
+        condition = self.get_argument('condition',None)
+        if condition!=None:
+            condition_dic=json.loads(condition,encoding="utf-8")
+            if condition_dic.has_key("ids"):
+                ids=condition_dic["ids"]
+                id_array=ids.split(",")
+                objectIdArray=[]
+                for id in id_array:
+                    objectIdArray.append(ObjectId(id))
+                where['_id'] = {"$in":objectIdArray}
+
+        ##排序
+        sort_by = self.get_argument("sort_by","")
+        sort_value = self.get_argument('sort_value',"")
+
+        if rank:
+            if rank=="activity":
+                where["rank"]={
+                    "$lte":11
+                }
+                sort_by="rank"
+                sort_value=1
+            if rank=="post":
+                where["rank_in_post"]={
+                    "$lte":11
+                }
+                sort_by="rank_in_post"
+                sort_value=1
+            if rank=="boutique":
+                where["rank_in_boutique"]={
+                    "$lte":11
+                }
+                sort_by="rank_in_boutique"
+                sort_value=1
+
+        log.info("where:"+str(where))
+        # log.info("sort_by:"+sort_by)
+        # log.info("sort_value:"+sort_value)
+        sort=[]
+        if sort_by=="":
+            order_by=self.get_argument("order_by","")
+            if order_by!="":
+                if order_by=="begin_date":
+                    sort = [('begin_date',pymongo.DESCENDING)]
+                if order_by=="pass_date":
+                    sort = [('pass_date',pymongo.DESCENDING)]
+            else:
+                ##默认排序：先按排名排，然后按发活动时间排
+                sort = [('rank',pymongo.ASCENDING),('created', pymongo.DESCENDING)]
+        else:
+            sort=[(sort_by,int(sort_value))]
+        #查询
+        log.info("sort:"+str(sort))
+        if curr=="":
+            activities = options.dbconn.Activities.find(where).sort(sort).limit(limit)
+        else:
+            activities = options.dbconn.Activities.find(where).sort(sort).skip((int(curr)-1)*limit).limit(limit)
+        #
+        #结果处理
+        #for activity in activities:
+            #entities.append(activity)
+        if activities!=None:
+            entities = self.getActivityList(activities)
+        response["entities"] = entities
+        response["count"] = str(activities.count())
+        self.write(json.dumps(response,indent=2, ensure_ascii=False,cls=MongoFieldEncoder))
+        self.finish()
+        
+
+    @asynchronous
+    @requires_auth
+    def put(self):
+        log.info("ActivityHandler.put:"+self.request.body)
+        body_dic = json.loads(self.request.body,encoding="utf-8")
+        post_id = body_dic.get("post_id",None)
+        if post_id == None:
+            self.fire_response_bad_request()
+            return
+        del body_dic["post_id"]
+      
+        if "begin_date" in body_dic:
+            begin_date = body_dic["begin_date"] 
+            if isinstance(begin_date, int) or isinstance(begin_date, long):
+                 body_dic["begin_date"] = fromtimestamp(begin_date)
+        if "end_date" in body_dic:
+            end_date = body_dic["end_date"] 
+            if isinstance(end_date, int) or isinstance(end_date, long):
+                 body_dic["end_date"] = fromtimestamp(end_date)
+        
+        lookup = {"_id": ObjectId(post_id)}
+        body_dic["modified"] = datetime.datetime.utcnow()
+        body_dic["original_price"] = body_dic["price"]
+
+        if "fish_address" in body_dic:
+            body_dic["title"] = body_dic["fish_address"]
+        if "title" in body_dic:
+            body_dic["fish_address"] = body_dic["title"]
+        body_dic["day_count"] = (body_dic["end_date"] - body_dic["begin_date"]).days + 1
+
+        option = {'$set': body_dic}
+        
+        activity = options.dbconn.Activities.find_and_modify(lookup, option, new=True)
+        where = {"activity_id": post_id}
+        MongoFront.remove(where, "activities_item")
+        begin_date = activity["begin_date"]
+        end_date = activity["end_date"]
+        sub_activity_id = datetime.datetime.strftime(begin_date, '%Y%m%d')
+        activities_item = {
+            "sub_activity_id": sub_activity_id,  # 团期,子活动id
+            "isblock": activity["isblock"],  # 1 或 0  1是仅接受包船  0:按人数付费
+            "created": datetime.datetime.utcnow(),
+            "price": int(activity["price"]),
+            "original_price": int(activity["price"]),
+            "activity_id": post_id,
+            "begin_date": begin_date,
+            "end_date": end_date,  # 返回时间
+            "day_count": activity["day_count"],
+            "status": 1,
+            "people_count": activity["people_count"],
+            "real_count": 0,
+            "outer_count": 0,
+            "full_flg": 0,  # 1:已满  0：有空位
+            "order_end_date": begin_date,
+            "pay_end_date": begin_date,
+        }
+        item_id, error = MongoFront.insert(activities_item, "activities_item")
+        updateActivityRecentlyInfo(post_id)
+        check = activity.get("check","0")
+        if check=="1":
+
+            where = {"object_id":post_id}
+            MongoFront.remove(where,"ziya_order_future_task")
+
+            where = {"object_id": item_id}
+            MongoFront.remove(where, "ziya_order_future_task")
+
+            message = {
+                "act": "app_activity_check_pass",
+                "object_id": post_id
+
+            }
+            queue_name = options.activity_order_queue
+            result = RedisClient.rpush(queue_name, json.dumps(message))
+
+        # where = {"activity_id":}
+
+        response = {"entities":[activity]}
+        self.write(json.dumps(response,
+                              indent=2,
+                              ensure_ascii=False,
+                              cls=MongoFieldEncoder))
+        self.finish()
+
+    '''
+    获取帖子列表信息
+    '''
+    def getActivityList(self,posts_cursor):
+        username_array=[]
+        posts = []
+        if posts_cursor is not None:
+            for post in posts_cursor:
+                posts.append(post)
+#                 print post["begin_date"]
+                username_array.append(post["actor"]["username"])
+    
+        user_map=assembleActor(username_array)
+            
+        for post in posts:
+            ###组装帖子的actor信息
+            if user_map is not None and user_map.has_key(post["actor"]["username"]):
+                ##合并新数据和原有actor数据
+                post["actor"]=dict(post["actor"],**user_map[post["actor"]["username"]])   
+            
+        
+    
+        return posts
+    
+    
+     
+    def city_deal(self,city,where):
+        
+        if city!=None:
+            log.info("city:"+city) 
+            cities = city.split(',')
+            if '海外' in city:
+                index = cities.index('海外')
+                del cities[index]
+                where['$or']=[
+                              {'gps_info.city':{'$in':cities}},
+                              {'gps_info.country_code':{'$nin':['','cn'],'$exists':True}}
+                              ]
+            
+            elif '其他' in city:
+                index = cities.index('其他')
+                del cities[index]
+                cities.append('')
+                
+                #由于海外的数据存在只有country_code,没有city，所以其他的数据应该把这类排除在外
+                where['$or']=[
+                              {'gps_info.city':{'$in':cities},'gps_info.country_code':'cn'},
+                              {'gps_info.city':{'$exists':False},'gps_info.country_code':{'$exists':False}},
+                              {'gps_info.city':{'$exists':False},'gps_info.country_code':'cn'}
+                              ]
+                
+              
+            else:
+                 where['gps_info.city']={'$in':cities}
+
+
+
+
+    def get_username(self, nick):
+        """
+        获取活动发布者username
+        """
+        log.info("GroupDBService._get_username")
+        look_up={
+                    "$or":[
+                        {"nick":re.compile(nick+'.*')},
+                        {"invite_code":nick}
+                    ]
+                }
+        filters = {"_id": False, "username": True}
+        users = list(MongoFront.find_all(look_up, "users",filters))or[]
+        user_list=[]
+        for user in users:
+            user_list.append(user["username"])
+        return user_list
+

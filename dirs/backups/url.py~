@@ -1,0 +1,441 @@
+# -*- coding: utf-8 -*-
+# Created Time: 2018-06-21 09:09:27
+from handler_loginHt import LoginHtHandler
+from handler_login import LoginHandler
+from handler_logoutHt import LogoutHtHandler
+from handler_modelHt import ModelHtHandler
+from handler_primary_modelHt import PrimaryModelHandler
+from handler_permissionHt import PermissionHtHandler
+from handler_users import UsersHandler
+from handler_vest_search import VestSearchHandler
+from handler_vest_search_orderBy_post_distance import VestSearchOrderByPostDistanceHandler
+from handler_vest_list import VestListHandler
+from handler_posts import PostHandler
+from handler_staff import StaffHandler
+from handler_user_collect import UserCollectHandler
+from handler_proxy_server import ProxyServerHandler
+from handler_admin_user import AdminUserHandler
+from handler_new_admin_user import NewAdminUserHandler
+from handler_images_upload import ImagesUploadHandler
+from handler_vest import  VestHandler
+from handler_my_vest import  MyVestHandler
+from handler_batch_following import BatchFollowingHandler
+from handler_batch_like import BatchLikeHandler
+from handler_batch_want import BatchWantHandler
+from handler_admin_roles import AdminRolesHandler
+from handler_curr_user import CurrUserHandler
+from handler_advices import AdvicesHandler
+from handler_inform import InformHandler
+from handler_inform_detail import InformDetailHandler
+from handler_push import PushHandler
+from handler_statistic import StatisticHandler
+from handler_new_act import NewActHandler
+from handler_post_statistic import PostStatisticHandler
+from handler_activity import ActivityHandler
+from handler_new_activity import NewActivityHandler
+from handler_new_activity_to_edit import NewActivityToEditHandler
+from handler_user_relate_post import  UserRelatedPostHandler
+from handler_user_followed import UserFollowedHandler
+from handler_user_following import UserFollowingHandler
+from handler_activity_rank import ActivityRankHandler
+from handler_activity_area_rank import ActivityRankAreaHandler
+from handler_activity_check import ActivityCheckHandler
+from handler_new_activity_check import NewActivityCheckHandler
+from handler_new_activity_rank import NewActivityRankHandler
+from handler_activity_user_joined import ActivityUserJoinedHandler
+from handler_activity_delete import ActivityDeleteHandler
+from handler_new_activity_delete import NewActivityDeleteHandler
+from handler_new_activity_send import NewActivitySendHandler
+from handler_new_activity_date import NewActivityDateHandler
+from handler_delete_activity import DeleteActivityHandler
+from handler_comments import CommentsHandler
+from handler_delete_post import DeletePostHandler
+from handler_user_freeze import UserFreezeHandler
+from handler_statistic_area_date import StatisticAreaDateHandler
+from handler_display_set import DisplaySetHandler
+from handler_delete_image import DeleteImageHandler
+from handler_session import SessionHandler
+# from handler_group_session import GroupSessionHandler
+from handler_session_detail import SessionDetailHandler
+from handler_send_message_chat import SendMessageChatHandler
+from handler_last_message_chat import LastMessageChatHandler
+from handler_boutique_after_pass import BoutiqueAfterPassHandler
+from handler_users_comment import UsersCommentHandler
+from handler_users_like import UsersLikeHandler
+from handler_post_liked_user_list import PostLikedUserListHandler
+from handler_user_followed_list import FollowedListHandler
+from handler_groups import GroupsHandler
+from handler_group import GroupHandler
+from handler_groups_active import ActiveGroupsHandler
+from handler_groups_active_sort import ActiveSortGroupsHandler
+from handler_groups_advertisement import GroupAdvertisementHandler
+from handler_post_image import PostImageHandler
+from handler_deleted_posts import PostDeletedHandler
+from handler_group_invite import InviteGroupHandler
+from handler_message_push_control import MPCHandler
+from handler_city_count import CityCountHandler
+from handler_post_sold_out import PostSoldOutHandler
+from handler_admin_users_info import AdminUserArrayHandler
+from handler_users_device import UserDeviceHandler
+from handler_deleted_activity import ActivityDeletedHandler
+from handler_deleted_new_activity import NewActivityDeletedHandler
+from handler_activity_order import ActivityOrderHandler
+from handler_last_request_record_count import LastRequestRecodCountHandler
+from handler_activity_boutique import ActivityBoutiqueHandler
+from handler_versions import VersionsHandler
+from handler_credits import CreditsHandler
+from handler_articles import ArticlesHandler
+from handler_night_work_statics import NightWorkStaticsHandler
+from handler_pingri_work_statics import PingriWorkStaticsHandler
+from handler_user_type import UserTypeHandler
+from handler_extend_user_record import ExtendUserRecordHandler
+from handler_advertisement import AdvertisementHandler
+from handler_area_adv import AreaAdvHandler
+from handler_upload import UploadHandler
+from handler_proxy_diaoyu import ProxyDiaoyuHandler
+from handler_recommend_user_statics_summary import RecommendUserStaticsSummaryHandler
+from handler_recommend_user_statics import RecommendUserStaticsHandler
+from handler_tools import ToolsHandler
+from handler_reset_yuhuo import ResetYuhuoHandler
+from handler_tools_rank import ToolsRankHandler
+from handler_judge_applies import JudgeAppliesHandler
+from handler_watch_sign_in import WatchSignInHandler
+from handler_activities_push_list import ActivitiesPushListHandler
+from handler_activity_type import ActivityTypeHandler
+from handler_activity_area_location import ActivityAreaLocationHandler
+from handler_activity_people_count import ActivityPeopleCountHandler
+from handler_ershou import ErShouHandler
+from handler_city_partner import CityPartnerHandler
+from handler_city_partner_award_apply import CityPartnerAwardApplyHandler
+from handler_user_activity_degree import UserActivityDegreeHandler
+from handler_recommend_user_activity_degree import RecommendUserActivityDegreeHandler
+from handler_refresh_banner import RefreshBannerHandler
+from handler_startup_banner import StartupBannerHandler
+from handler_activity_biz_user import ActivityBizUserHandler
+from handler_activity_order_cancel import ActivityOrderCancelHandler
+from handler_activity_order_refund import ActivityOrderRefundHandler
+from handler_activity_order_remind import ActivityOrderRemindHandler
+from handler_finance_deposit_apply import FinanceDepositApplyHandler
+from handler_finance_income_history import FinanceIncomeHistoryHandler
+from handler_new_delete_activity import NewDeleteActivityHandler
+from handler_order_remind_confirm import OrderRemindConfirmHandler
+from handler_manager_cancel_order import ManagerCancelOrderHandler
+from handler_single_activity import SingleActivityHandler
+from handler_check_code import CheckCodeHandler
+from handler_biz_nick import BizNickHandler
+from handler_order_pay_info import OrderPayInfoHandler
+from handler_post_place import PostPlaceHandler
+from handler_order_balance import OrderBalanceHandler
+from handler_user_expert import UserExpertHandler
+from handler_score import ScoreHandler
+from handler_activity_front_sort import ActivityFrontSortHandler
+from handler_image_deal import ImageDealHandler
+from handler_articles_hot import ArticlesHotHandler
+from handler_article_type import ArticleTypeHandler
+from handler_tool_type import ToolTypeHandler
+from handler_article_place import ArticlePlaceHandler
+from handler_remind_batch_deal import RemindBatchDealHandler
+from handler_statistics import StatisticsHandler
+from handler_article_to_edit import ArticleToEditHandler
+from handler_biz_user_type import BizUserTypeHandler
+from handler_invite_code import InviteCodeHandler
+from handler_statistics_post import StatisticsPostHandler
+from handler_activity_modify import ActivityModifyHandler
+from handler_user_info import UserInfoHandler
+from handler_activity_by_code import ActivityByCodeHandler
+from handler_mina_activity  import MinaActivityHandler
+from handler_refresh_xcx_id import RefreshXcxIdHandler
+from handler_mina_rank import  MinaActivityRankHandler
+from handler_activity_by_id import ActivityByIdHandler
+from handler_entertain_order import EntertainOrderHandler
+from handler_ad_biz_user import AdBizUserHandler
+from handler_article_comments import ArticleCommentsHandler
+from handler_post_push import PostPushHandler
+from handler_change_user_passwd import ChangeUserPasswdHandler
+from handler_share_activity_statics import ShareActivityStaticsHandler
+from handler_file_upload import FileUploadHandler
+from handler_product_url import ProductUrlHandler
+from handler_tools_place import ToolsPlaceHandler
+from handler_activity_tag import ActivityTagHandler
+from handler_tools_place_list import ToolsPlaceListHandler
+from handler_irregularity import IrregularityHandler
+from handler_keywords_management import KeywordsManagementHandler
+from handler_video_channels_management import VideoChannelsManagementHandler
+from handler_video_channel_delete import VideoChannelDeleteHandler
+from handler_video_programs_management import VideoProgramsManagementHandler
+from handler_video_program_delete import  VideoProgramDeleteHandler
+from handler_user_detail import UserDetailHandler
+from handler_statistic_user_activity import StatisticUserActivityHandler
+from handler_latest_notice import LatestNoticeHandler
+from handler_good_detail import GoodDetailHandler
+from handler_goods_push import GoodsPushHandler
+from handler_activity_fish_code import ActivityFishCodeHandler
+from handler_activity_customized import ActivityCustomizedHandler
+from handler_statistic_user_browse import StatisticUserBrowseHandler
+from handler_statistic_activity_refer import StatisticActivityReferHandler
+from handler_video_program_rank import VideoProgramRankHandler
+from handler_shop_biz_user import ShopBizUserHandler
+from handler_get_advs import GetAdvs
+from handler_get_adv_type import GetAdvType
+from handler_fishing_location import FishingLocationHandler
+from handler_location_shop_error import LocationShopErrorHandler
+from handler_pop_up_control import PopUpControlHandler
+from handler_delete_user_comment import DeleteUserCommentHandler
+from handler_article_tag import ArticlesTagHandler
+from handler_order_balance_flag import OrderBalanceFlagHandler
+from handler_user_video_channels_management import UserVideoChannelsManagementHandler
+from handler_user_video_programs_management import UserVideoProgramsManagementHandler
+from handler_fishing_shop import FishingShopHandler
+from handler_posts_push_list import PostsPushListHandler
+from handler_obj_info import ObjInfoHandler
+from handler_offical_recommend import OfficalRecomendHandler
+from handler_adv_alert import AdvAlertHandler
+from handler_city_management import CityManagementHandler
+from handler_article_modify import ArticleModifyHandler
+from handler_article_rank_place import ArticleRankPlaceHandler
+from handler_new_posts_sort_management import NewPostsSortManagementHandler
+from handler_recruit import RecruitHandler
+from handler_activity_item import ActivityItemHandler
+from handler_refresh_sort_post import RefreshSortPostHandler
+from handler_get_data_detail import GetDataDetailHandler
+from handler_wx_ht_user_management import WxHtUserManagementHandler
+from handler_statistic_all_data import StatisticAllDataHandler
+from handler_get_shop import GetShop
+from handler_display_count_config import DisplayCountConfigHandler
+from handler_chat_default_content_config import ChatDefaultContentConfigHandler
+from handler_api_access_statics import APIAccessStaticsHandler
+from handler_post_map_modify import PostMapModify
+from handler_district import DistrictHandler
+from handler_user_mobile_edit import UserMobileEditHandler
+from handler_get_activity_area import GetActivityAreaHandler
+from handler_location_audit import LocationAuditHandler
+
+handlers = [
+    (r'/login_front', LoginHandler),
+    (r'/login', LoginHtHandler),
+    (r'/logout', LogoutHtHandler),
+    (r'/model',ModelHtHandler),
+    (r"/primary_model",PrimaryModelHandler),
+    (r'/permission',PermissionHtHandler),
+    (r'/users',UsersHandler),
+    (r'/vestSearch',VestSearchHandler),
+    (r'/vestList',VestListHandler),
+    (r'/posts',PostHandler),
+    (r"/comments",CommentsHandler),
+    (r'/user_followed',UserFollowedHandler),
+    (r'/user_following',UserFollowingHandler),
+    (r'/userCollect',UserCollectHandler),
+    (r"/userRelatedPost", UserRelatedPostHandler),
+    (r"/proxy_server",ProxyServerHandler),
+    (r"/admin_users",AdminUserHandler),
+    (r"/new_admin_username",NewAdminUserHandler),
+    (r"/images_upload",ImagesUploadHandler),
+    (r"/vests",VestHandler),
+    (r"/myVests",MyVestHandler),
+    (r"/batchFollowing",BatchFollowingHandler),
+    (r"/batchLike",BatchLikeHandler),
+    (r"/batchWant",BatchWantHandler),
+    (r"/admin_role",AdminRolesHandler),
+    (r"/curr_user",CurrUserHandler),
+    (r"/advices",AdvicesHandler),
+    (r"/informs",InformHandler),
+    (r"/inform_detail",InformDetailHandler),
+    (r"/push",PushHandler),
+    (r"/statistic",StatisticHandler),
+    (r"/post_statistic",PostStatisticHandler),
+    (r"/new_act", NewActHandler),
+    (r"/activity",ActivityHandler),
+    (r"/activity_rank_area", ActivityRankAreaHandler),
+    (r"/activity_rank",ActivityRankHandler),
+    (r"/activity_check",ActivityCheckHandler),
+    (r"/activity_user_joined",ActivityUserJoinedHandler),
+    (r"/delete_post",DeletePostHandler),
+    (r"/activity_delete",ActivityDeleteHandler),#活动删除列表
+    (r"/delete_activity",DeleteActivityHandler),#活动删除操作，包括预删除(post)，删除(delete)，撤销删除(put)
+    (r"/user_freeze",UserFreezeHandler),
+    (r"/statistic_area_date",StatisticAreaDateHandler),
+    (r"/display_set",DisplaySetHandler),
+    (r"/delete_image",DeleteImageHandler),
+    (r"/session_list",SessionHandler),          ###获取会话列表
+    # (r"/group_session_list", GroupSessionHandler),         ###获取群会话列表
+    (r"/session_detail",SessionDetailHandler),          ###获取两人聊天记录
+    (r"/send_message_chat",SendMessageChatHandler),          ###发送聊天消息
+    (r"/get_last_message",LastMessageChatHandler),          ###获取最近一条聊天信息
+    (r"/boutique_after_pass",BoutiqueAfterPassHandler),          ###将待审核的精品贴，设置为延期精品
+    (r"/users_comment",UsersCommentHandler),          ###获取用户在指定渔获的所有评论
+    (r"/users_like",UsersLikeHandler),          ###获取用户在指定渔获的所有评论
+    (r"/groups",GroupsHandler),          ###获取帮派
+    (r"/groups/(\w+)",GroupHandler),          ###获取帮派详情
+    # 描述：获取热门帮派(GET)、设置热门帮派(POST)、热门帮派请求通过(PUT)、取消热门帮派(DELETE)
+    (r"/active/groups",ActiveGroupsHandler),
+    # 描述：设置热门帮派排位(PUT)、取消热门帮派排位(DELETE)
+    (r"/active/sort/groups",ActiveSortGroupsHandler),
+    # 描述：获取帮派公告列表
+    (r"/advs/groups",GroupAdvertisementHandler),
+     # 描述：帮派公告删除(DELETE)
+    (r"/groups/(\w+)/advs/(\w[\w+,?]+\w)",GroupAdvertisementHandler),
+    (r"/messagePushControl",MPCHandler),          ###活动当前所有的消息类型信息
+    # # 描述：拉人进帮派(POST)
+    (r"/group_invite",InviteGroupHandler),
+      # 描述：统计一个城市的用户数
+    (r"/city_count",CityCountHandler),
+    # 描述：渔获图片上传
+    (r"/post_image",PostImageHandler),
+    (r"/post_deleted_list",PostDeletedHandler),  ####被删除渔获列表
+    (r"/post_sold_out", PostSoldOutHandler),  ###帖子下架处理
+    (r"/admin_user_array",AdminUserArrayHandler),
+    (r"/user_device", UserDeviceHandler),
+    (r"/activity_deleted_list",ActivityDeletedHandler),  ####被删除活动列表
+    (r"/last_request_recod_count",LastRequestRecodCountHandler),
+    (r"/activity_boutique",ActivityBoutiqueHandler),  ####精品活动
+    (r"/versions",VersionsHandler),  ####版本管理
+    (r"/credits",CreditsHandler),  ####金币商城
+    (r"/articles(/.*)?",ArticlesHandler),   ##文章
+    (r"/articles_hot",ArticlesHotHandler),   ##热门文章
+    (r"/articles_tag",ArticlesTagHandler),   ##文章标签
+    (r"/night_work_statics",NightWorkStaticsHandler),   ##夜间工作统计
+    (r"/pingri_work_statics",PingriWorkStaticsHandler),  # 平日工作统计
+    (r"/user_type",UserTypeHandler),   ##用户类型获取(小号 or 正常用户)
+    (r"/judgeApplies",JudgeAppliesHandler),   ##获取用户判定申请
+    (r"/extend_user_record",ExtendUserRecordHandler),  ##用户录入,拉用户类表接口
+    (r"/advertisement(/.*)?",AdvertisementHandler),  ##广告管理
+    (r"/area_adv",AreaAdvHandler),  ##位置广告列表
+    (r"/upload", UploadHandler),       #文章图片上传
+    (r"/extend_user_record",ExtendUserRecordHandler),   ##用户录入,拉用户类表接口
+    (r"/watch_sign_in",WatchSignInHandler),   ##获取指定用户的值班信息
+    (r"/posts_liked_user_list",PostLikedUserListHandler),          ###获取帖子的所有点赞用户
+    (r"/usr_followed_list",FollowedListHandler),          ###获取用户的所有粉丝
+    (r"/proxy_diaoyu",ProxyDiaoyuHandler),   ##去哪钓鱼数据代理
+    (r"/recommend_user_statics_summary",RecommendUserStaticsSummaryHandler),
+    (r"/recommend_user_statics",RecommendUserStaticsHandler),
+    (r"/tools",ToolsHandler),
+    (r"/reset_yuhuo",ResetYuhuoHandler),
+    (r"/tools_rank",ToolsRankHandler),
+    (r"/activity_push_list",ActivitiesPushListHandler),
+    (r"/activity_type",ActivityTypeHandler),
+    (r"/activity_area_location",ActivityAreaLocationHandler),
+    (r"/ershou",ErShouHandler),
+    (r"/city_partner(/.*)?",CityPartnerHandler),
+    (r"/city_partner_award_apply(/.*)?",CityPartnerAwardApplyHandler),
+    (r"/user_activity_degree(/.*)?",UserActivityDegreeHandler),
+    (r"/recommend_user_activity_degree",RecommendUserActivityDegreeHandler),
+    (r"/refresh_banner",RefreshBannerHandler),  ##位置广告列表
+    (r"/startup_banner",StartupBannerHandler),  ##启动页
+    (r"/activity_biz_user(/.*)?",ActivityBizUserHandler),# 商家入驻审核
+    (r"/new_activity",NewActivityHandler),
+    (r"/new_activity_check",NewActivityCheckHandler),
+    (r"/new_activity_to_edit",NewActivityToEditHandler),
+    (r"/new_activity_delete",NewActivityDeleteHandler),#新版活动删除列表
+    (r"/new_activity_deleted_list",NewActivityDeletedHandler),  ####被删除的新版活动列表
+    (r"/vestSearchOrderByPostDistance",VestSearchOrderByPostDistanceHandler),  ####被删除的新版活动列表
+    (r"/activity_order",ActivityOrderHandler),
+    (r"/people_count",ActivityPeopleCountHandler),
+    (r"/activity_order_cancel",ActivityOrderCancelHandler),
+    (r"/activity_order_refund",ActivityOrderRefundHandler),
+    (r"/activity_order_remind",ActivityOrderRemindHandler),
+    (r"/deposit_apply",FinanceDepositApplyHandler),
+    (r"/income_history",FinanceIncomeHistoryHandler),
+    (r"/new_activity_send",NewActivitySendHandler),
+    (r"/new_activity_date", NewActivityDateHandler),#团期管理
+    (r"/new_delete_activity", NewDeleteActivityHandler),  # 活动删除操作，包括预删除(post)，删除(delete)，撤销删除(put)
+    (r"/order_remind_confirm",OrderRemindConfirmHandler),   # 订单提醒确认
+    (r"/manager_cancel_order",ManagerCancelOrderHandler),   # 官方取消订单
+    (r"/checkcode",CheckCodeHandler),   # 获取验证码
+    (r"/singleActivity", SingleActivityHandler),
+    (r"/biz_nick",BizNickHandler),   # 获取商家昵称
+    (r"/order_pay_info",OrderPayInfoHandler),   # 待接单接口
+    (r"/post_place",PostPlaceHandler),   # 获取渔获位置排名列表
+    (r"/order_balance",OrderBalanceHandler),   # 活动订单结算
+    (r"/user_expert",UserExpertHandler),   # 攻略达人
+    (r"/score", ScoreHandler),  # 人气调整
+    (r"/activity_front_sort",ActivityFrontSortHandler),   # 活动列表与前端一致
+    (r"/image_deal",ImageDealHandler),   # 图片处理
+    (r"/article_type",ArticleTypeHandler), # 设定攻略类型
+    (r"/tool_type",ToolTypeHandler), # 设定装备类型
+    (r"/article_place",ArticlePlaceHandler),   # 获取文章位置排名列表
+    (r"/remind_batch_deal",RemindBatchDealHandler),   # 提醒批量处理
+    (r"/to_article_edit",ArticleToEditHandler),     ##跳转文章编辑页面
+    (r"/biz_user_type",BizUserTypeHandler),   # 商家类型设置
+    (r"/invite_code",InviteCodeHandler),   # 由手机号查询子牙号
+    (r"/statistics",StatisticsHandler),   # 统计
+    (r"/statistics_post",StatisticsPostHandler),   # 提交统计项筛选条件
+    (r"/activity_modify",ActivityModifyHandler),   # 活动修改主题
+    (r"/user_info(/.*)?", UserInfoHandler),  # 查询用户信息
+    (r"/activity_by_code", ActivityByCodeHandler),  # 查询活动信息
+    (r"/mina_activity", MinaActivityHandler),   #微信端活动
+    (r"/mina_activity_rank", MinaActivityRankHandler),   #微信端活动
+    (r"/refresh_xcx_id", RefreshXcxIdHandler),  ##刷新小程序活动id表
+    (r"/activity_by_id", ActivityByIdHandler),  ####获取活动信息
+    (r"/entertain_order", EntertainOrderHandler),  ####代客下单
+    (r"/article_comments", ArticleCommentsHandler),## 删除文章评论
+    (r"/ad_biz_user", AdBizUserHandler),  ####广告商列表
+    (r"/post_push", PostPushHandler),        ###渔获推送
+    (r"/change_user_passwd", ChangeUserPasswdHandler),        ###修改密码
+    (r"/share_activity_statics", ShareActivityStaticsHandler),   ###运营分享统计
+    (r"/file_upload", FileUploadHandler),   ###文件上传
+    (r"/product_url_detail",ProductUrlHandler),   ###获取链接详情
+    (r"/tools_place",ToolsPlaceHandler),   # 获取装备位置排名列表
+    (r"/activity_tag", ActivityTagHandler),
+    (r"/tools_place_list", ToolsPlaceListHandler),
+    (r"/keyword_management", KeywordsManagementHandler),
+    (r"/irregularity", IrregularityHandler),  # 违规信息
+    (r"/video_channels_management", VideoChannelsManagementHandler),
+    (r"/video_channel_delete", VideoChannelDeleteHandler),
+    (r"/video_programs_management", VideoProgramsManagementHandler),
+    (r"/video_program_delete", VideoProgramDeleteHandler),
+    (r"/video_program_rank", VideoProgramRankHandler),
+    (r"/user_detail", UserDetailHandler),  # 用户详情
+    (r"/statistics_user_activity",StatisticUserActivityHandler), ###统计用户的活跃度
+    (r"/latest_notice", LatestNoticeHandler),  ####最新动态
+    (r"/goods_detail", GoodDetailHandler),  ####获取商品信息
+    (r"/push_goods", GoodsPushHandler),  ####推荐好货
+    (r"/activity_fish_code", ActivityFishCodeHandler),  ####游钓专线
+    (r"/activity_customized", ActivityCustomizedHandler), ###活动私人定制
+    (r"/statistics_user_browse", StatisticUserBrowseHandler), ###统计用户浏览次数
+    (r"/statistics_activity_refer", StatisticActivityReferHandler),  ###活动咨询统计
+    (r"/shop_biz_user",ShopBizUserHandler),###子牙商城商家身份设定
+    (r"/get_advs", GetAdvs),###获取广告列表
+    (r"/get_adv_type", GetAdvType),###获取广告对应类型列表
+    (r"/fishing_location(/.*)?",FishingLocationHandler),###钓场
+    #(r"/location_shop(/.*)?", LocationShopErrorHandler),###钓场 渔具店报错
+    (r"/pop_up_control", PopUpControlHandler),  ###活动当前所有的消息类型信息
+    (r"/delete_user_comment(/.*)?", DeleteUserCommentHandler),  ###删除用户评论
+    (r"/order_balance_flag", OrderBalanceFlagHandler),  ###活动当前所有的消息类型信息
+    (r"/user_video_channels_management", UserVideoChannelsManagementHandler),  ###用户创建频道审核
+    (r"/user_video_programs_management", UserVideoProgramsManagementHandler),  ###用户创建节目审核
+    (r"/fishing_shop(/.*)?", FishingShopHandler),  ###渔具店
+    (r"/post_push_history", PostsPushListHandler),  ###渔获推送历史
+    (r"/obj_info(/.*)?", ObjInfoHandler),  # ##对象详情
+    (r"/offical_recommend", OfficalRecomendHandler),  # ##官方推荐
+    (r"/adv_alert", AdvAlertHandler),  ###弹框广告
+    (r"/city_management", CityManagementHandler),  ###同城后台
+    (r"/article_modify", ArticleModifyHandler),  ###攻略字段修改
+    (r"/activity_modify", ActivityModifyHandler),  ###活动字段修改
+    (r"/article_rank_place", ArticleRankPlaceHandler),  ###新手课堂等钓法排名
+    (r"/sort_for_new_posts", NewPostsSortManagementHandler),  ###新版渔获排序
+    (r"/recruit", RecruitHandler),  # ##招聘
+    (r"/activity_item", ActivityItemHandler),  # ##团期添加
+    (r"/refresh_sort_post", RefreshSortPostHandler),  ###刷新新版post排序接口
+    (r"/get_data_detail", GetDataDetailHandler),  ###获取数据详情
+    (r"/staff",StaffHandler),       ###获取员工列表
+    (r"/wx_ht_management", WxHtUserManagementHandler), ###微信用户管理
+    (r"/statistics_all_data", StatisticAllDataHandler),  ###总体数据 统计
+    (r"/get_shop", GetShop),  ###获取商品详情及评论
+    (r"/display_count_config", DisplayCountConfigHandler),  ####浏览量规则配置
+    (r"/chat_content_config", ChatDefaultContentConfigHandler),  ####默认聊天配置
+    (r"/api_access_statics", APIAccessStaticsHandler),
+    (r"/post_map_modify(/.*)?", PostMapModify),   ###渔获地图修改
+    (r"/districts", DistrictHandler),        ###活动区域管理
+    (r"/user_mobile_edit", UserMobileEditHandler),   ###修改用户手机号
+    (r"/get_activity_area", GetActivityAreaHandler),   ###活动区域获取
+    (r"/get_report_error", LocationShopErrorHandler),   ###活动区域获取
+    (r"/location_audit", LocationAuditHandler),   ###钓场评论审核
+
+]
+
+
+
+
+
+
+

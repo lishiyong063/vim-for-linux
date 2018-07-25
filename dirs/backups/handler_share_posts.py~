@@ -1,0 +1,242 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# @Date    : 2014-12-05 15:45:20
+# @Author  : Your Name (you@example.org)
+# @Link    : http://example.org
+# @Version : $Id$
+
+from __future__ import division
+import tornado.web
+from tornado.web import asynchronous
+from tornado.options import options
+
+from mongokit import *
+from mongokit.helpers import totimestamp, fromtimestamp
+import pymongo
+from mongo_field_encoder import MongoFieldEncoder
+from handler_base import BaseHandler
+from access_track import access_log
+from services.service_post_display_count import *
+from services.service_post import *
+from auth import requires_auth
+import traceback
+import json
+import bson
+from bson import ObjectId
+import datetime
+import time
+import random
+from log import get_logger
+from model.posts import Post
+from model.user_post_activiy import User_post_activiy
+from utils.redis_client import RedisClient
+from services.service_user import get_actors_toMap
+from services.service_activity import *
+from services.service_credit import pushRedis
+log = get_logger()
+
+class PostShareHandler(BaseHandler):
+    """
+    帖子分享处理类
+    """
+    def __init__(self, application, request, **kwargs):
+        super(PostShareHandler, self).__init__(application, request, **kwargs)
+
+    @asynchronous
+    @access_log
+    def get(self):
+       """
+        获取帖子分享的用户
+       """
+       log.info("PostShareHandler.get")
+
+       try:
+            post_id=self.get_argument("post_id")
+            where = {
+                     "post_id":post_id,
+                     "act":"share"
+                     }
+            filters = {
+                       "username":1,"created":1,"channel":1,"_id":0
+
+                       }
+
+            activiy_info = options.dbconn.User_post_activiy.find(where,filters).sort('created', pymongo.DESCENDING)
+            users_entity = []
+            users_info = []
+            if activiy_info!=None:
+                username_ary = []
+                for info in activiy_info:
+                    username = info["username"]
+                    users_info.append(info)
+                    username_ary.append(username)
+                if len(username_ary)>0:
+                    user_map = get_actors_toMap(username_ary)
+                    index=0
+                    for username in username_ary:
+                       share_info = users_info[index]
+                       index = index +1
+                       user =  user_map.get(username,None)
+                       if share_info !=None and user!=None:
+                           if share_info.has_key("username"):
+                               del share_info["username"]
+                           share_info["actor"] = user
+                           users_entity.append(share_info)
+            response = {}
+            response["entities"]=users_entity
+
+            self.write(json.dumps(response,indent=2, ensure_ascii=False,cls=MongoFieldEncoder))
+            self.finish()
+
+       except Exception as e:
+        log.info('PostHandler.get Exception:%s' % e.message)
+        self.fire_response_bad_request(key_required=e.message)
+        return
+
+    @asynchronous
+    @access_log
+    def post(self):
+        """
+        帖子分享记录接口
+        """
+        log.info('PostShareHandler.post is called:'+self.request.body)
+
+        request_dic = json.loads(self.request.body,encoding="utf-8")
+        post_id = request_dic["post_id"]
+        channel = request_dic["channel"]
+        username=self.username
+        lookup = {
+            '_id':ObjectId(post_id),
+            'deleted': {'$ne': True}
+        }
+        post = options.dbconn.Post.find_one(lookup)
+
+
+        if post is None:
+            self.fire_response_bad("post_id_invalid","post_id is not exist")
+        else:
+            ###增加1次分享次数统计
+            self.add_share_count()
+
+            share_created = datetime.datetime.utcnow()
+            users_entity = []
+            info = {"created":share_created,"channel":channel,"actor":self.me}
+            users_entity.append(info)
+
+            response = {}
+
+            response["credit_info"] = pushRedis(self.username,"post_share",post_id,isAddCredits=self.isAddCredits())
+            response["entities"]=users_entity
+
+            self.write(json.dumps(response,indent=2, ensure_ascii=False,cls=MongoFieldEncoder))
+            self.finish()
+
+
+            try:
+                post_created=post["created"]
+
+
+                ##帖子分享数+1
+                lookup = {
+                    '_id':ObjectId(post_id)
+                }
+
+                option = {
+                    "$inc":{"share_count":1,"fs":1},
+                    "$set":{
+                        "last_act_date":share_created,
+                        "last_act":"share"
+                    }
+                }
+                options.dbconn.Post.find_and_modify(lookup, option, new=True)
+
+                if self.username:
+                    ##保存用户行为
+                    savePostActivity(unicode(self.username), unicode("share"), post_id=post_id, post=post, channel=channel)
+
+                    ###消息生产者：将消息发到redis队列中，主要包括from_user,to_usernames,message_type 3个
+                    if post["actor"]["username"]!=username:
+                        ####异步增加帖子浏览量
+                        addPostDisplayCount(post_id,"share")
+
+                        message_event=request_dic
+                        message_event["created"] = share_created
+                        to_usernames=[]
+                        to_usernames.append(post["actor"]["username"])
+                        message_event["to_usernames"] = to_usernames
+                        message_event["from_user"]={
+                                                    "nick":self.me["nick"],
+                                                     "username":self.username,
+                                                     "avatar_url":self.me["avatar_url"]
+                                                    }
+                        message_event["message_type"]="share"
+                        message_event["yuhuo_type"]=post.get("yuhuo_type",0)
+
+                        #### 保存消息监控表
+                        message_monitor_entity={
+                            "created":share_created,
+                            "begin_milli":int(round(time.time() * 1000)),
+                            "message_event":message_event
+                        }
+
+                        id,db_error=MongoClient.insert(message_monitor_entity,"message_monitor")
+
+                        message_event["message_monitor_id"]=id
+
+                        message_event = json.dumps(message_event,
+                                          indent=2,
+                                          ensure_ascii=False,
+                                          cls=MongoFieldEncoder)
+                        queue_name=options.redis_queue_message_event
+                        log.info("insert queue:%s"%queue_name)
+                        log.info("insert message_event:%s"%message_event)
+                        result =RedisClient.rpush(queue_name,message_event)
+
+                        user_act = {
+                            "act": "share",
+                            "username": self.username,
+                            "post_id": post_id
+                        }
+                        user_act_string = json.dumps(user_act,
+                                                     indent=2,
+                                                     ensure_ascii=False,
+                                                     cls=MongoFieldEncoder)
+                        user_act_queue = options.queue_act
+                        RedisClient.rpush(user_act_queue, user_act_string)
+
+            except pymongo.errors.DuplicateKeyError as e:
+                    log.error("DuplicateKeyError"+e.message)
+                    # self.write(response)
+                    # self.finish()
+                    # return
+            except Exception as e:
+                    log.info('PostHandler.psot Exception:%s' % e.message)
+                    # self.fire_response_bad_request(key_required=e.message)
+                    # return
+
+    def fire_response_bad_postid_invalid(self):
+        self.set_status(400)
+        response = {}
+        response["error"] = "post_id_invalid"
+        response["error_description"] = "post_id is not exist"
+        self.write(json.dumps(response, indent=2, ensure_ascii=False))
+        self.finish()
+
+    def add_share_count(self):
+        if self.username:
+            now = datetime.datetime.now()
+            now_date = int(now.strftime("%Y%m%d"))
+            # up_insert = {}
+            where = {
+                "username": self.username,
+                "created": now_date
+            }
+            # if times == "1":
+            up_insert = {
+                "$inc": {"post.one_share_count": 1}
+            }
+            # elif times == "2":
+            #     up_insert = {
+            #         "$inc": {"post.two_share_count": 1}
+            #     }
+            MongoClient.upsert(where, up_insert, "user_share_count")

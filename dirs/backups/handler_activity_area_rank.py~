@@ -1,0 +1,180 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# @Date    : 2014-12-05 15:45:20
+# @Author  : Your Name (you@example.org)
+# @Link    : http://example.org
+# @Version : $Id$
+
+from __future__ import division
+import tornado.web
+from tornado.web import asynchronous
+from tornado.options import options
+
+from mongokit import *
+from mongokit.helpers import totimestamp, fromtimestamp
+import pymongo
+from mongo_field_encoder import MongoFieldEncoder
+from handler_baseHt import BaseHtHandler
+from services.service_post import *
+from auth import requires_auth
+from model.user_post_activiy import User_post_activiy
+from services.service_activity import *
+import traceback
+import json
+import bson
+from bson import ObjectId
+import datetime
+import time
+import random
+from log import get_logger
+from model.posts import Post
+from utils.redis_client import RedisClient
+from utils.mongo_front import MongoFront
+log = get_logger()
+
+class ActivityRankAreaHandler(BaseHtHandler):
+    """
+    新版活动排序设置类
+    """
+    def __init__(self, application, request, **kwargs):
+        super(ActivityRankAreaHandler, self).__init__(application, request, **kwargs)
+
+    @asynchronous
+    @requires_auth
+    def put(self):
+        try:
+            log.info("ActivityRankAreaHandler.put:"+self.request.body)
+            body_dic = json.loads(self.request.body,encoding="utf-8")
+            activity_id = body_dic.get("activity_id",None)
+            rank_area_all = body_dic.get("rank_area_all",None)
+            rank_belong_area = body_dic.get("rank_belong_area", None)
+            rank_in_post = body_dic.get("rank_in_post", None)
+            rank_in_boutique = body_dic.get("rank_in_boutique", None)
+            rank_in_big = body_dic.get("rank_in_big", None)
+            rank_in_group = body_dic.get("rank_in_group", None)
+
+            if activity_id is not None and rank_area_all is not None and rank_belong_area is not None \
+                    and rank_in_post is not None and rank_in_boutique is not None and rank_in_big is not None\
+                    and rank_in_group is not None:
+                lookup = {"_id": ObjectId(activity_id)}
+                filter = {"belonge_area":1}
+                activity_temp = MongoFront.find_one(lookup,"activities",filter=filter)
+                if activity_temp is None:
+                    self.fire_response_error_info("activity not exists","activity not exists")
+                    return
+                belonge_area = activity_temp.get("belonge_area","")
+                if belonge_area =="":
+                    self.fire_response_error_info("belonge_area not exists", "belonge_area not exists")
+                    return
+                update_value={
+
+                }
+                rank_area_all_val=int(rank_area_all)
+                rank_belong_area_val = int(rank_belong_area)
+                rank_in_post_val = int(rank_in_post)
+                rank_in_boutique = int(rank_in_boutique)
+                rank_in_big = int(rank_in_big)
+                rank_in_group = int(rank_in_group)
+                set_dic={}
+                unset_dic={}
+                if rank_area_all_val>0:
+                    set_dic["rank_area_all"]=rank_area_all_val
+                else:
+                    unset_dic["rank_area_all"]=""
+
+                if rank_in_boutique>0:
+                    set_dic["rank_in_boutique"]=rank_in_boutique
+                else:
+                    set_dic["rank_in_boutique"]=999
+
+                if rank_in_big>0:
+                    set_dic["rank_in_big"]=rank_in_big
+                else:
+                    unset_dic["rank_in_big"] = ""
+
+                if rank_in_group>0:
+                    set_dic["rank_in_group"]=rank_in_group
+                else:
+                    unset_dic["rank_in_group"] = ""
+
+                if rank_belong_area_val>0:
+                    set_dic["rank_belong_area"]=rank_belong_area_val
+                else:
+                    unset_dic["rank_belong_area"]=""
+
+                if rank_in_post_val>0:
+                    set_dic["rank_in_post"]=rank_in_post_val
+                else:
+                    unset_dic["rank_in_post"]=""
+
+                if set_dic:
+                    update_value["$set"]=set_dic
+
+                if unset_dic:
+                    update_value["$unset"]=unset_dic
+
+                if update_value:
+
+                    for set_key in set_dic:
+                        if set_key=="rank_belong_area":
+                            where_cur = {
+                                "belonge_area":belonge_area,
+                                set_key: set_dic[set_key]
+                            }
+                        else:
+                            where_cur={
+                                set_key:set_dic[set_key]
+                            }
+                        if set_key=="rank_in_boutique":
+                            update_value_cur = {
+                                "$set": {
+                                    set_key: 999
+                                }
+                            }
+                        else:
+                            update_value_cur={
+                                "$unset":{
+                                    set_key:""
+                                }
+                            }
+                        MongoFront.update(where_cur,update_value_cur, "activities")
+
+                    MongoFront.update(lookup, update_value, "activities")
+            response = {"entities":[{}]}
+            self.write(json.dumps(response,
+                                  indent=2,
+                                  ensure_ascii=False,
+                                  cls=MongoFieldEncoder))
+            self.finish()
+        except Exception as e:
+            log.info('ActivityRankAreaHandler.put Exception:%s' % e.message)
+            self.fire_response_bad_responseException(e.message)
+            return
+
+    @asynchronous
+    def delete(self):
+        log.info("ActivityRankAreaHandler.delete is called:")
+
+        activity_id = self.get_argument('activity_id', None)
+        unset_rank_type = self.get_argument('type', None)
+
+        if activity_id is not None and unset_rank_type is not None \
+                and unset_rank_type in ["rank_in_post","rank_area_all","rank_belong_area","rank_in_boutique","rank_in_big","rank_in_group"]:
+            lookup = {"_id": ObjectId(activity_id)}
+            # 在热门活动中的取消排名===>设为999，供查询排序
+            if unset_rank_type=="rank_in_boutique":
+                update_value = {
+                    "$set": {unset_rank_type: 999}
+                }
+            else:
+                update_value = {
+                    "$unset": {unset_rank_type: ""}
+                }
+            MongoFront.update(lookup, update_value, "activities")
+
+        response = {"entities": [{}]}
+        self.write(json.dumps(response,
+                              indent=2,
+                              ensure_ascii=False,
+                              cls=MongoFieldEncoder))
+        self.finish()

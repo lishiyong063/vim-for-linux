@@ -1,0 +1,20 @@
+# -*- coding: utf-8 -*-
+# Created Time: 2018-04-16 12:40:04
+
+s = [1,2,3,4,5,6,7,8,9]
+
+def search(lst, number, low, high):
+    if  low >= high:
+        return
+    mid = (low+high) // 2
+    if lst[mid] > number:
+        return search(lst, number, low, mid-1)
+    elif lst[mid] == number:
+        print(mid)
+        return
+    else:   
+        return search(lst, number, mid+1,high)
+
+
+
+search(s, 6, 0,9)

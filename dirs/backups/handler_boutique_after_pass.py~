@@ -1,0 +1,130 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# @Date    : 2015-05-18 17:41:52
+# @Author  : Your Name (you@example.org)
+# @Link    : http://example.org
+# @Version : $Id$
+from handler_baseHt import BaseHtHandler
+from log import get_logger
+import tornado.web
+from tornado.web import asynchronous
+from tornado.options import options
+import json
+import hashlib
+import datetime
+import hashlib
+import random
+import pymongo
+import time
+from log import get_logger
+from model.accounts_ht import Account_ht
+from model.posts import Post
+import optionsSetting
+from utils.secret import *
+import traceback
+from utils.redis_client import RedisClient
+from mongo_field_encoder import MongoFieldEncoder
+from mongolog import MongoHandler
+from mongokit.helpers import totimestamp, fromtimestamp
+from utils.token_im import TokenService
+from tornado.httpclient import HTTPRequest
+from utils.mongo_front import MongoFront
+from services.service_post import getPostList
+from services.service_activity import *
+from bson import ObjectId
+from auth import requires_auth
+import sys
+sys.setdefaultencoding('utf8')
+try:
+    from tornado.curl_httpclient import CurlAsyncHTTPClient as AsyncHTTPClient
+except ImportError:
+    from tornado.simple_httpclient import SimpleAsyncHTTPClient as AsyncHTTPClient
+log = get_logger()
+class BoutiqueAfterPassHandler(BaseHtHandler):
+    @requires_auth
+    @asynchronous
+    def put(self):
+        log.info("BoutiqueAfterPassHandler.put:"+self.request.body)
+        body_dic = json.loads(self.request.body,encoding="utf-8")
+
+        post_id = body_dic.get("post_id",None)
+        post_id_array=post_id.split(",")
+        post_id_object_array=[]
+        for post_id in post_id_array:
+            post_id_object_array.append(ObjectId(post_id))
+
+        lookup = {"_id": {"$in":post_id_object_array}}
+
+        updated={
+            "$set":{
+                "after_boutique":"1"
+            }
+        }
+        MongoFront.find_and_modify(lookup,updated,"posts")
+        response = {"entities":[]}
+        self.write(json.dumps(response,
+                              indent=2,
+                              ensure_ascii=False,
+                              cls=MongoFieldEncoder))
+        self.finish()
+
+        for post_id in post_id_array:
+            post = self.getPost(post_id)
+            to_usernames = [post["actor"]["username"]]
+
+            where={
+                "username":post["actor"]["username"]
+            }
+            user = MongoFront.find_one(where,"users")
+            nick=user.get("nick","")
+
+            content = post.get("content","")
+            if content!="":
+                unicode_content= content.decode("utf-8")
+                if len(unicode_content)>5:
+                    content=unicode_content[:5].encode("utf-8")+"。。。"
+                # message="恭喜啊，%s钓友，你发布的“%s”渔获被推荐为最热精品，将于明天对全国所有钓友进行推送。"%(nick,content)
+                message="恭喜啊，%s钓友，你发布的“%s”渔获被推荐为热门，官方将会对全国所有钓友进行推送，敬请关注。"%(nick,content)
+
+            else:
+                # message="恭喜啊，%s钓友，你发布的渔获被推荐为最热精品，将于明天对全国所有钓友进行推送。"%(nick)
+                message="恭喜啊，%s钓友，你发布的渔获被推荐热门，官方将会对全国所有钓友进行推送，敬请关注。"%(nick)
+
+            message_event = {}
+            message_event["post_id"]=str(post_id)
+            message_event["target"]="apoint"
+            message_event["message_type"]="boutique_after"
+            message_event["title_type"]="after_boutique"
+            message_event["content"] = message
+            message_event["to_usernames"] = to_usernames
+
+            # push_all=body_dic.get('push',None)
+            # if push_all is not None and push_all=="1":
+            #     message_event["push_all"] = push_all
+            # else:
+            #     message_event["push_all"] = "0"
+
+            #### 保存消息监控表
+            message_monitor_entity={
+                "created":datetime.datetime.utcnow(),
+                "begin_milli":int(round(time.time() * 1000)),
+                "message_event":message_event
+            }
+            id,db_error=MongoFront.insert(message_monitor_entity,"message_monitor")
+
+            message_event["message_monitor_id"]=id
+
+            message_event = json.dumps(message_event,
+                              indent=2,
+                              ensure_ascii=False,
+                              cls=MongoFieldEncoder)
+            queue_name=options.redis_queue_message_event
+            log.info("insert queue:%s"%queue_name)
+            log.info("insert message_event:%s"%message_event)
+            RedisClient.rpush(queue_name,message_event)
+
+    def getPost(self,id):
+        lookup = {"_id":ObjectId(id)}
+        filters = {"page":1,"content":1,"actor":1,"_id":0}
+        post = MongoFront.find_one(lookup,"posts",filters)
+        return post

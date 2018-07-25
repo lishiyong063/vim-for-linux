@@ -1,0 +1,371 @@
+﻿<!DOCTYPE HTML>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="renderer" content="webkit|ie-comp|ie-stand">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width,initial-scale=1,minimum-scale=1.0,maximum-scale=1.0,user-scalable=no" />
+  <meta http-equiv="Cache-Control" content="no-siteapp" />
+  <!--[if lt IE 9]>
+  <script type="text/javascript" src="lib/html5.js"></script>
+  <script type="text/javascript" src="lib/respond.min.js"></script>
+  <script type="text/javascript" src="lib/PIE_IE678.js"></script>
+  <![endif]-->
+  <link href="css/H-ui.min.css" rel="stylesheet" type="text/css" />
+  <link href="css/H-ui.admin.css" rel="stylesheet" type="text/css" />
+  <link href="lib/font-awesome/font-awesome.min.css" rel="stylesheet" type="text/css" />
+  <!--[if IE 7]>
+  <link href="lib/font-awesome/font-awesome-ie7.min.css" rel="stylesheet" type="text/css" />
+  <![endif]-->
+  <link href="lib/iconfont/iconfont.css" rel="stylesheet" type="text/css" />
+  <!--[if IE 6]>
+  <script type="text/javascript" src="lib/DD_belatedPNG_0.0.8a-min.js" ></script>
+  <script>DD_belatedPNG.fix('*');</script>
+  <![endif]-->
+  <title>活动管理</title>
+  <style type="text/css">
+    html,body{height:auto;}
+    #province select{margin-left:10px; width:100px}
+  </style>
+</head>
+<body >
+<nav class="breadcrumb"><i class="iconfont">&#xf012b;</i> 首页 <span class="c-gray en">&gt;</span> PC端活动 <span class="c-gray en">&gt;</span> 活动列表 </nav>
+<div class="pd-20">
+  <div class="text-c scroll_fixed">
+      <div style="float: left">
+          活动编号：
+          <input name="activity_code" id="activity_code"/>
+      </div>
+
+    <div  style="float: left">
+        &nbsp;&nbsp;活动排名筛选：
+      <select size="1" name="rank" datatype="*" nullmsg="全部" id="rank">
+        <option value="" selected>无</option>
+        <!--<option value="all" style="color: #dd514c">仅显示在全部活动列表设置了排名的活动</option>-->
+        <!--<option value="area" style="color: #3bb4f2">仅显示在所在片区设置了排名的活动</option>-->
+        <option value="post" style="color: #5eb95e">仅显示在渔获列表有排名的活动</option>
+      </select>
+      </div>
+    <div style="float: left">
+      &nbsp;&nbsp;商家所属活动片区：
+      <select size="1" name="admin_area" datatype="*" nullmsg="全部" id="admin_area">
+        <option value="0" selected>全部</option>
+      </select>
+      </div>
+
+     <div style="float: left;display: none" id = "belonge">
+      &nbsp;&nbsp;活动所属活动片区：
+      <select size="1" name="belonge_area" datatype="*" nullmsg="全部" id="belonge_area">
+        <option value="0" selected>全部</option>
+      </select>
+     </div>
+
+    <div style="float: left">
+      &nbsp;&nbsp;商家名称：
+      <select size="1" name="biz_user_list" datatype="*" nullmsg="全部" id="biz_user_list">
+        <option value="0" selected>全部</option>
+      </select>
+      </div>
+    <div style="float: left">
+      &nbsp;&nbsp;活动发布者子牙号：
+      <input name="invite_code" id="invite_code"/>
+    </div>
+      <div style="float: left">
+          &nbsp;&nbsp;活动主题查询：
+          <input name="activity_title" id="activity_title"/>
+      </div>
+      <div style="float: left">
+          &nbsp;&nbsp;活动专线查询：
+          <select size="1" name="fish_code" datatype="*" nullmsg="全部" id="fish_code">
+              <option value="0" selected>全部</option>
+              <option value="1" >大鱼专线</option>
+              <option value="2" >商务团建</option>
+          </select>
+      </div>
+      <div>
+      <button type="button" class="btn btn-success" id="" name="" onclick=loadActivityList("","")><i class="icon-search"></i> 搜活动</button>
+    </div>
+    <!--<br><br>-->
+    <!--<div class="text-c" style="clear:both">-->
+    <!--<input type="text" class="input-text" style="width:250px" placeholder="输入发布者昵称或子牙号" id="nick" name="nick">-->
+    <!--<button type="button" class="btn btn-success"  onclick="search_activity_user()"><i class="icon-search"></i> 搜活动</button>-->
+  </div>
+  </div>
+  <br>
+  <div class="cl pd-5 bg-1 bk-gray mt-20">
+    <!--<span class="select-box" style="width:150px">-->
+      <!--<select id="myVests" class="select">-->
+        <!--<option value="">选择小号</option>-->
+      <!--</select>-->
+    <!--</span>-->
+    <!--<a href="javascript:;" onclick="batch_want()" class="btn btn-primary radius">批量想去</a>-->
+    <a data-toggle="modal" href="#display_add" id="batch_set_dis" style="display: none" onclick="batchDisplay('batch_display')" class="btn btn-primary radius">批量增加浏览量</a>
+     <span class="r"><a href="javascript:;" onclick='loadActivityList("","");layer.msg("刷新成功",1,1);' class="btn btn-primary radius">刷新</a>&nbsp;&nbsp;&nbsp;&nbsp;共有数据：<strong id="count">88</strong> 条</span>
+  </div>
+
+
+  <table class="table table-border table-bordered table-hover table-bg table-sort">
+    <thead>
+    <tr class="text-c">
+      <th width="10px"><input type="checkbox" name="" value=""></th>
+      <th width="20px">图片</th>
+      <th width="80px">内容</th>
+      <th width="50px">商家信息</th>
+      <th width="40px" onclick=loadActivityList("created",this.className)>发布时间</th>
+      <th width="40px" onclick=loadActivityList("pass_date",this.className)>上架时间</th>
+      <th width="70px">支付方式及赏金</th>
+      <th width="50px">集合地点</th>
+      <!--<th width="30px" >活动类型</th>-->
+      <th width="30px" >活动状态</th>
+      <th width="30px">操作</th>
+    </tr>
+
+    </thead>
+    <tbody id = "post_list">
+    <div id="cursor" style="display:none"></div>
+
+
+    </tbody>
+
+    <tbody id="loading">
+    <tr class="text-c">
+      <td width="10" colspan="11"><img src="images/downloading.gif" alt="image" ></td>
+    </tr>
+    </tbody>
+  </table>
+  <div id="pageComponent" ></div>
+  <div id="myVestDialog" class="modal hide fade" tabindex="-1" role="dialog" aria-labelledby="myModalLabel" aria-hidden="true">
+    <div class="modal-header">
+      <h3 id="myModalLabel">请选择小号</h3><a class="close" data-dismiss="modal" aria-hidden="true" href="javascript:void();">×</a>
+    </div>
+    <div class="modal-body" id="my_vest_checklist">
+      <select id="myVests_select">
+      </select>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-primary" onclick="submit()">提交</button> <button class="btn" data-dismiss="modal" aria-hidden="true" id="close1">关闭</button>
+    </div>
+  </div>
+
+  <div id="titleModify" class="modal hide fade" tabindex="-1" role="dialog" aria-labelledby="myModalLabel" aria-hidden="true">
+      <div style="Float:left"  class="modal-header">
+          <strong >原主题：</strong>
+      </div>
+      <div class="modal-body">
+          <textarea id="orginal_title" cols="50"></textarea>
+      </div>
+      <div style="Float:left" class="modal-header">
+          <strong >新主题：</strong>
+      </div>
+      <div class="modal-body">
+          <textarea id="new_title" cols="50"></textarea>
+      </div>
+      <div class="modal-footer">
+          <button class="btn btn-primary" onclick="submit()">提交</button> <button class="btn" data-dismiss="modal" aria-hidden="true" id="close5">关闭</button>
+      </div>
+  </div>
+  <div id="delete_content" class="modal hide fade" tabindex="-1" role="dialog" aria-labelledby="myModalLabel" aria-hidden="true">
+    <div class="modal-header">
+      <h4 >删除原因？</h4><a class="close" data-dismiss="modal" aria-hidden="true" href="javascript:void();">×</a>
+    </div>
+    <div class="modal-body" id="delete_reason_list">
+      <select id="reason">
+        <option>广告</option>
+        <option>色情</option>
+        <option>违法</option>
+        <option >内容不符</option>
+        <option >重复发帖</option>
+        <option>其他</option>
+      </select>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-primary" onclick="submit()">提交</button> <button class="btn" data-dismiss="modal" aria-hidden="true" id="close2">关闭</button>
+    </div>
+  </div>
+
+
+  <div id="set_activity_type_alert" class="modal hide fade" tabindex="-1" role="dialog" aria-labelledby="myModalLabel" aria-hidden="true">
+    <div class="modal-header">
+      <h4 >设定活动类型：</h4><a class="close" data-dismiss="modal" aria-hidden="true" href="javascript:void();">×</a>
+    </div>
+    <div class="modal-body" >
+      <input type="checkbox" value="is_hot" name="set_activity_type"> 热门活动 <br>
+      <input type="checkbox" value="is_deepSea" name="set_activity_type"> 深海活动 <br>
+      <input type="checkbox" value="is_awaySea" name="set_activity_type"> 远海活动 <br>
+      <!--<input type="checkbox" value="is_nearSea" name="set_activity_type"> 周边活动 <br>-->
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-primary" onclick="submit()">提交</button> <button class="btn" data-dismiss="modal" aria-hidden="true" id="close3">关闭</button>
+    </div>
+  </div>
+
+<div id="set_activity_fish_code" class="modal hide fade" tabindex="-1" role="dialog" aria-labelledby="myModalLabel" aria-hidden="true">
+    <div class="modal-header">
+        <h4 >设定活动栏目：</h4><a class="close" data-dismiss="modal" aria-hidden="true" href="javascript:void();">×</a>
+    </div>
+    <div class="modal-body" >
+        <input type="checkbox" value="1" name="fish_code"> 大鱼专线 <br>
+        <input type="checkbox" value="2" name="fish_code"> 商务团建 <br>
+    </div>
+    <div class="modal-footer">
+        <button class="btn btn-primary" onclick="submit()">提交</button> <button class="btn" data-dismiss="modal" aria-hidden="true" id="close8">关闭</button>
+    </div>
+</div>
+
+<div id="display" class="modal hide fade" tabindex="-1" role="dialog" aria-labelledby="myModalLabel" aria-hidden="true">
+    <div class="modal-header">
+        <h4 >设置查看次数</h4><a class="close" data-dismiss="modal" aria-hidden="true" href="javascript:void();">×</a>
+    </div>
+    <div class="modal-body" id="display_list">
+        <input type="number" name="points" min="1" id="display_count">
+    </div>
+    <div class="modal-footer">
+        <button class="btn btn-primary" onclick="submit()">提交</button> <button class="btn" data-dismiss="modal" aria-hidden="true" id="close9">关闭</button>
+    </div>
+</div>
+
+<div id="display_add" class="modal hide fade" tabindex="-1" role="dialog" aria-labelledby="myModalLabel" aria-hidden="true">
+    <div class="modal-header">
+        <h4>增加查看次数</h4><a class="close" data-dismiss="modal" aria-hidden="true" href="javascript:void();">×</a>
+    </div>
+    <div class="modal-body" id="display_add_list">
+        <input type="number" name="points" min="1" id="display_add_count">
+    </div>
+    <div class="modal-footer">
+        <button class="btn btn-primary" onclick="submit()">提交</button> <button class="btn" data-dismiss="modal" aria-hidden="true" id="close10">关闭</button>
+    </div>
+</div>
+
+  <div id="set_activity_tag_alert" class="modal hide fade" tabindex="-1" role="dialog" aria-labelledby="myModalLabel" aria-hidden="true">
+    <div class="modal-header">
+      <h4 >设定活动标签</h4><a class="close" data-dismiss="modal" aria-hidden="true" href="javascript:void();">×</a>
+    </div>
+    <div class="modal-body" >
+      <input type="checkbox" value="官方推荐" name="activity_tag"> 官方推荐&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+      <input type="checkbox" value="节庆特惠" name="activity_tag"> 节庆特惠&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+    </div>
+    <div style="clear:both">
+      &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;其他：<input  type="text" id="activity_tag_input" style="width:150px" value="">
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-primary" onclick="submit()">提交</button> <button class="btn" data-dismiss="modal" aria-hidden="true" id="close6">关闭</button>
+    </div>
+  </div>
+  <div id="area_location" class="modal hide fade" tabindex="-1" role="dialog" aria-labelledby="myModalLabel" aria-hidden="true">
+    <div class="modal-header">
+      <h4 >指定城市</h4><a class="close" data-dismiss="modal" aria-hidden="true" href="javascript:void();">×</a>
+    </div>
+    <div class="modal-body" >
+      <div>
+        <span id="city_span"></span>
+      </div>
+
+      <div style="clear:both">
+        <br>
+        经纬度：<input id="location" style="width:150px" value="" readonly="readonly" >
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-primary" onclick="submit()">提交</button> <button class="btn" data-dismiss="modal" aria-hidden="true" id="close4">关闭</button>
+    </div>
+  </div>
+</div>
+<script type="text/javascript" src="lib/jquery.min.js"></script>
+<script type="text/javascript" src="lib/layer1.8/layer.min.js"></script>
+<script type="text/javascript" src="lib/laypage/laypage.js"></script>
+<script type="text/javascript" src="lib/My97DatePicker/WdatePicker.js"></script>
+<script type="text/javascript" src="lib/jquery.dataTables.min.js"></script>
+<script type="text/javascript" src="js/H-ui.js"></script>
+<script type="text/javascript" src="js/H-ui.admin.js"></script>
+<script type="text/javascript" src="js/H-ui.admin.doc.js"></script>
+<script type="text/javascript" src="lib/laypage/laypage.js"></script>
+<script type="text/javascript" src="lib/jquery.provincesCity.js"></script>
+<script type="text/javascript" src="lib/provincesData.js"></script>
+<script type="text/javascript" src="lib/bootstrap-modalmanager.js"></script>
+<script type="text/javascript" src="lib/bootstrap-modal.js"></script>
+<script type="text/javascript" src="bizjs/initial.js"></script>
+<script type="text/javascript" src="bizjs/map.js"></script>
+<script type="text/javascript" src="bizjs/base.js"></script>
+<script type="text/javascript" src="bizjs/new-activity-list.js?t=111"></script>
+<script type="text/javascript" id="bdshare_js" data="type=tools&amp;uid=0" ></script>
+<script type="text/javascript" id="bdshell_js"></script>
+<script type="text/javascript" src="bizjs/coastal_city.js?t=12"></script>
+<script type="text/javascript" src="bizjs/city_lat_lng.js"></script>
+
+
+<script type="text/javascript" src="bizjs/scroll_fixed.js" ></script>
+
+<script type="text/javascript">
+  $('.table-sort').dataTable({
+    "lengthMenu":false,//显示数量选择
+    "bFilter": false,//过滤功能
+    "bPaginate": false,//翻页信息
+    "bInfo": false,//数量信息
+    "aaSorting": [[ 4, "desc" ]],//默认第几个排序
+    "bStateSave": true,//状态保存
+    "aoColumnDefs": [
+      //{"bVisible": false, "aTargets": [ 3 ]} //控制列的隐藏显示
+      {"orderable":false,"aTargets":[0,1,2,3,6,7,8,9]}// 制定列不参与排序
+    ],
+    "aoColumns":[
+      null,
+      null,
+      null,
+      null,
+      { "asSorting": ["desc", "asc" ] },
+      { "asSorting": ["desc", "asc" ] },
+      null,
+      null,
+      null,
+      null
+    ]
+  });
+
+  var chargeCity= new Array()
+  $(function(){
+
+      if (user_info.dis_count_set_array) {
+          var dis_count_set_array = user_info.dis_count_set_array;
+          for (i in dis_count_set_array) {
+              var dis_count_set = dis_count_set_array[i]
+              if (dis_count_set == "activity_dis_count_set") {
+                  $('#batch_set_dis').show()
+              }
+          }
+      }
+
+      if (user_info.username=="fenglin" || user_info.username=="admin") {
+          $('#batch_set_dis').show()
+      }
+
+    if (user_info.level=="staff") {
+      var city_array = new Array()
+      province_array = user_info.province_city_array
+      for (index in province_array) {
+        city_array = city_array.concat(province_array[index].citys.split(","))
+      }
+
+      chargeCity = city_array
+    }else{
+      $('#searchByAdminUser').show()
+      $('#belonge')[0].style.display= "block"
+      loadManagers()
+    }
+    loadArea()
+    loadBizUser()
+
+    loadActivityList("","")
+    myVests()
+
+    loadChargeCity()
+
+    initAlertProvinceCity()
+
+
+
+  })
+
+</script>
+
+</body>
+</html>

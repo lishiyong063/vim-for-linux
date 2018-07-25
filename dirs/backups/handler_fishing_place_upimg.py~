@@ -1,0 +1,128 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# @Date    : 2014-12-05 15:45:20
+# @Author  : Your Name (you@example.org)
+# @Link    : http://example.org
+# @Version : $Id$
+from __future__ import division
+import uuid
+from access_track import access_log
+import tornado.web
+from tornado.web import asynchronous
+from tornado.options import options
+
+from mongokit import *
+from mongokit.helpers import totimestamp, fromtimestamp
+from mongo_field_encoder import MongoFieldEncoder
+from handler_base import BaseHandler
+from services.service_post_list import *
+from auth import requires_auth
+import traceback
+import json
+from bson import ObjectId
+import datetime
+import random
+from log import get_logger
+from model.posts import Post
+from model.user_post_activiy import User_post_activiy
+from model.user_collect_post import User_collect_post
+from model.user_collect_tool import User_collect_tool
+from utils.redis_client import RedisClient
+from services.service_activity import *
+from tornado import gen
+from tornado.escape import url_escape
+from services.service_article import *
+from services.service_shop import *
+from utils.mongo_client import MongoClient
+from services.service_fishing_place import *
+from services.service_geocoder import *
+from services.city_location import *
+from services.service_fishing_place import get_image_info, get_gps_info
+
+
+log = get_logger()
+location_dic = get_city_location()
+
+
+class FishingPlaceUpImgHandler(BaseHandler):
+
+    def __init__(self, application, request, **kwargs):
+        super(FishingPlaceUpImgHandler, self).__init__(application, request, **kwargs)
+    """
+        获取钓场图片信息列表
+        1.钓场传图 -> 审核通过后 -> 再存fish_place
+        or 返回 钓场图片时 + 审核通过的图片
+    """
+
+    @gen.coroutine
+    @asynchronous
+    @access_log
+    def get(self):
+        self.set_header("Access-Control-Allow-Origin", "*")
+        log.info('FishingPlaceUpImgHandler.get is called'+str(self.request.arguments))
+        # 钓场id
+        place_id = self.get_argument("place_id")
+        cursor, img_list = self.getimgList({"fishing_id": place_id, "status": 1})
+        response = {"images": img_list, "cursor": cursor}
+        self.write(json.dumps(response, indent=2, ensure_ascii=False, cls=MongoFieldEncoder))
+        self.finish()
+
+
+    def getimgList(self, where, sort_key="created", limit=10):
+        """ 获取钓场图片列表
+        """
+        cursor = ""
+        sort = [(sort_key, -1)]
+        img_cursor = MongoClient.find_all_sorted_limited(where, "fishing_place_upimg", sort, limit + 1,filter={"_id":0})
+        img_url_array = []
+        for img in img_cursor:
+            img_url_array.append(img)
+        if len(img_url_array) == limit + 1:
+            img_url_array.pop(-1)
+            cursor = str(img_url_array[-1][sort_key])
+
+        return img_url_array, cursor
+
+
+    @requires_auth
+    @asynchronous
+    @gen.coroutine
+    def post(self):
+        log.info("FishingPlaceUpImgHandler.post:"+str(self.request.body))
+        try:
+            body = json.loads(self.request.body, encoding="utf-8")
+            pages = body.get("pages", [])
+            fish_place_id = body.get("place_id", [])
+            if not isinstance(pages, list) or not pages:
+                self.fire_response_bad_content("common_error", "keyword", "关键信息没填")
+                return
+            if not MongoClient.find_one({"fishing_id": fish_place_id}, "fishing_place"):
+                self.fire_response_bad_content("common_error", "keyword", "钓场不存在")
+                return
+
+            created = datetime.datetime.utcnow()
+            # 新增照片不能大于九张照片
+            if len(pages) > 9:
+                self.fire_response_bad_content("common_error", "keyword", "最多上传九张照片多余的请删除")
+                return
+            for page in pages:
+                update_val = {
+                    # 0,待审核 1,审核通过 2,下架
+                    'username': self.username,
+                    "fishing_id": fish_place_id,
+                    "create_time": created,
+                    "img_url": page,
+                    "status": 0,
+                }
+                MongoClient.insert(update_val, "fishing_place_upimg")
+
+            response = {}
+            response["entities"] = []
+            self.write(json.dumps(response, indent=2, ensure_ascii=False, cls=MongoFieldEncoder))
+            self.finish()
+
+        except Exception as e:
+            log.info('FishingLocationHandler.get Exception:%s' % e.message)
+            log.error(traceback.format_exc())
+            self.fire_response_bad_request(key_required=e.message)
+            return

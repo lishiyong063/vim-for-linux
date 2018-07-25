@@ -1,0 +1,310 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# @Date    : 2015-05-18 17:41:52
+# @Author  : Your Name (you@example.org)
+# @Link    : http://example.org
+# @Version : $Id$
+from handler_baseHt import BaseHtHandler
+from log import get_logger
+import tornado.web
+from tornado.web import asynchronous
+from tornado.options import options
+import json
+import hashlib
+import datetime
+import hashlib
+from bson import ObjectId
+import random
+import time
+from log import get_logger
+from model.advices import Advice
+from model.permissions_ht import Permissions_ht
+import optionsSetting
+from utils.secret import *
+import traceback
+from utils.redis_client import RedisClient
+from utils.mongo_front import MongoFront
+from mongo_field_encoder import MongoFieldEncoder
+from services.service_activity import *
+from mongolog import MongoHandler
+from mongokit.helpers import totimestamp, fromtimestamp
+from utils.token_im import TokenService
+from tornado.httpclient import HTTPRequest
+from utils.mongo_client import MongoClient
+import pymongo
+from auth import requires_auth
+from services.service_admin_log import save_log
+from services.service_post import user_latest_posts
+try:
+    from tornado.curl_httpclient import CurlAsyncHTTPClient as AsyncHTTPClient
+except ImportError:
+    from tornado.simple_httpclient import SimpleAsyncHTTPClient as AsyncHTTPClient
+log = get_logger()
+class DeletePostHandler(BaseHtHandler):
+     '''
+     撤销删除
+     '''
+     @requires_auth
+     @asynchronous
+     def put(self):
+        log.info("DeletePostHandler.put:"+self.request.body)
+        try:
+            body_dic = json.loads(self.request.body,encoding="utf-8")
+            post_id = body_dic.get("post_id",None)
+            pre_delete_content = body_dic.get("pre_delete_content",None)
+            lookup = {"_id": ObjectId(post_id)}
+    
+            updated={
+                "$set":{
+                     "pre_delete": False
+                },
+                "$unset":{
+                    "pre_delete_history":"",
+                    "deleted":""
+                }
+            }
+            MongoFront.update(lookup,updated,"posts")
+            response = {"entities":[]}
+            self.write(json.dumps(response,
+                                  indent=2,
+                                  ensure_ascii=False,
+                                  cls=MongoFieldEncoder))
+            self.finish()
+
+            # 修改用户发布的渔获、装备数
+            delete_post_where = {
+                "_id": ObjectId(post_id)
+            }
+            post_tmp = MongoFront.find_one(delete_post_where, "posts")
+            if post_tmp:
+                yuhuo_type = post_tmp.get("yuhuo_type", "")
+                username = post_tmp["actor"]["username"]
+
+                user_where = {"username": username}
+
+                if yuhuo_type == 1:
+                    update_value = {
+                        "$inc": {
+                            "tools_count": 1
+                        }
+                    }
+                else:
+                    update_value = {
+                        "$inc": {
+                            "post_count": 1
+                        }
+                    }
+
+                # 重新获取最近15天发帖信息
+                last_post_images = user_latest_posts(username)
+                update_value["$set"] = {
+                    "last_post_images": last_post_images
+                }
+
+                MongoFront.update(user_where, update_value, "users")
+
+        except Exception as e:
+            log.info('DeletePostHandler.put Exception:%s' % e.message)
+            log.error(traceback.format_exc())
+            self.fire_response_bad_request(key_required=e.message)
+            return
+        
+     '''
+     申请删除，在渔获列表页面
+     '''
+     @requires_auth
+     @asynchronous
+     def post(self):
+        log.info("DeletePostHandler.post:"+self.request.body)
+        try:
+            body_dic = json.loads(self.request.body,encoding="utf-8")
+            post_id = body_dic.get("post_id",None)
+            pre_delete_content = body_dic.get("pre_delete_content",None)
+            lookup = {"_id": ObjectId(post_id)}
+
+            now = datetime.datetime.utcnow()
+            pre_delete_history = [{"act":"apply","actor":self.username,"created":now}]
+            updated={
+                "$set":{
+                    "pre_delete":True,
+                    "pre_delete_content":pre_delete_content,
+                    "pre_delete_date":datetime.datetime.utcnow(),
+                    "pre_delete_history":pre_delete_history
+                    }
+            }
+            MongoFront.update(lookup,updated,"posts")
+            response = {"entities":[]}
+            self.write(json.dumps(response,
+                              indent=2,
+                              ensure_ascii=False,
+                              cls=MongoFieldEncoder))
+            self.finish()
+            act = "apply_delete_post"
+            save_log(act,post_id,self.username)
+        except Exception as e:
+            log.info('DeletePostHandler.post Exception:%s' % e.message)
+            log.error(traceback.format_exc())
+            self.fire_response_bad_request(key_required=e.message)
+            return
+        
+        
+    
+     '''
+     删除渔获
+     '''
+     @requires_auth
+     @asynchronous
+     def delete(self):
+        post_id = self.get_argument('post_id',None)
+        content = self.get_argument('content',None)
+        if post_id==None :
+            self.fire_response_bad_response()
+            return
+
+        post_id_ary = post_id.split(",")
+        delete_ary = [ObjectId(x)  for x in post_id_ary]
+        lookup = {'_id': {'$in':delete_ary}}
+        now = datetime.datetime.utcnow()
+        option = {
+            '$set':{'deleted':True,'deleted_time':now},
+            "$unset":{"sold_out":''},
+            "$push":{
+                    "pre_delete_history":{"act":"operate","actor":self.username,"created":datetime.datetime.utcnow()}
+                },
+        }
+
+        is_success=False
+        try:
+            MongoFront.update(lookup, option, 'posts')
+            self.finish()
+            for post_id in post_id_ary:
+                act = "delete_post"
+                save_log(act,post_id,self.username)
+            is_success=True
+        except Exception as e:
+
+            self.set_status(400)
+            response = {}
+            response["error"] = "bad_request"
+            response["error_description"] = e.message
+            # self.write(json.dumps(response, indent=2, ensure_ascii=False))
+
+
+        lookup = {
+            "post_id":{"$in":post_id_ary}
+        }
+        if is_success:
+            for postid in post_id_ary:
+                where = {
+                    "actid":postid,
+                    "type" : "post_send"
+                }
+                credits_earn = MongoFront.find_one(where,"credits_earn")
+
+                if credits_earn!=None and credits_earn.get("sold_out","")!="1" :
+                    username = credits_earn["uid"]
+                    credits = credits_earn["credits"]
+                    where = {
+                    "username":username
+                    }
+                    now = datetime.datetime.utcnow()
+                    update = {"$inc":{"credits":-credits},'$set':{'credits_modified':now}}
+                    user = MongoFront.find_and_modify(where,update,"users")
+
+                     #保存用户扣除记录
+                    credits_earn = {
+                                        "uid":username,
+                                        "eventType":"reward",
+                                        "type":"post_delete",
+                                        "credits":-credits,
+                                        "actid":postid,
+                                        "created":now
+                                        }
+
+                    id,error=MongoFront.insert(credits_earn,"credits_earn")
+
+                # 修改用户发布的渔获、装备数
+                delete_post_where = {
+                    "_id":ObjectId(postid)
+                }
+                post_tmp = MongoFront.find_one(delete_post_where,"posts")
+                if post_tmp:
+                    yuhuo_type = post_tmp.get("yuhuo_type","")
+                    username = post_tmp["actor"]["username"]
+
+                    user_where = {"username":username}
+
+                    if yuhuo_type == 1:
+                        update_value = {
+                            "$inc": {
+                                "tools_count": -1
+                            }
+                        }
+                    else:
+                        update_value = {
+                            "$inc": {
+                                "post_count": -1
+                            }
+                        }
+
+                    # 重新获取最近15天发帖信息
+                    last_post_images = user_latest_posts(username)
+                    update_value["$set"] = {
+                        "last_post_images": last_post_images
+                    }
+
+                    MongoFront.update(user_where,update_value,"users")
+
+
+            
+            MongoFront.delete(lookup,"user_like_post")
+            MongoFront.delete(lookup,"user_join_post")
+            MongoFront.delete(lookup,"user_collect_post")
+            deletePostActiviy(post_id_ary)
+            MongoFront.delete(lookup,"posts_search")
+            RedisClient.removeMultiToList(options.new_post_list,post_id_ary)
+            ####从redis精品集合中删除
+            RedisClient.removeMultiToList(options.boutique_post_list,post_id_ary)
+            
+            #消息推送
+            if content!=None:
+                for post_id in post_id_ary:
+                    post = self.getPost(post_id)
+                    to_usernames = [post["actor"]["username"]]
+                    message_event = {}
+                    message_event["message_type"] = "delete"
+                    message_event["target"] = "apoint"
+                    message_event["content"] = content
+                    message_event["to_usernames"] = to_usernames
+                    message_event = json.dumps(message_event,
+                                      indent=2,
+                                      ensure_ascii=False,
+                                      cls=MongoFieldEncoder)
+                    queue_name=options.redis_queue_message_event
+                    log.info("insert queue:%s"%queue_name)
+                    log.info("insert message_event:%s"%message_event)
+                    result =RedisClient.rpush(queue_name,message_event)
+            # 扣除贡献值
+
+            queue_name = options.contribution_redis
+            post = self.getPost(post_id)
+            contribution_json = {
+                "username": post["actor"]["username"],
+                "act": "delete_sanction"
+            }
+            message_event = json.dumps(contribution_json,
+                                       indent=2,
+                                       ensure_ascii=False,
+                                       cls=MongoFieldEncoder)
+            RedisClient.rpush(queue_name, message_event)
+
+
+            
+     def getPost(self,id):
+        lookup = {"_id":ObjectId(id)}
+        filters = {"page":1,"content":1,"actor":1,"_id":0}
+        post = MongoFront.find_one(lookup,"posts",filters)
+        return post
+    
+    
+    

@@ -1,0 +1,166 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# @Date    : 2015-05-18 17:41:52
+# @Author  : Your Name (you@example.org)
+# @Link    : http://example.org
+# @Version : $Id$
+from handler_baseHt import BaseHtHandler
+from log import get_logger
+import tornado.web
+from tornado.web import asynchronous
+from tornado.options import options
+import json
+import hashlib
+import datetime
+import hashlib
+import random
+import pymongo
+import time
+from log import get_logger
+import optionsSetting
+import datetime
+import time
+from utils.secret import *
+import traceback
+from utils.redis_client import RedisClient
+from mongo_field_encoder import MongoFieldEncoder
+from mongolog import MongoHandler
+from mongokit.helpers import totimestamp, fromtimestamp
+from utils.token_im import TokenService
+from tornado.httpclient import HTTPRequest
+from utils.mongo_client import MongoClient
+from utils.mongo_front import MongoFront
+from auth import requires_auth
+import re
+
+try:
+    from tornado.curl_httpclient import CurlAsyncHTTPClient as AsyncHTTPClient
+except ImportError:
+    from tornado.simple_httpclient import SimpleAsyncHTTPClient as AsyncHTTPClient
+log = get_logger()
+
+
+class StatisticAllDataHandler(BaseHtHandler):
+    def __init__(self, application, request, **kwargs):
+        super(StatisticAllDataHandler, self).__init__(application, request, **kwargs)
+        self.static_name_dic = {
+            "send": "发渔获",
+            "comment": "评论渔获",
+            "like": "点赞渔获",
+            "share": "分享渔获",
+            "reply": "回复",
+            "boutique_after": "延时精品（通知发布者）",
+            "push": "系统通知",
+            "activity_post": "活动上架",
+            "check": "渔获精品（通知发布者）",
+            "activity_boutique": "活动推送",
+            # "activity_comment": "活动评论",
+            # "activity_reply": "活动回复",
+            "follow": "关注",
+            "reward": "打赏",
+            "register": "手机注册",
+            "registerByPlatform": "第三方总注册量",
+            "total": "服务器端请求总次数(不含天气)",
+            "weather": "天气请求次数",
+            "send_actor": "发帖人数",
+            "comment_actor": "评论人数",
+            "weixin_auth_count": "微信授权注册",
+            "platform_app_count": "第三方在APP注册",
+            "sum_register": "总注册量"
+        }
+
+    @asynchronous
+    @requires_auth
+    def post(self):
+        try:
+            log.info("StatisticAllDataHandler.post:" + self.request.body)
+            body_dic = json.loads(self.request.body, encoding="utf-8")
+            statistics_obj_array = body_dic["statistics_obj_array"]
+            begin = body_dic["begin"]
+            end = body_dic["end"]
+
+            where = {
+                'date': {'$gte': begin, "$lt": end}
+            }
+            # log.info("where:"+str(where))
+            order_by = [("date", 1)]
+            static_data_dic = {}
+            user_account_action_cursor = MongoFront.find_all_sorted(where, "monitor_count", sorted=order_by)
+
+            date_list = []
+            monitor_dic = {}
+            for monitor_count in user_account_action_cursor:
+                type = monitor_count["type"]
+                count = monitor_count["count"]
+                date = monitor_count["date"]
+                if monitor_count["date"] not in date_list:
+                    monitor_dic[date] = {}
+                    monitor_dic[date]["date"] = int(date)
+                    monitor_dic[date][type] = count
+                    date_list.append(date)
+                else:
+                    monitor_dic[date][type] = count
+            for i in monitor_dic:
+                if not monitor_dic[i].get("platform_app_count", ""):
+                    monitor_dic[i]["platform_app_count"] = 0
+                if monitor_dic[i].get("registerByPlatform", "") and monitor_dic[i].get("weixin_auth_count", ""):
+                    if monitor_dic[i]["platform_app_count"] == 0:
+                        monitor_dic[i]["platform_app_count"] =\
+                            monitor_dic[i]["registerByPlatform"] - monitor_dic[i]["weixin_auth_count"]
+            return_body = sorted(monitor_dic.values(), key=lambda item: item["date"], reverse=False)
+            for user_account_action in return_body:
+                statistics_date = user_account_action["date"]
+                static_data_dic[statistics_date] = user_account_action
+
+            begin_datetime = datetime.datetime.strptime(begin, '%Y%m%d')
+
+            static_data_array = []
+            for statistics_obj in statistics_obj_array:
+                static_data_format = {
+                }
+                statistics_obj_name = self.static_name_dic[statistics_obj]
+                static_data_format["name"] = statistics_obj_name
+
+                cur_datetime = datetime.datetime.strptime(begin, '%Y%m%d')
+                end_datetime = datetime.datetime.strptime(end, '%Y%m%d')
+
+                data_array = []
+                while cur_datetime < end_datetime:
+                    cur_ymd = cur_datetime.strftime('%Y%m%d')
+                    static_json = static_data_dic.get(int(cur_ymd), {})
+                    if static_json:
+                        statistics_data = round(static_json.get(statistics_obj, 0), 2)
+                    else:
+                        statistics_data = 0
+                    data_array.append(statistics_data)
+                    cur_datetime = cur_datetime + datetime.timedelta(days=1)
+
+                static_data_format["data"] = data_array
+                static_data_array.append(static_data_format)
+
+            result = {
+                "data": static_data_array,
+                "begin_date": begin_datetime
+            }
+            response = {
+                "result": result
+            }
+
+            self.write(json.dumps(response, indent=2, ensure_ascii=False, cls=MongoFieldEncoder))
+            self.finish()
+        except Exception as e:
+            log.error('StatisticAllDataHandler.get Exception:%s' % e.message)
+            log.error(traceback.format_exc())
+            self.fire_response_bad_request(key_required=e.message)
+            return
+
+    def fire_response_bad_response(self):
+        """
+        返回登录请求错误响应
+        """
+        self.set_status(400)
+        response = {}
+        response["error"] = "invalid_grant"
+        response["error_description"] = "invalid username or password"
+        self.write(json.dumps(response, indent=2, ensure_ascii=False))
+        self.finish()

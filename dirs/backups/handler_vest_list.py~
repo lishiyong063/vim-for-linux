@@ -1,0 +1,143 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# @Date    : 2015-05-18 17:41:52
+# @Author  : Your Name (you@example.org)
+# @Link    : http://example.org
+# @Version : $Id$
+from handler_baseHt import BaseHtHandler
+from log import get_logger
+import tornado.web
+from tornado.web import asynchronous
+from tornado.options import options
+import json
+import hashlib
+import datetime
+import hashlib
+import random
+import pymongo
+import time
+from log import get_logger
+from model.accounts_ht import Account_ht
+from model.users import Users
+import optionsSetting
+import datetime
+import  time
+from utils.secret import *
+import traceback
+from utils.redis_client import RedisClient
+from mongo_field_encoder import MongoFieldEncoder
+from mongolog import MongoHandler
+from mongokit.helpers import totimestamp, fromtimestamp
+from utils.token_im import TokenService
+from tornado.httpclient import HTTPRequest
+from utils.mongo_client import MongoClient
+from utils.mongo_front import MongoFront
+from auth import requires_auth
+import re
+try:
+    from tornado.curl_httpclient import CurlAsyncHTTPClient as AsyncHTTPClient
+except ImportError:
+    from tornado.simple_httpclient import SimpleAsyncHTTPClient as AsyncHTTPClient
+log = get_logger()
+class VestListHandler(BaseHtHandler):
+    @asynchronous
+    @requires_auth
+    def get(self):
+        log.info("VestListHandler.get:"+self.request.body)
+        self.set_header("Access-Control-Allow-Origin", "*")
+        where={
+            'freeze_status': {'$ne': "2"},
+            'user_type':'2'
+        }
+        sort_by = "created"
+        sort_val = pymongo.DESCENDING
+        condition = self.get_argument('condition',"")
+        log.info("condition:"+condition)
+        condition_dic = json.loads(condition, encoding="utf-8")
+
+        curr_username=self.username
+        if curr_username=="admin" or curr_username=="fenglin" or curr_username=='ziya009':
+            if condition:
+
+                belong_to=condition_dic.get("belong_to","")
+                if belong_to:
+                    where["belong_to"]=belong_to
+
+        else:
+           where["belong_to"]=curr_username
+
+        invite_code_nick = condition_dic.get("invite_code_nick", "")
+        if invite_code_nick:
+            where["$or"] = [
+                {"nick": invite_code_nick},
+                {"invite_code": invite_code_nick}
+            ]
+        response={}
+
+        filter={
+            'id':0
+        }
+        # log.info("###########where:"+str(where))
+
+        limit=10
+        curr = self.get_argument('curr',"")
+        log.info("curr:"+curr)
+        if curr=="":
+            user_cursor = options.dbconn.Users.find(where,filter).sort(sort_by, sort_val).limit(limit)
+        else:
+            user_cursor = options.dbconn.Users.find(where,filter).sort(sort_by, sort_val).skip((int(curr)-1)*limit).limit(limit)
+
+        log.info("user_cursor:"+str(user_cursor.count()))
+        users=[]
+        belong_to_array=[]
+        belong_to_dic = {}
+        for user in user_cursor:
+            belong_to=user.get("belong_to","")
+            if belong_to:
+                belong_to_array.append(belong_to)
+            users.append(user)
+        if belong_to_array:
+            where={
+                "username":{"$in":belong_to_array}
+            }
+            filter={
+                "_id":0,
+                "real_name":1,
+                "username":1
+            }
+            ht_account_cursor=options.dbconn_ht.Account_ht.find(where,filter)
+            for ht_account in ht_account_cursor:
+                username=ht_account.get("username","")
+                belong_to_dic[username]=ht_account
+
+        for user in users:
+            belong_to=user.get("belong_to","")
+            if belong_to:
+                belong_to_obj=belong_to_dic.get(belong_to,{})
+                if belong_to_obj:
+                    user["belong_to"]=belong_to_obj
+
+        post_count_sum=0
+        post_count_sum_db=MongoFront.aggregate_sum("post_count","users",where)
+        if post_count_sum_db and len(post_count_sum_db)==1:
+            log.info("post_count_sum_db:"+str(post_count_sum_db))
+            post_count_sum=post_count_sum_db[0]["count"]
+
+
+        response["entities"]=users
+        response["post_count_sum"]=post_count_sum
+        response["count"]=str(user_cursor.count())
+
+        self.write(json.dumps(response,indent=2, ensure_ascii=False,cls=MongoFieldEncoder))
+        self.finish()
+    
+    def fire_response_bad_response(self):
+        """
+        返回登录请求错误响应
+        """
+        self.set_status(400)
+        response = {}
+        response["error"] = "invalid_grant"
+        response["error_description"] = "invalid username or password"
+        self.write(json.dumps(response, indent=2, ensure_ascii=False))
+        self.finish()

@@ -1,0 +1,256 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# @Date    : 2015-05-18 17:41:52
+# @Author  : Your Name (you@example.org)
+# @Link    : http://example.org
+# @Version : $Id$
+from handler_baseHt import BaseHtHandler
+from log import get_logger
+import tornado.web
+from tornado.web import asynchronous
+import re
+from tornado.options import options
+import json
+import hashlib
+import datetime
+import hashlib
+import random
+import pymongo
+import time
+from log import get_logger
+from model.accounts_ht import Account_ht
+from model.posts import Post
+import optionsSetting
+from utils.secret import *
+import traceback
+from utils.redis_client import RedisClient
+from mongo_field_encoder import MongoFieldEncoder
+from mongolog import MongoHandler
+from mongokit.helpers import totimestamp, fromtimestamp
+from utils.token_im import TokenService
+from tornado.httpclient import HTTPRequest
+from utils.mongo_front import MongoFront
+from services.service_post import getPostList
+from services.service_activity import *
+from services.service_post_display_count import *
+from bson import ObjectId
+from auth import requires_auth
+from services.service_post import user_latest_posts
+try:
+    from tornado.curl_httpclient import CurlAsyncHTTPClient as AsyncHTTPClient
+except ImportError:
+    from tornado.simple_httpclient import SimpleAsyncHTTPClient as AsyncHTTPClient
+log = get_logger()
+class PostDeletedHandler(BaseHtHandler):
+    @asynchronous
+    @requires_auth
+    def get(self):
+        log.info("PostDeletedHandler.get is called:"+str(self.request.remote_ip))
+        boutique = self.get_argument('boutique',None)
+        pre_delete = self.get_argument('pre_delete',None)
+        operator = self.get_argument('operator',"admin")
+        where={
+            'deleted': True,
+        }
+        # 申请删除
+        if pre_delete:
+            where["pre_delete"] = "true"
+
+        # 用户删除
+        if operator=="user":
+            where["pre_delete_history"] = {"$exists":False}
+        else:
+            where["pre_delete_history"] = {"$exists": True}
+        sort=[]
+
+        limit=10
+        curr = self.get_argument('curr',"")
+        log.info("curr:"+curr)
+        datemin = self.get_argument('datemin',None)
+        datemax = self.get_argument('datemax',None)
+        if datemin!=None:
+           log.info("datemin:"+datemin)
+           datemin = datetime.datetime.strptime(datemin, "%Y-%m-%d")-datetime.timedelta(hours=8)
+           where["created"]={"$gte":datemin}
+ 
+        if datemax!=None:
+           log.info("datemax:"+datemax)
+           datemax = datetime.datetime.strptime(datemax, "%Y-%m-%d")-datetime.timedelta(hours=8)
+           between={}
+           if where.has_key("created"):
+               between=where["created"]
+
+           between["$lte"]=datemax
+           where["created"]=between
+        
+        # city = self.get_argument('city',None)
+        #
+        # self.city_deal(city,where)
+        
+            
+        province = self.get_argument('province',None)
+        if province!=None:
+            log.info("province:"+province)
+            where['gps_info.province']=province
+
+        username = self.get_argument('username',None)
+        if username!=None:
+            log.info("username:"+username)
+            where['actor.username']=username
+
+        user_nick = self.get_argument('user_nick',None)
+        if user_nick:
+            user_where={
+                "nick":re.compile(user_nick+'.*')
+            }
+            log.info("user_where:"+str(user_where))
+            users_cursor=MongoFront.find_all(user_where,"users")
+            log.info("users_cursor:"+str(users_cursor.count()))
+            username_array=[]
+            for user in users_cursor:
+                username=user.get("username","")
+                username_array.append(username)
+            where["actor.username"]={
+                "$in":username_array
+            }
+
+        post_type = self.get_argument('post_type',None)
+        if post_type!=None:
+            log.info("post_type:"+post_type)
+            where['post_type']=post_type
+            
+        admin = self.get_argument('admin',None)  
+        if admin!=None:
+            vest_post_list = getVestPostList(admin,"posts",limit)
+            where['_id'] = {"$in":vest_post_list}
+
+        condition = self.get_argument('condition',None)
+
+        if condition!=None:
+            condition_dic=json.loads(condition,encoding="utf-8")
+            if condition_dic.has_key("ids"):
+                ids=condition_dic["ids"]
+                id_array=ids.split(",")
+                objectIdArray=[]
+                for id in id_array:
+                    objectIdArray.append(ObjectId(id))
+                where['_id'] = {"$in":objectIdArray}
+        
+        sort_by = 'created'  
+        sort_value =  pymongo.DESCENDING
+        sort_get = self.get_argument("sort_by",None)
+        if sort_get!=None :
+            sort_by = sort_get
+            sort_val = self.get_argument('sort_value',"-1")   
+            boutique="0"
+            if sort_val=="1" :
+                 sort_value =  pymongo.ASCENDING
+
+        log.info("where:"+str(where))
+        if curr=="":
+            if boutique=="1":
+                post_cursor = options.dbconn.Post.find(where).sort(sort).limit(limit)
+            else:
+                post_cursor = options.dbconn.Post.find(where).sort(sort_by, sort_value).limit(limit)
+        else:
+            if boutique=="1":
+                post_cursor = options.dbconn.Post.find(where).sort(sort).skip((int(curr)-1)*limit).limit(limit)
+            else:
+                post_cursor = options.dbconn.Post.find(where).sort(sort_by, sort_value).skip((int(curr)-1)*limit).limit(limit)
+
+        log.info("post_cursor:"+str(post_cursor.count()))
+        posts=[]
+        if post_cursor!=None:
+            posts = getPostList(post_cursor)
+        response={}
+        response["entities"]=posts
+        response["count"]=str(post_cursor.count())
+        self.write(json.dumps(response,indent=2, ensure_ascii=False,cls=MongoFieldEncoder))
+        self.finish()
+
+
+
+    '''
+    撤销删除
+    '''
+    @asynchronous
+    @requires_auth
+    def delete(self):
+        post_id = self.get_argument('post_id',None)
+        if post_id==None :
+            self.fire_response_bad_response()
+            return
+        post_id_ary = post_id.split(",")
+
+        option = {
+                '$unset':{
+                    'deleted':'',
+                    'pre_delete_content':'',
+                    'pre_delete':''
+                }
+            }
+        is_success=False
+        try:
+         for post_id in post_id_ary:
+            lookup = {'_id': ObjectId(post_id)}
+            post = MongoFront.find_and_modify(lookup, option, 'posts')
+            ##redis
+            RedisClient.addToList(options.new_post_list,post_id,post["created_micros"])
+        
+            if "gps_info" in post:
+                gps_info = post["gps_info"]
+                if "location" in gps_info:
+                    location = gps_info["location"]
+                    posts_search = {
+                        "post_id":post_id,
+                        "location":location,
+                        "created_micros":post["created_micros"]
+                    }
+                MongoFront.insert(posts_search,"posts_search")
+              
+           
+          
+          
+            self.finish()
+            is_success=True
+
+            # 修改用户发布的渔获、装备数
+            for post_id in post_id_ary:
+                delete_post_where = {
+                    "_id": ObjectId(post_id)
+                }
+                post_tmp = MongoFront.find_one(delete_post_where, "posts")
+                if post_tmp:
+                    yuhuo_type = post_tmp.get("yuhuo_type", "")
+                    username = post_tmp["actor"]["username"]
+
+                    user_where = {"username": username}
+
+                    if yuhuo_type == 1:
+                        update_value = {
+                            "$inc": {
+                                "tools_count": 1
+                            }
+                        }
+                    else:
+                        update_value = {
+                            "$inc": {
+                                "post_count": 1
+                            }
+                        }
+
+                    # 重新获取最近15天发帖信息
+                    last_post_images = user_latest_posts(username)
+                    update_value["$set"] = {
+                        "last_post_images": last_post_images
+                    }
+
+                    MongoFront.update(user_where, update_value, "users")
+        except Exception as e:
+            self.set_status(400)
+            response = {}
+            response["error"] = "bad_request"
+            response["error_description"] = e.message
+            self.write(json.dumps(response, indent=2, ensure_ascii=False))
+            self.finish()
+                              

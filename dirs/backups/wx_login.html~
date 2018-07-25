@@ -1,0 +1,10 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Echarts</title>
+</head>
+<body>
+  <img src="{{info}}"  alt="上海鲜花港 - 郁金香" />
+</body>
+</html>

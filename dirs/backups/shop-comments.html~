@@ -1,0 +1,223 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="renderer" content="webkit|ie-comp|ie-stand">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta name="viewport" content="width=device-width,initial-scale=1,minimum-scale=1.0,maximum-scale=1.0,user-scalable=no" />
+<meta http-equiv="Cache-Control" content="no-siteapp" />
+<!--[if lt IE 9]>
+<script type="text/javascript" src="lib/html5.js"></script>
+<script type="text/javascript" src="lib/respond.min.js"></script>
+<script type="text/javascript" src="lib/PIE_IE678.js"></script>
+<![endif]-->
+<link href="css/H-ui.min.css" rel="stylesheet" type="text/css" />
+<link href="css/H-ui.admin.css" rel="stylesheet" type="text/css" />
+<link href="lib/icheck/icheck.css" rel="stylesheet" type="text/css" />
+<link href="lib/font-awesome/font-awesome.min.css" rel="stylesheet" type="text/css" />
+<!--[if IE 7]>
+<link href="lib/font-awesome/font-awesome-ie7.min.css" rel="stylesheet" type="text/css" />
+<![endif]-->
+<link href="lib/iconfont/iconfont.css" rel="stylesheet" type="text/css" />
+<!--[if IE 6]>
+<script type="text/javascript" src="lib/DD_belatedPNG_0.0.8a-min.js" ></script>
+
+<script>DD_belatedPNG.fix('*');</script>
+<![endif]-->
+<title>商品评论</title>
+</head>
+<style type="text/css">
+	.container
+	{
+		font-family: "Courier New";
+		width: 400px;
+		height: 30px;
+		overflow: auto;
+		border: 1px solid black;
+		overflow-y:auto;
+		overflow-x:auto;
+		float:left
+	}
+	.image_div{
+		position:relative;
+		float: left;
+		margin-left:2px;
+	}
+	.img-square{
+		/*border: 1px solid red;*/
+		max-height:300px;
+		width:auto;
+	}
+	.closeLayer{
+		/*display: none;*/
+		z-index: 2;
+		position:absolute; /*绝对定位*/
+		left:0px; /*位置自己看着调整，在图片上方*/
+		top:0px;
+		/*border: 1px solid red;*/
+	}
+	.emojiListspan{
+		font-size: 24px;
+		display: inline-block;
+		margin-right: 6px;
+</style>
+<script type="text/javascript">
+	function dyniframesize(down) {
+		var pTar = null;
+		if (document.getElementById){
+			pTar = document.getElementById(down);
+		}
+		else{
+			eval('pTar = ' + down + ';');
+		}
+		if (pTar && !window.opera){
+			//begin resizing iframe
+			pTar.style.display="block"
+			if (pTar.contentDocument && pTar.contentDocument.body.offsetHeight){
+				//ns6 syntax
+				pTar.height = pTar.contentDocument.body.offsetHeight +20;
+			}
+			else if (pTar.Document && pTar.Document.body.scrollHeight){
+				//ie5+ syntax
+				pTar.height = pTar.Document.body.scrollHeight;
+			}
+		}
+	}
+</script>
+<body>
+<!--<div id="fish_videos">
+	<div id="video_bg"></div>
+	<div id="fish_video">
+		<div id="close_video"></div>
+		<video src=""></video>
+	</div>
+</div>
+<div id="cut_pictrue"><iframe name="myFrame" id="iframepage" src="cropper1.html" width="100%" height="1000px" scrolling="no" frameBorder="0" onLoad="dyniframesize('iframepage')"></iframe></div>
+<div class="pd-20" id="loading">
+	<td width="10" colspan="13"><img src="images/downloading.gif" alt="image" ></td>
+</div>
+<div class="pd-20" id="image_list" >
+
+
+</div>
+
+<div class="row cl" style="clear: both;margin-left:20px">
+
+
+		<input class="btn btn-primary radius" type="button"  id="file_button" value="&nbsp;&nbsp;上传渔获&nbsp;&nbsp;">
+	    <input type="file" name="file" id="file" multiple="multiple"  style="display:none"/>
+		<div style="padding-left: 320px;display:none" id="image_div">
+			<img src="" id="img0" style="height: 300px">
+			<br>
+			<input class="btn btn-primary radius" style="clear: both" type="button" id="upload" value="&nbsp;&nbsp;上传&nbsp;&nbsp;">
+
+		</div>
+
+</div>
+
+<div class="pd-20" id="link_info" >
+
+
+</div>
+<div class="pd-20" style="clear: both">
+
+        <ul class="commentList" id="commentList">
+          <div class="row cl">
+            <label class="form-label col-3">暂时没有评论
+            </label>
+            </div>
+        </ul>
+
+
+</div>-->
+<input type="hidden" value="" id="comment_id">
+<div class="row cl" style="Float:left">
+	&nbsp;&nbsp;选择小号：
+  	&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<select id="myVests"  onchange="vest_change()">
+		  </select>
+    &nbsp;&nbsp;星级：
+    <select size="1" name="comment_rate" datatype="*" nullmsg="请选择" id="comment_rate">
+        <option value="" selected>请选择</option>
+        <option value=1>1</option>
+        <option value=2>2</option>
+        <option value=3>3</option>
+        <option value=4>4</option>
+        <option value=5>5</option>
+    </select>
+    &nbsp;&nbsp;时间：
+    <input type="text" onfocus="WdatePicker({dateFmt:'yyyy-MM-dd HH:mm:ss'})" id="datetime" class="input-text Wdate" style="width:200px;">
+
+</div>
+<br><br><br>
+<div class="row cl">
+		<label class="form-label col-3">&nbsp;&nbsp;评论内容：</label>
+
+</div>
+
+
+<div style="padding-left:30px">
+	<!--<div><span class="emojiListspan">😄</span><span class="emojiListspan">😃</span><span class="emojiListspan">😀</span><span class="emojiListspan">😊</span><span class="emojiListspan">😉</span><span class="emojiListspan">😍</span><span class="emojiListspan">😘</span><span class="emojiListspan">😚</span><span class="emojiListspan">😗</span><span class="emojiListspan">😙</span><span class="emojiListspan">😜</span><span class="emojiListspan">😝</span><span class="emojiListspan">😛</span><span class="emojiListspan">😳</span><span class="emojiListspan">😁</span><span class="emojiListspan">😔</span><span class="emojiListspan">😌</span><span class="emojiListspan">😒</span><span class="emojiListspan">😞</span><span class="emojiListspan">😣</span><span class="emojiListspan">😢</span><span class="emojiListspan">😂</span><span class="emojiListspan">😭</span><span class="emojiListspan">😪</span><span class="emojiListspan">😥</span><span class="emojiListspan">😰</span><span class="emojiListspan">😅</span><span class="emojiListspan">😓</span><span class="emojiListspan">😩</span><span class="emojiListspan">😫</span><span class="emojiListspan">😨</span><span class="emojiListspan">😱</span><span class="emojiListspan">😠</span><span class="emojiListspan">😡</span><span class="emojiListspan">😤</span><span class="emojiListspan">😖</span><span class="emojiListspan">😆</span><span class="emojiListspan">😋</span><span class="emojiListspan">😷</span><span class="emojiListspan">😎</span><span class="emojiListspan">😴</span><span class="emojiListspan">😵</span><span class="emojiListspan">😲</span><span class="emojiListspan">😧</span><
+	/div>-->
+
+	<textarea id ="content" name="content" class="textarea" style="width:98%; height:100px; resize:n"></textarea>
+</div>
+<div class="row cl">
+	<div class="col-9 col-offset-3">
+
+		<input class="btn btn-primary radius" type="button" id="comment"  value="&nbsp;&nbsp;提交&nbsp;&nbsp;">
+		<!--<input class="btn btn-primary radius" type="button" id="sold_out"  value="&nbsp;&nbsp;下架&nbsp;&nbsp;">-->
+	</div>
+
+</div>
+<br>
+<br>
+</div>
+<script type="text/javascript" src="lib/My97DatePicker/WdatePicker.js"></script>
+<script type="text/javascript" src="lib/jquery.min.js"></script>
+<script type="text/javascript" src="lib/layer1.8/layer.min.js"></script>
+<script type="text/javascript" src="lib/laypage/laypage.js"></script>
+<script type="text/javascript" src="lib/icheck/jquery.icheck.min.js"></script>
+<script type="text/javascript" src="lib/ajaxfileupload.js"></script>
+<script type="text/javascript" src="lib/Validform_v5.3.2.js"></script>
+<script type="text/javascript" src="lib/layer1.8/layer.min.js"></script>
+<script type="text/javascript" src="js/H-ui.js"></script> 
+<script type="text/javascript" src="js/H-ui.admin.js"></script>
+<script type="text/javascript" src="bizjs/map.js"></script>
+<script type="text/javascript" src="bizjs/base.js"></script>
+<script type="text/javascript" src="bizjs/shop-comments.js?t=78"></script>
+<script type="text/javascript" src="lib/md5.js"></script>
+
+<script type="text/javascript">
+
+var route = fishing_admin_Url;
+
+$(function(){
+	$("#form-user-add").Validform({
+		tiptype:2
+	});
+	$('.skin-minimal input').iCheck({
+		checkboxClass: 'icheckbox-blue',
+		radioClass: 'iradio-blue',
+		increaseArea: '20%'
+	});
+	$(document).on("click",".img-square",function(){
+		var target = $(".img-square").index(this);
+		myFrame.window.document.getElementById("cutting_img").setAttribute("src",$(this).attr("src"));
+		myFrame.window.document.getElementById("cutting_img").setAttribute("img-source",target);
+		myFrame.window.replaceUrl($(this).attr("src"),target);
+		$("#cut_pictrue").css({display:"block"});
+	});
+	$(document).on("click",".emojiListspan",function(){
+		$("#content").val( $("#content").val()+$(this).html() );
+	});
+//	$('#content').focus();
+});
+
+//var post_detail;
+//getToolType()
+//get_posts_detail();
+myVestOrderByNear();
+</script> 
+
+</body>
+</html>

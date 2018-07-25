@@ -1,0 +1,5 @@
+# -*- coding: utf-8 -*-
+# Created Time: 2018-05-31 13:42:11
+def xx():
+    for i in range(10):
+        print('xxxxxxxxxx')

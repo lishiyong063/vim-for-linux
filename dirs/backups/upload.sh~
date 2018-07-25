@@ -1,0 +1,3 @@
+#!/bin/bash
+svn up
+sh restert.sh

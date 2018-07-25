@@ -1,0 +1,149 @@
+/**
+ * Created by youzi on 2017/9/12.
+ */
+function loadFishingShop(){
+    var shop_search = $("#shop_search").val();
+    var tel_search = $("#tel_search").val();
+    var province = $("#province").val();
+    var city = $("#city").val();
+    var status = $("#status").val()    ;
+
+    var requestURL = fishing_admin_Url+'/fishing_shop?status=0';
+
+    if (shop_search){
+        requestURL = requestURL+"&name="+shop_search
+    }
+
+    if (status &&status!=0){
+        requestURL = requestURL+"&status="+status
+    }
+
+    if (tel_search){
+        requestURL = requestURL+"&tel="+tel_search
+    }
+
+    if(city&&city!="请选择"&&city!="全部") {
+        requestURL = requestURL + "&city=" + city
+    }
+
+    else if(province!=null&&province!=""&& province!="请选择"&&province!="全部"){
+        requestURL = requestURL + "&province=" + province
+    }
+
+    $.getJSON(requestURL, {curr: 1,t:new Date()}, function (res) { //从第6页开始请求。返回的json格式可以任意定义
+        //alert(JSON.stringify(res))
+        users_count=parseInt(res.count);
+
+        page_count=0
+        if (users_count%10==0){
+            page_count=users_count/10;
+        }else{
+            page_count=users_count/10+1;
+        }
+        //page_count=20
+        laypage({
+            cont: 'pageComponent', //容器。值支持id名、原生dom对象，jquery对象。【如该容器为】：&lt;div id="page1">&lt;/div>
+            pages: page_count, //通过后台拿到的总页数
+            curr: 1, //初始化当前页
+            skip: true, //是否开启跳页
+            jump: function (e) { //触发分页后的回调
+                //alert("111:"+e.curr)
+
+                $.getJSON(requestURL, {curr: e.curr,t:new Date()}, function (res) {
+                    users_count=parseInt(res.count);
+
+                    page_count=0
+                    if (users_count%10==0){
+                        page_count=users_count/10;
+                    }else{
+                        page_count=users_count/10+1;
+                    }
+
+                    if(res.count){
+                        count  = res.count
+                        $("#count").html(count)
+
+                    }
+
+                    e.pages = e.last = parseInt(page_count); //重新获取总页数，一般不用写
+                    //渲染
+                    //var view = document.getElementById('view1'); //你也可以直接使用jquery
+                    //var demoContent = (new Date().getTime() / Math.random() / 1000) | 0; //此处仅仅是为了演示
+                    //view.innerHTML = res.content + demoContent;
+
+                    //alert("xxx:"+JSON.stringify(res))
+                    var irregularity_list=res.entities;
+
+                    fill_irregularity_list(irregularity_list)
+                });
+            }
+        });
+    });
+}
+
+function fill_irregularity_list(entities){
+    var template='<tr class="text-c" id="tr_{id}">'
+        +'<td>{name}</td>'
+        +'<td><img width="70px" src="{img_url}" ></td>'
+        +'<td>{tel}</td>'
+        +'<td>{address}</td>'
+        +'<td>'
+        +'<a href="javascript:;" id="undo_delete_{id}" "title="审核通过"  onclick="delete_data(\'{id}\', \'cancel\')"><i class="icon-check"></i></a>&nbsp;&nbsp;'
+        +'<a href="javascript:;" title="修改"  onclick="layer_show(\'900\',\'700\',\'渔具店修改\',\'fishing-shop-modify.html?id={id}&r='+ (new Date()).getTime() + '\')"><i class="icon-edit"></i></a>&nbsp;&nbsp;'
+        +'</td>'
+        +'</tr>';
+
+
+    var html_text="";
+    for(index in entities){
+        var id = "";
+        var name='';
+        var address="";
+        var img_url="";
+        var tel="";
+        var shop_info=entities[index];
+        id = shop_info._id;
+
+        var display_delete = "style = display:none";
+        var display_undo = "style = display:none";
+        if (shop_info.status == 1){
+            display_delete = ""
+        }else if (shop_info.status == 2){
+            display_undo = ""
+        }
+        if (shop_info.name){
+            name=shop_info.name
+        }
+        if (shop_info.contact_tel){
+            tel=shop_info.contact_tel
+        }
+        if (shop_info.gps_info){
+            address=shop_info.gps_info.address
+        }
+        if (shop_info.cover){
+            img_url=shop_info.cover.image_url
+        }
+        html_text=html_text+template.replaceAll("{id}",id).replace("{display_delete}", display_delete)
+            .replace("{display_undo}", display_undo)
+           .replace("{name}",name). replace("{img_url}",img_url).replace("{address}",address).replace("{tel}",tel)
+    }
+
+    $('#shop_list').html(html_text);
+}
+
+    function delete_data(id){
+      if(confirm('您确定要审核通过吗？')){
+          var d = {
+              "flag": "cancel"
+          }
+          request_url = fishing_admin_Url + "/fishing_shop/"+id
+          result = getRequest(request_url, d, 'PUT', '', '')
+          if (result && result.entities=="ok"){
+              layer.msg('审核成功',1 ,1);
+              $("#undo_delete_"+id).hide()
+              $("#tr_"+id).hide()
+          }
+      }
+  }
+
+

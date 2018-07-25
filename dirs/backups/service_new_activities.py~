@@ -1,0 +1,401 @@
+ #!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# @Date    : 2014-10-10 10:19:40
+# @Author  : Your Name (you@example.org)
+# @Link    : http://example.org
+# @Version : $Id$
+import urllib2
+import string
+from mongokit import *
+from mongokit.helpers import totimestamp, fromtimestamp
+from utils.mongo_client import MongoClient
+from log import get_logger
+import traceback
+import json
+from tornado.options import options
+import datetime
+import math
+import bson
+from mongo_field_encoder import MongoFieldEncoder
+from services.service_user import *
+import pymongo
+from utils.mongo_slave_client import MongoSlaveClient
+log = get_logger()
+
+###默认时间戳:一个很早之前的时间戳,时间值是小于任何一条活动的发布时间的时间戳
+MIN_BEGIN_SORT_RANK= 11356973261
+
+
+####活动列表排序规则
+def getNewActivityList(base_where,request_cursor,limit,latest_flag=1):
+    global MIN_BEGIN_SORT_RANK
+
+    cursor=MIN_BEGIN_SORT_RANK
+    try:
+        if request_cursor:
+            cursor = int(request_cursor)
+    except Exception as e:
+        cursor=MIN_BEGIN_SORT_RANK
+        log.info('getNewActivityList Exception():%s' % e.message)
+        log.error(traceback.format_exc())
+
+    # log.info("cursor:"+str(cursor))
+    # log.info("timestamp:"+str(timestamp))
+    # log.info("lat_lon_array:"+str(lat_lon_array))
+
+    activities=[]
+    ##如果cursor＝＝MIN_BEGIN_SORT_RANK,说明是第一页，需要将设置了排名的活动也要查询出来
+    rank_activities=[]
+    displayed_activity_dic={}
+    if cursor == MIN_BEGIN_SORT_RANK and latest_flag:
+        ####如果是按片区查询，首先显示获取最近一小时上架的活动
+        where_tmp = {}
+        if base_where.has_key("belonge_area"):
+            begin = datetime.datetime.utcnow() + datetime.timedelta(hours=-1)
+            base_where_copy = base_where.copy()
+            base_where_copy["pass_date"] = {"$gte": begin}
+            base_where_copy["activity_type"]=0
+
+            orderBy = [("pass_date", pymongo.ASCENDING)]
+            cursor_field = "pass_date"
+            recently_pass_activities, cursor_temp =getActivityList(base_where_copy, 200, orderBy, cursor_field)
+            ####活动排重
+            for activity_obj in recently_pass_activities:
+                id=str(activity_obj["_id"])
+                if not displayed_activity_dic.has_key(id):
+                    activities.append(activity_obj)
+                    displayed_activity_dic[id]="1"
+
+        if base_where.has_key("belonge_area"):
+            where_tmp = {
+                "rank_belong_area": {"$gt": 0}
+            }
+            orderBy = [("rank_belong_area", pymongo.ASCENDING)]
+        else:
+            where_tmp = {
+                "rank_area_all": {"$gt": 0}
+            }
+            orderBy = [("rank_area_all", pymongo.ASCENDING)]
+        where_rank = dict(where_tmp, **base_where)
+        cursor_field = "recently_begin_date"
+        # log.info("where_tmp:" + str(where_tmp))
+        rank_activities,cursor_temp = getActivityList(where_rank,20,orderBy,cursor_field)
+        # log.info("rank_activities:" + str(len(rank_activities)))
+        ####活动排重
+        for activity_obj in rank_activities:
+            id = str(activity_obj["_id"])
+            if not displayed_activity_dic.has_key(id):
+                activities.append(activity_obj)
+                displayed_activity_dic[id] = "1"
+
+
+    where1={
+        "sort_rank":{"$gt":cursor}
+    }
+    if base_where.has_key("belonge_area"):
+        where1["rank_belong_area"]= {"$exists": False}
+    elif latest_flag:
+        where1["rank_area_all"] = {"$exists": False}
+    where=dict(where1, **base_where)
+    orderBy=[("sort_rank",pymongo.ASCENDING)]
+    cursor_field="recently_begin_date"
+    # log.info("where1:"+json.dumps(where,ensure_ascii=False, cls=MongoFieldEncoder))
+    activity_list,return_cursor = getActivityList(where,limit,orderBy,cursor_field)
+
+    ####活动排重
+    for activity_obj in activity_list:
+        id = str(activity_obj["_id"])
+        if not displayed_activity_dic.has_key(id):
+            activities.append(activity_obj)
+            displayed_activity_dic[id] = "1"
+
+    # log.info("activities:" + str(len(activities)))
+
+    if return_cursor=='0':
+        return activities,''
+    else:
+        cursor=''
+        if activities and len(activities)>0:
+            cursor=str(activities[-1].get("sort_rank",""))
+        return activities,cursor
+
+
+
+
+####fish_code
+def getFishCodeList(base_where,request_cursor,limit,fish_code):
+    global MIN_BEGIN_SORT_RANK
+    cursor=MIN_BEGIN_SORT_RANK
+    try:
+        if request_cursor:
+            cursor = int(request_cursor)
+    except Exception as e:
+        cursor=MIN_BEGIN_SORT_RANK
+        log.info('getNewActivityList Exception():%s' % e.message)
+        log.error(traceback.format_exc())
+
+    # 没有排名的查询条件
+    where1={}
+
+    # #如果cursor＝＝MIN_BEGIN_SORT_RANK,说明是第一页，需要将设置了排名的活动也要查询出来
+    if cursor == MIN_BEGIN_SORT_RANK:
+        where_tmp = {}
+        if fish_code=="1":
+            where1["rank_in_big"]={"$exists":False}
+            where_tmp["rank_in_big"]={"$gt": 0}
+            orderBy = [("rank_in_big", pymongo.ASCENDING)]
+        elif fish_code=="2":
+            where1["rank_in_group"] = {"$exists": False}
+            where_tmp["rank_in_group"] = {"$gt": 0}
+            orderBy = [("rank_in_group", pymongo.ASCENDING)]
+
+        where_rank = dict(where_tmp, **base_where)
+        cursor_field = "recently_begin_date"
+        log.info("where_tmp:" + str(where_tmp))
+        rank_activities,cursor_temp = getActivityList(where_rank,10,orderBy,cursor_field)
+        log.info("rank_activities:" + str(len(rank_activities)))
+    else:
+        if fish_code == "1":
+            where1["rank_in_big"] = {"$exists": False}
+        elif fish_code == "2":
+            where1["rank_in_group"] = {"$exists": False}
+
+
+
+    where1["sort_rank"] = {"$gt":cursor}
+    where=dict(where1, **base_where)
+    orderBy=[("sort_rank",pymongo.ASCENDING)]
+    cursor_field="sort_rank"
+    log.info("where1:"+json.dumps(where,ensure_ascii=False, cls=MongoFieldEncoder))
+    # 查询没有排名的活动
+    activity_list,return_cursor = getActivityList(where,limit,orderBy,cursor_field)
+
+    if return_cursor=='0':
+        return rank_activities+activity_list,''
+    else:
+        return rank_activities+activity_list,return_cursor
+
+
+
+
+def getBoutiqueActivityList(base_where,request_cursor,limit):
+    global MIN_BEGIN_SORT_RANK
+    cursor=MIN_BEGIN_SORT_RANK
+    try:
+        if request_cursor:
+            cursor = int(request_cursor)
+        else:
+            limit=11
+    except Exception as e:
+        cursor=MIN_BEGIN_SORT_RANK
+        log.info('getNewActivityList Exception():%s' % e.message)
+        log.error(traceback.format_exc())
+
+    activities=[]
+    where_tmp = {
+        "rank_in_boutique": {"$gt": 0},
+        "sort_rank": {"$gt": cursor}
+    }
+    if request_cursor:
+        orderBy = [("sort_rank", pymongo.ASCENDING)]
+        where_tmp["rank_in_boutique"] =  {"$gt": 10}
+    else:
+        orderBy = [("rank_in_boutique", pymongo.ASCENDING),("sort_rank",pymongo.ASCENDING)]
+    where_rank = dict(where_tmp, **base_where)
+    cursor_field = "recently_begin_date"
+    activities,cursor_temp = getActivityList(where_rank,limit,orderBy,cursor_field)
+
+    if cursor_temp=='0':
+        return activities,''
+    else:
+        cursor=''
+        if activities and len(activities)>0:
+            cursor=str(activities[-1].get("sort_rank",""))
+        return activities,cursor
+
+
+
+'''
+    获取帖子列表信息
+'''
+def getActivityList(lookup, limit, orderby, cursor_field):
+    print(lookup, limit, orderby, cursor_field)
+
+    posts_cursor = MongoClient.find_all(lookup,"activities").sort(orderby).limit(limit+1)
+
+    posts = []
+
+    for post in posts_cursor:
+        posts.append(post)
+
+    cursor="0"
+    if len(posts)==limit+1:
+        del posts[-1]
+        cursor = str((posts[-1][cursor_field]))
+
+    return posts,cursor
+
+def getPriceObject(activity):
+    activity_json={
+        "flg":"￥",
+        # "other_text":"起"
+    }
+    payment=activity.get("payment","2")
+    price = activity.get("recently_price","")
+    # if payment in ["1","2"]:
+    #     activity_json["payment"]="全款"
+    # else:
+    #     activity_json["payment"]="定金"
+    #     deposit = activity["deposit"]
+    #     if price:
+    #         price = str(int(int(price)*deposit))
+
+    isblock = activity.get("isblock",0)
+    unit=""
+    if isblock:
+        unit="/船"
+    else:
+        unit = "/人"
+
+    activity_json["price"]=str(price)+unit
+
+    return activity_json
+
+def getActivityDate(activity):
+    now=datetime.datetime.utcnow()
+
+    activity_type=activity.get("activity_type",0)
+    recently_order_end_date=activity.get("recently_order_end_date",None)
+    recently_pay_end_date=activity.get("recently_pay_end_date",None)
+    recently_begin_date=activity.get("recently_begin_date",None)
+    recently_end_date=activity.get("recently_end_date",None)
+
+    recently_people_count=activity.get("recently_people_count",0)
+    recently_join_count=activity.get("recently_join_count",0)
+
+    if activity_type==0:
+        if recently_order_end_date:
+            if now<recently_order_end_date and (recently_people_count>0 and recently_people_count==recently_join_count):
+                return "已满员"
+            if recently_pay_end_date:
+                if now < recently_pay_end_date and now>recently_order_end_date:
+                    return "停止报名"
+
+                if recently_begin_date:
+                    if now < recently_begin_date and now>recently_pay_end_date:
+                        # return "停止支付"
+                        return "停止报名"
+                    if now>recently_begin_date:
+                        return "往期活动"
+    else:
+        if now>recently_begin_date:
+            return "往期活动"
+
+    if recently_begin_date and recently_end_date:
+        recently_begin_date=(activity["recently_begin_date"]+datetime.timedelta(hours=8))
+        recently_end_date=(activity["recently_end_date"]+datetime.timedelta(hours=8))
+        recently_begin_date_format=str(recently_begin_date.month)+"月"+str(recently_begin_date.day)+"日"
+        recently_end_date_format=str(recently_end_date.month)+"月"+str(recently_end_date.day)+"日"
+        return recently_begin_date_format+"/"+recently_end_date_format
+
+    return ""
+
+def getJoinText(activity):
+    people_count = activity.get("recently_people_count", 0)
+
+    if people_count>0:
+        join_text="%s•%d人团%s"
+        sanke_baochuan_icon="http://7xtho9.com1.z0.glb.clouddn.com/sanke.png"
+
+        if activity.get("isblock",0):
+            is_block_text="包船"
+            sanke_baochuan_icon="http://7xtho9.com1.z0.glb.clouddn.com/baochuan.png"
+        else:
+            is_block_text="散客"
+
+
+        recently_people_count=activity.get("recently_people_count",0)
+        recently_join_count=activity.get("recently_join_count",0)
+
+        sold_text=""
+
+        if recently_people_count>0 and recently_people_count==recently_join_count:
+            sold_text=" | 满员"
+        else:
+            if recently_join_count>0:
+                sold_text=" | 已售%d人"%(recently_join_count)
+
+        return join_text%(is_block_text,people_count,sold_text),sanke_baochuan_icon
+    else:
+        return "",""
+
+# 根据activity_id_array顺序获取活动的详情
+def getActivityOrderbyIdArray(lookup={},activity_id_array=[]):
+    activities_cursor = MongoClient.find_all(lookup,"activities")
+    username_array=[]
+    activities = []
+    activity_dic={}
+    for activity in activities_cursor:
+        activity_id = activity["_id"]
+        activity_dic[activity_id]=activity
+        username_array.append(activity["actor"]["username"])
+    # 获取用户详细信息
+    user_map=assembleActor(username_array)
+
+    # 按ctivity_id_array顺序获取活动的详情
+    for activity_id in activity_id_array:
+        if activity_dic.has_key(activity_id):
+            activities.append(activity_dic.get(activity_id))
+    for activity in activities:
+        ###组装活动的actor信息
+        if user_map is not None and user_map.has_key(activity["actor"]["username"]):
+            ##合并新数据和原有actor数据
+            activity["actor"]=dict(activity["actor"],**user_map[activity["actor"]["username"]])
+    return activities,activity_id_array
+
+
+
+def getNearActivitiess(where={},center=[],min=0,maxDistance=300,limit=20):
+    # order_by = [("sort_rank", 1)]
+    where["begin_point.location"]={
+                                "$near":{"$geometry":{
+                                                     "type" : "Point",
+                                                     "coordinates" : center
+                                                     },
+                                        "$minDistance":min,
+                                        "$maxDistance":maxDistance * 1000
+                                }}
+    return getActivitiesSearchList(where,limit,center=center)
+
+
+
+'''
+获取帖子列表信息
+大于15条 还有第二页 cursor 为最后一条数据的距离 小于15条没有第二页 cursor 0
+'''
+def getActivitiesSearchList(lookup={},limit=15,orderby=[('created', pymongo.DESCENDING)],center=[]):
+    print(lookup)
+    activity_array = []
+    activities_search = list(MongoClient.find_all(lookup,"activities").limit(limit+1)) or []
+    cursor = ""
+
+    for activities in activities_search:
+        activity_array.append(activities)
+
+    if len(activity_array) == limit+1:
+        del activity_array[-1]
+        location = activity_array[-1]["begin_point"]["location"]
+        coordinates = location.get("coordinates",[])
+        cursor = getDistance(coordinates, center)
+    return activity_array,cursor
+
+def getDistance(point1, point2):
+    final = 6378137.0
+    calcDegree = lambda d:d*math.pi/180.0
+    flng = calcDegree(float(point1[0]))
+    flat = calcDegree(float(point1[1]))
+    tlng = calcDegree(float(point2[0]))
+    tlat = calcDegree(float(point2[1]))
+    result = math.sin(flat) * math.sin(tlat)
+    result += math.cos(flat) * math.cos(tlat) * math.cos(flng - tlng)
+    return final * math.acos(float(result))

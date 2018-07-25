@@ -1,0 +1,140 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# @Date    : 2015-05-18 17:41:52
+# @Author  : Your Name (you@example.org)
+# @Link    : http://example.org
+# @Version : $Id$
+from handler_baseHt import BaseHtHandler
+from log import get_logger
+import tornado.web
+from tornado.web import asynchronous
+from tornado.options import options
+import json
+import pymongo
+import hashlib
+import datetime
+import hashlib
+from bson import ObjectId
+import random
+import time
+from log import get_logger
+from model.user_post_activiy import User_post_activiy
+from model.permissions_ht import Permissions_ht
+import optionsSetting
+from utils.secret import *
+import traceback
+from utils.redis_client import RedisClient
+from utils.mongo_front import MongoFront
+from mongo_field_encoder import MongoFieldEncoder
+from mongolog import MongoHandler
+from mongokit.helpers import totimestamp, fromtimestamp
+from utils.token_im import TokenService
+from tornado.httpclient import HTTPRequest
+from utils.mongo_client import MongoClient
+from auth import requires_auth
+try:
+    from tornado.curl_httpclient import CurlAsyncHTTPClient as AsyncHTTPClient
+except ImportError:
+    from tornado.simple_httpclient import SimpleAsyncHTTPClient as AsyncHTTPClient
+log = get_logger()
+class NewActHandler(BaseHtHandler):
+    @asynchronous
+    @requires_auth
+    def get(self):
+        log.info("NewActHandler.get:"+self.request.body)
+
+        curr = self.get_argument('curr',"1")
+        comment_array=[]
+        limit=10
+        where={}
+        comment_cursor=options.dbconn.Comment.find(where).sort('created', pymongo.DESCENDING).skip((int(curr)-1)*limit).limit(limit)
+        post_id_array=[]
+        username_array=[]
+        for new_act in comment_cursor:
+            comment_array.append(new_act)
+            post_id_array.append(new_act["to_post_id"])
+            actor_info=new_act.get("actor",{})
+            if actor_info:
+                act_username=actor_info.get("username","")
+                if act_username:
+                    username_array.append(act_username)
+
+        post_map=self.get_post_map(post_id_array)
+
+        for key in post_map.keys():
+            post=post_map[key]
+            username_array.append(post["actor"]["username"])
+
+        user_map=self.get_user_map(username_array)
+
+        for new_act in comment_array:
+            act_username=""
+            actor_info = new_act.get("actor", {})
+            if actor_info:
+                act_username = actor_info.get("username", "")
+
+            post_id=new_act["to_post_id"]
+
+            if user_map.has_key(act_username):
+                new_act["user"]=user_map[act_username]
+
+            if post_map.has_key(post_id):
+                new_act["post"]=post_map[post_id]
+                postor_username=post_map[post_id]["actor"]["username"]
+                if user_map.has_key(postor_username):
+                    postor_user=user_map[postor_username]
+                    new_act["postor_user"]=postor_user
+
+
+        response={}
+        response["count"]=comment_cursor.count()
+        response["entities"]=comment_array
+        self.write(json.dumps(response,indent=2, ensure_ascii=False,cls=MongoFieldEncoder))
+        self.finish()
+
+    def get_post_map(self,post_id_array):
+        post_object_id_array=self.to_object_id_array(post_id_array)
+
+        where={
+            "_id":{"$in":post_object_id_array}
+        }
+
+        post_map={}
+        post_cursor=MongoFront.find_all(where,"posts")
+        for post in post_cursor:
+            post_id=str(post["_id"])
+            post_map[post_id]=post
+
+        return post_map
+
+    def get_user_map(self,user_name_array):
+
+        where={
+            "username":{"$in":user_name_array}
+        }
+
+        user_map={}
+        user_cursor=MongoFront.find_all(where,"users")
+        for user in user_cursor:
+            username=str(user["username"])
+            user_map[username]=user
+
+        return user_map
+
+    def to_object_id_array(self,str_array):
+        object_id_array=[]
+        for str in str_array:
+            object_id_array.append(ObjectId(str))
+
+        return object_id_array
+
+    def fire_response_bad_response(self):
+        """
+        返回登录请求错误响应
+        """
+        self.set_status(400)
+        response = {}
+        response["error"] = "invalid_grant"
+        response["error_description"] = "invalid username or password"
+        self.write(json.dumps(response, indent=2, ensure_ascii=False))
+        self.finish()

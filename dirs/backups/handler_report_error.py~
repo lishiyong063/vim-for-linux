@@ -1,0 +1,147 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# @Date    : 2014-12-05 15:45:20
+# @Author  : Your Name (you@example.org)
+# @Link    : http://example.org
+# @Version : $Id$
+import datetime
+from access_track import access_log
+import tornado.web
+from tornado.web import asynchronous
+from tornado.options import options
+
+from handler_base import BaseHandler
+from auth import requires_auth
+import traceback
+from mongokit.helpers import totimestamp, fromtimestamp
+import json
+import re
+import bson
+from bson import ObjectId
+import datetime
+import time
+import random
+from mongo_field_encoder import MongoFieldEncoder
+from log import get_logger
+from tornado import gen
+from tornado.escape import url_escape
+from utils.mongo_client import MongoClient
+from services.service_fishing_place import get_image_info, get_gps_info
+
+log = get_logger()
+
+
+class ReportErrorHandler(BaseHandler):
+    """
+        钓场渔具店报错
+        '1': "老板认领",
+        '2': "{type}已关",
+        '3': "地图位置错误",
+        '4': "{type}信息有误",
+        '5': "{type}重复",
+        '6': "其它",
+    """
+    def __init__(self, application, request, **kwargs):
+        super(ReportErrorHandler, self).__init__(application, request, **kwargs)
+
+
+    @requires_auth
+    @asynchronous
+    @gen.coroutine
+    def post(self):
+        log.info("ReportErrorHandler.post:"+self.request.body)
+        try:
+            body = json.loads(self.request.body, encoding="utf-8")
+            contact_tel = body.get("tel", "")
+            id = body.get("id", "")
+            # 默认为其它
+            classes = body.get("classes", "6")
+            # types:place 钓场  shop 渔具店
+            types = body.get("type", "shop")
+            pages = body.get("page", [])
+            
+            updata_val = {
+                # 0-未处理 1-已处理
+                "status": "0",
+                "contact_tel": contact_tel,
+                "types": types,
+                "username": self.username,
+                "created": datetime.datetime.utcnow(),
+                # 渔具店/ 钓场id
+                "fish_id": id,
+            }
+            if classes == "1":
+                # 与老板的合照
+                updata_val["pages"] = pages
+                updata_val["wechat_number"] = pages
+
+            elif classes == "2":
+                # 关闭原因
+                updata_val["reason"] = body.get("reson", "")
+                # 关闭原因详情
+                updata_val["error_desc"] = body.get("error_desc", "")
+
+            elif classes == "3":
+                updata_val["error_desc"] = body.get("error_desc", "")
+                updata_val["address"] = body.get("address", "")
+
+            elif classes == "4":
+                dic = self.get_error_info(body, types)
+                if types == "place":
+                    dic["place_type"] = body.get("place_type")
+
+                updata_val["wechat_number"] = pages
+                updata_val[types] = dic
+
+            elif classes == "5":
+                updata_val["error_desc"] = body.get("error_desc")
+
+            elif classes == "6":
+                updata_val["error_desc"] = body.get("error_desc")
+
+            updata_val["classes"] = classes
+            MongoClient.insert(updata_val, "fishing_report_error")
+
+        except Exception as e:
+            log.info('ReportErrorHandler.psot Exception:%s' % e.message)
+            self.fire_response_bad_request(key_required=e.message)
+            return
+ 
+        response = json.dumps({"info": "上传成功,管理员会尽快处理"},
+                              indent=2,
+                              ensure_ascii=False,
+                              cls=MongoFieldEncoder)
+
+        self.write(response)
+        self.finish()
+
+
+    def get_error_info(self, body, types):
+
+        begin_time = body.get("begin_time", "08:00")
+        end_time = body.get("end_time", "21:00")
+
+        desc = body.get("desc", "")
+        price = body.get("price", "")
+        unit = body.get("unit", "")
+        name = body.get("name", "")
+        role = body.get("role", "")
+        lon, lat = body.get("lon", ""), body.get("lat", "")
+
+        gps_info = get_gps_info(lon, lat)
+
+        contact_tel = body["tel"].replace("，", ",").split(",")
+
+        update_val = {
+            "price": price,
+            "unit": unit,
+            "begin_time": begin_time,
+            "end_time": end_time,
+            "desc": desc,
+            "role": role,
+            'username': self.username,
+            "gps_info": gps_info,
+            "contact_tel": contact_tel,
+        }
+
+        return update_val

@@ -1,0 +1,93 @@
+ #!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# @Date    : 2014-10-10 10:19:40
+# @Author  : Your Name (you@example.org)
+# @Link    : http://example.org
+# @Version : $Id$
+from mongokit import *
+from mongokit.helpers import totimestamp, fromtimestamp
+from utils.mongo_client import MongoClient
+from log import get_logger
+import traceback
+import uuid
+
+import json
+from tornado.options import options
+
+import bson
+from mongo_field_encoder import MongoFieldEncoder
+import pymongo
+import cStringIO, urllib2
+
+# from qiniu import Auth
+from qiniu import Auth, PersistentFop, build_op, op_save, urlsafe_base64_encode
+import qiniu
+
+log = get_logger()
+
+'''
+将图片上传云服务
+'''
+
+access_key = 'j5j3fml1xwWY4ebo6z9S1EBYat3v5qBmMHHXZU6P'
+secret_key = 'E5hwyRieLksajUT85-pfzdtWOMLfcnyUBmf_OPL7'
+bucket_name = 'fishactor2'
+q = Auth(access_key, secret_key)
+def uploadImageToQiniu(localfile):
+
+    q = Auth(access_key, secret_key)
+    key=localfile.split("/")[-1]
+    log.info("key:"+key)
+    token = q.upload_token(bucket_name, key)
+    ret, info = qiniu.put_file(token, key, localfile)
+    qiniu_url=None
+    if info!=None and info.status_code==200:
+        qiniu_url="http://fishactor2.ziyadiaoyu.com/"+str(key)
+    return qiniu_url
+
+def uploadVedioToQiniu(localfile):
+
+    global q
+    key=localfile.split("/")[-1]
+    log.info("key:"+key)
+    token = q.upload_token("sight", key)
+    ret, info = qiniu.put_file(token, key, localfile)
+    qiniu_url=None
+    if info!=None and info.status_code==200:
+        qiniu_url="http://sight.ziyadiaoyu.com/"+str(key)
+    log.info("qiniu_url:"+str(qiniu_url))
+    return qiniu_url
+
+def uploadImageToQinniuByFile(file,file_name):
+
+    q = Auth(access_key, secret_key)
+    key=file_name
+    log.info("key:"+key)
+    token = q.upload_token(bucket_name, key)
+    ret, info = qiniu.put_data(token, key, file)
+    print info
+
+
+def uploadFile(image_url,image_name):
+    file = urllib2.urlopen(image_url)
+    info = uploadImageToQinniuByFile(file,image_name)
+    qiniu_url=None
+    if info!=None and info.status_code==200:
+        qiniu_url="http://fishactor2.ziyadiaoyu.com/"+str(image_name)
+    return qiniu_url
+
+####产生视频的第一帧对应的图片
+def getVedioFistImage(filename,height,width):
+    fops = 'vframe/jpg/offset/5/w/%d/h/%d' % (width, height)
+
+    file_name = unicode(''.join(str(uuid.uuid1()).split('-'))) + ".jpg"
+
+    saveas_key = urlsafe_base64_encode('fishpost:' + file_name)
+    fops = fops + '|saveas/' + saveas_key
+
+    pip = "fishingaudiopip"
+    pfop = PersistentFop(q, "sight", pipeline=pip)
+    ops = []
+    ops.append(fops)
+    ret, info = pfop.execute(filename, ops, 1)
+    return "http://fishimage.ziyadiaoyu.com/"+file_name

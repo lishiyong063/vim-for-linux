@@ -1,0 +1,239 @@
+/**
+ * Created by youzi on 2017/11/20.
+ */
+
+function loadChargeCity() {
+    var city_list_html = ""
+    if (chargeCity.length > 0) {///员工用户
+        sort_charge_city_array = sort_by_coastal(chargeCity)
+
+        city_list_html = '<select size="1" name="city" datatype="*" nullmsg="全部" id="city"><option value="" selected>全部城市</option>'
+        for (index in sort_charge_city_array) {
+            city = sort_charge_city_array[index];
+            city_list_html = city_list_html + '<option value="' + city + '">' + city + '</option>'
+        }
+        city_list_html = city_list_html + "</select>"
+        $('#city_select').html(city_list_html);
+    } else {      //主管用户
+        city_list_html = '<div id="province" width="100" style="Float:left"></div>'
+        $('#city_select').html(city_list_html);
+        $("#province").ProvinceCity();
+    }
+}
+
+
+function  save_check(){
+    if ($('#name').val()==""){
+        alert("请输入钓场名称");
+        return  true
+    }
+    if ($('#cover_img').attr("src")== null || $('#cover_img').attr("src")==""){
+        alert("请上传封面图片");
+        return  true
+    }
+    if ($('#page_img_1').attr("src")==null || $('#page_img_1').attr("src")==""){
+        alert("请上传其他图片");
+        return  true
+    }
+    if ($('#Lng_Lat').val()==""){
+        alert("请输入经纬度");
+        return  true
+    }
+    if ($('#address').val()==""){
+        alert("请输入地址");
+        return  true
+    }
+
+}
+
+
+function save(){
+    var flag = save_check()
+    if (flag){
+        return
+    }
+    var name = $('#name').val()
+    var tel = $('#tel').val()
+    var desc = $('#desc').val()
+    var price = $('#price').val()
+    var unit = $('#unit').val()
+    var cover_img =$('#cover_img').attr("src")
+    var page_img_1 = $('#page_img_1').attr("src")
+    var page_img_2 = $('#page_img_2').attr("src")
+    var Lng_Lat = $('#Lng_Lat').val()
+    var address = $('#address').val()
+
+    var begin_time = $('#begin_time').val()
+    var end_time = $('#end_time').val()
+    var role = $('#role').val()
+    var place_type = []
+    var pages=[page_img_1]
+
+    $.each($('input:checkbox'),function(){
+                if(this.checked){
+                  place_type.push($(this).val());
+                }
+    });
+
+
+    if (page_img_2){
+        pages.push(page_img_2)
+    }
+
+    var d = {
+        "name": name,
+        "desc": desc,
+        "price": price,
+        "unit": unit,
+        "cover_img": cover_img,
+        "page_array": pages,
+        "address": address,
+        "Lng_Lat": Lng_Lat,
+        "begin_time": begin_time, 
+        "end_time": end_time,
+        "role": role,
+        "place_type": place_type,
+    }
+    if(tel){
+        d["tel"]=tel
+    }
+    request_url = fishing_admin_Url + '/fishing_location/'+place_id
+    result = getRequest(request_url, d, 'PUT', '', '')
+    if (result && result.entities=="ok"){
+        alert("修改成功");
+        closeAlertPage();
+    }else{
+        alert("系统异常")
+    }
+
+}
+
+
+function loadfishingPlace(place_id){
+    var requestURL= '/fishing_location/'+place_id
+    $.ajax({
+        url: requestURL,
+        type: 'GET',
+        dataType: 'json',
+        error: function (jqXHR, textStatus, errorThrown) {
+            alert('访问服务器失败，请重试');
+            //alert("error:"+jqXHR.readyState+"  请求状态:"+jqXHR.status+" response:"+jqXHR.responseText)
+            //alert("textStatus:"+textStatus)
+        },
+        success: function (data, textStatus, jqXHR) {
+
+
+            //alert("data:"+JSON.stringify(data))
+            if (data.entities && data.entities.length == 1) {
+                var fishing_location = data.entities[0]
+
+                if (fishing_location.name) {
+                    $('#name').val(fishing_location.name)
+                }
+                if (fishing_location.contact_tel) {
+                    $('#tel').val(fishing_location.contact_tel)
+                }
+
+                if (fishing_location.wechat) {
+                    $('#wechat').val(fishing_location.wechat)
+                }
+
+                if (fishing_location.end_time) {
+                    $('#end_time').val(fishing_location.end_time)
+                }
+
+
+                if (fishing_location.role) {
+                    $('#role').val(fishing_location.role)
+                }
+
+
+                if (fishing_location.begin_time) {
+                    $('#begin_time').val(fishing_location.begin_time)
+                }
+
+
+                if (fishing_location.place_type) {
+                    $.each(fishing_location.place_type, function(index, value){
+                      if (value == "黑坑"){
+                              $('#hk').attr('checked',true); 
+                      }
+
+                      if (value == "江河"){
+                              $('#jh').attr('checked',true); 
+                      }
+
+                      if (value == "斤塘"){
+                              $('#jt').attr('checked',true); 
+                      }
+
+
+                      if (value == "农家乐"){
+                              $('#njl').attr('checked',true); 
+                      }
+
+
+                      if (value == "湖库"){
+                              $('#huk').attr('checked',true); 
+                      }
+
+
+                      if (value == "野塘"){
+                              $('#yt').attr('checked',true); 
+                      }
+
+
+                      if (value == "路亚"){
+                              $('#ly').attr('checked',true); 
+                      }
+                    
+                    })
+                }
+
+
+                if (fishing_location.desc) {
+                    $('#desc').val(fishing_location.desc)
+                }
+
+                if (fishing_location.price) {
+                    $('#price').val(fishing_location.price)
+                }else{
+                    $('#price').val("免费")
+                }
+
+                if (fishing_location.unit) {
+                    $('#unit').val(fishing_location.unit)
+                }
+
+                if (fishing_location.cover) {
+                    cover = fishing_location.cover
+                    image_url = cover.image_url
+                    $("#image_div").show()
+                    $('#cover_img').attr("src",image_url)
+                }
+
+                if (fishing_location.pages) {
+                    page_len = fishing_location.pages.length
+                    for (var i=0;i<page_len;i++){
+                        page = fishing_location.pages[i]
+                        image_url = page.image_url
+                        $("#image_div_"+(i+1)).show()
+                        $('#page_img_'+(i+1)).attr("src",image_url)
+                    }
+                }
+
+                if (fishing_location.gps_info) {
+                    gps_info = fishing_location.gps_info
+                    address = gps_info.address
+                    gps_location = gps_info.location
+                    gps_coordinates = gps_location.coordinates
+                    coordinates = gps_coordinates.join(",")
+
+                    $("#map_tagging").val(address)
+                    $("#address").val(address)
+                    $('#Lng_Lat').val(coordinates)
+                }
+            }
+        }
+    });
+}

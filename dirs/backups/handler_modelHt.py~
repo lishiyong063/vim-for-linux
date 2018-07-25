@@ -1,0 +1,133 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# @Date    : 2015-05-18 17:41:52
+# @Author  : Your Name (you@example.org)
+# @Link    : http://example.org
+# @Version : $Id$
+from handler_baseHt import BaseHtHandler
+from log import get_logger
+import tornado.web
+from tornado.web import asynchronous
+from tornado.options import options
+import json
+import hashlib
+import datetime
+import hashlib
+import random
+import time
+from log import get_logger
+from model.accounts_ht import Account_ht
+from model.permissions_ht import Permissions_ht
+import optionsSetting
+from utils.secret import *
+import traceback
+from utils.redis_client import RedisClient
+from mongo_field_encoder import MongoFieldEncoder
+from mongolog import MongoHandler
+from mongokit.helpers import totimestamp, fromtimestamp
+from utils.token_im import TokenService
+from tornado.httpclient import HTTPRequest
+from utils.mongo_client import MongoClient
+from auth import requires_auth
+
+try:
+    from tornado.curl_httpclient import CurlAsyncHTTPClient as AsyncHTTPClient
+except ImportError:
+    from tornado.simple_httpclient import SimpleAsyncHTTPClient as AsyncHTTPClient
+log = get_logger()
+class ModelHtHandler(BaseHtHandler):
+    @requires_auth
+    @asynchronous
+    def get(self):
+        log.info("ModelHtHandler.get:"+self.request.body)
+
+        models=[]
+        reuslt=MongoClient.find_all({},"moduleGroup")
+        for model in reuslt:
+            models.append(model)
+
+        response={}
+        response["entities"]=models
+        self.write(json.dumps(response,indent=2, ensure_ascii=False,cls=MongoFieldEncoder))
+        self.finish()
+    
+    @requires_auth
+    @asynchronous
+    def post(self):
+        log.info("ModelHtHandler.post:"+self.request.body)
+        self.set_header("Access-Control-Allow-Origin", "*")
+
+
+
+        data={}
+        
+
+        sub_model=[] 
+
+        display_sub_model_name_set = self.get_argument('display_sub_model_name_set')
+        log.info("display_sub_model_name_set:"+display_sub_model_name_set)
+        display_sub_model_name_array=display_sub_model_name_set.split(",")
+
+        sub_model_name_set = self.get_argument('sub_model_name_set')
+        log.info("sub_model_name_set:"+sub_model_name_set)
+        sub_model_name_array=sub_model_name_set.split(",")
+
+        sub_model_url_set = self.get_argument('sub_model_url_set')
+        log.info("sub_model_url_set:"+sub_model_url_set)
+        sub_model_url_array=sub_model_url_set.split(",")
+
+        count=len(display_sub_model_name_array)
+        for index in range(0, count):
+            sub_model.append(
+                {
+                    "display_sub_model_name":display_sub_model_name_array[index],
+                    "sub_model_name":sub_model_name_array[index],
+                    "sub_model_url":sub_model_url_array[index]
+                }
+            )
+        if len(sub_model)>0:
+            data["sub_model"]=sub_model
+
+        log.info("data:"+str(data))
+        
+
+        act=self.get_argument('act',"")
+        model_name=""
+        display_model_name=""
+        if act=="new":
+            model_name = self.get_argument('model_name')
+            display_model_name = self.get_argument('display_model_name')
+            data["model_name"]=model_name
+            data["display_model_name"]=display_model_name
+        else:
+            model_name=self.get_argument('primary_model_select')
+
+        """
+        新增模块处理
+        """
+        try:
+            if act=="new":
+                MongoClient.insert(data,"moduleGroup")
+            else:
+                where={
+                    "model_name":model_name
+                }
+                update_value={"$addToSet":{"sub_model":{"$each":sub_model}}}
+                MongoClient.find_and_modify(where, update_value,"moduleGroup")
+            
+            self.redirect('/static/op_success.html')
+        except:
+            log.error(traceback.format_exc())
+            self.fire_response_bad_response()
+            return
+
+    def fire_response_bad_response(self):
+        """
+        返回登录请求错误响应
+        """
+        self.set_status(400)
+        response = {}
+        response["error"] = "invalid_grant"
+        response["error_description"] = "invalid username or password"
+        self.write(json.dumps(response, indent=2, ensure_ascii=False))
+        self.finish()

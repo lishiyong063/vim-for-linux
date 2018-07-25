@@ -1,0 +1,153 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# @Date    : 2015-05-18 17:41:52
+# @Author  : Your Name (you@example.org)
+# @Link    : http://example.org
+# @Version : $Id$
+from handler_baseHt import BaseHtHandler
+from log import get_logger
+import tornado.web
+from tornado.web import asynchronous
+from tornado.options import options
+import json
+import hashlib
+import datetime
+import hashlib
+import random
+import pymongo
+import time
+from log import get_logger
+from model.accounts_ht import Account_ht
+from model.users import Users
+import optionsSetting
+import datetime
+import  time
+from utils.secret import *
+import traceback
+from utils.redis_client import RedisClient
+from mongo_field_encoder import MongoFieldEncoder
+from mongolog import MongoHandler
+from mongokit.helpers import totimestamp, fromtimestamp
+from utils.token_im import TokenService
+from tornado.httpclient import HTTPRequest
+from utils.mongo_client import MongoClient
+from utils.mongo_front import MongoFront
+from utils.mongo_slave_client import MongoSlaveClient
+from auth import requires_auth
+import re
+try:
+    from tornado.curl_httpclient import CurlAsyncHTTPClient as AsyncHTTPClient
+except ImportError:
+    from tornado.simple_httpclient import SimpleAsyncHTTPClient as AsyncHTTPClient
+log = get_logger()
+###获取用户详情
+class UserDetailHandler(BaseHtHandler):
+    @asynchronous
+    @requires_auth
+    def get(self):
+
+        log.info("UserDetailHandler.get:"+str(self.request.arguments))
+        username = self.get_argument('username', "")
+        response={}
+        if username:
+            where={
+                'username': username
+            }
+            user=MongoSlaveClient.find_one(where,"users")
+            if user:
+                response["entities"]=[self.assembleUser(user)]
+
+        self.write(json.dumps(response,indent=2, ensure_ascii=False,cls=MongoFieldEncoder))
+        self.finish()
+
+    def assembleUser(self,user):
+        user_json={}
+
+        user_json["created"]=user["created"]
+        user_json["username"] = user["username"]
+        user_json["user_type"] = user["user_type"]
+
+        if user.has_key("sex"):
+            user_json["sex"] = user["sex"]
+        if user.has_key("avatar_url"):
+            user_json["avatar_url"] = user["avatar_url"]
+
+        if user.has_key("platform"):
+            user_json["platform"] = user["platform"]
+
+        if user.has_key("followed_num"):
+            user_json["followed_num"] = user["followed_num"]
+
+        if user.has_key("followed_num"):
+            user_json["followed_num"] = user["followed_num"]
+
+        if user.has_key("fishingSkill"):
+            user_json["fishingSkill"] = user["fishingSkill"]
+
+        if user.has_key("nick"):
+            user_json["nick"] = user["nick"]
+
+        if user.has_key("score"):
+            user_json["score"] = user["score"]
+
+
+        if user.has_key("invite_code"):
+            user_json["invite_code"] = user["invite_code"]
+
+        if user.has_key("post_count"):
+            user_json["post_count"] = user["post_count"]
+
+        if user.has_key("following_num"):
+            user_json["following_num"] = user["following_num"]
+
+        if user.has_key("tools_count"):
+            user_json["tools_count"] = user["tools_count"]
+
+        if user.has_key("gps_info"):
+            log.info("user[gps_info]:"+str(type(user["gps_info"])))
+            user_json["gps_info"] = self.assembleAddress(user["gps_info"])
+
+        # if user.has_key("platform_id"):
+        #     user_json["platform_id"] = self.assembleAddress(user["platform_id"])
+
+        if user.has_key("client_info"):
+            user_json["client_info"] = user["client_info"]
+
+        if "mobile" in user:
+            user_json["mobile"] = user["mobile"]
+
+        return user_json
+
+    def fire_response_bad_response(self):
+        """
+        返回登录请求错误响应
+        """
+        self.set_status(400)
+        response = {}
+        response["error"] = "invalid_grant"
+        response["error_description"] = "invalid username or password"
+        self.write(json.dumps(response, indent=2, ensure_ascii=False))
+        self.finish()
+
+    def assembleAddress(self,gps_info):
+        return_gps_info={}
+        province = gps_info.get("province","")
+        city = gps_info.get("city","")
+        area = gps_info.get("area","")
+        country_code = gps_info.get("country_code","")
+        return_gps_info["country_code"]=country_code
+
+        if province!=city:
+            address = province+city+area
+        else:
+            address = province+area
+
+        if country_code!="cn" and country_code!="":
+            address = city+area
+
+        if gps_info.has_key("address"):
+            return_gps_info["address"] = gps_info["address"]
+        else:
+            return_gps_info["address"]=address
+
+        return return_gps_info

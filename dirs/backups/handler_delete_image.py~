@@ -1,0 +1,140 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# @Date    : 2015-05-18 17:41:52
+# @Author  : Your Name (you@example.org)
+# @Link    : http://example.org
+# @Version : $Id$
+from handler_baseHt import BaseHtHandler
+from log import get_logger
+import tornado.web
+from tornado.web import asynchronous
+from tornado.options import options
+import json
+import hashlib
+import datetime
+import hashlib
+from bson import ObjectId
+import random
+import time
+from log import get_logger
+from model.advices import Advice
+from model.permissions_ht import Permissions_ht
+import optionsSetting
+from utils.secret import *
+import traceback
+from utils.redis_client import RedisClient
+from utils.mongo_front import MongoFront
+from mongo_field_encoder import MongoFieldEncoder
+from services.service_activity import *
+from mongolog import MongoHandler
+from mongokit.helpers import totimestamp, fromtimestamp
+from utils.token_im import TokenService
+from tornado.httpclient import HTTPRequest
+from utils.mongo_client import MongoClient
+import pymongo
+from auth import requires_auth
+
+try:
+    from tornado.curl_httpclient import CurlAsyncHTTPClient as AsyncHTTPClient
+except ImportError:
+    from tornado.simple_httpclient import SimpleAsyncHTTPClient as AsyncHTTPClient
+log = get_logger()
+class DeleteImageHandler(BaseHtHandler):
+     '''
+
+     '''
+     @requires_auth
+     @asynchronous
+     def post(self):
+        log.info("DeleteImageHandler.post:"+self.request.body)
+        try:
+            body_dic = json.loads(self.request.body,encoding="utf-8")
+            post_id = body_dic.get("post_id",None)
+            image_url = body_dic.get("image_url",None)
+            lookup = {"_id": ObjectId(post_id)}
+
+            post_obj=MongoFront.find_one(lookup,"posts")
+            if post_obj:
+                content=post_obj.get("content","").strip()
+                if content=="":
+                    if post_obj.has_key("page"):
+                        pages=post_obj["page"]
+                        if len(pages)==1:
+                            self.write({})
+                            self.finish()
+                            return
+                    else:
+                        self.write({})
+                        self.finish()
+                        return
+
+                video=post_obj.get("video",{})
+                if video:
+                    self.write({})
+                    self.finish()
+                    return
+
+                length =len(post_obj.get("page",[]))
+
+                updated={
+                    "$pull":{
+                        "page":{
+                            "image_url":image_url
+                        }
+                    }
+                }
+                post_credit = int(post_obj.get("post_credit", 0))
+                if length == 3 and post_credit!=0:
+                    updated["$unset"] = {"post_credit":""}
+                MongoFront.update(lookup,updated,"posts")
+            response = {"entities":[]}
+            self.write(json.dumps(response,
+                                  indent=2,
+                                  ensure_ascii=False,
+                                  cls=MongoFieldEncoder))
+            self.finish()
+
+            if length==3:
+
+                # where = {
+                #     "actid":post_id,
+                #     "type" : "post_send",
+                #     "sold_out":{"$ne":"1"}
+                # }
+                # update = {
+                #     "$set":{  "sold_out":"1"}  #和下架原理一致，加此参数，避免删除该渔获时重复扣金币
+                # }
+                # credits_earn = MongoFront.find_and_modify(where,update,"credits_earn")
+
+                post_credit = int(post_obj.get("post_credit", 0))
+                if post_credit!=0:
+                    username = post_obj["actor"]["username"]
+                    credits = post_credit
+                    where = {
+                    "username":username
+                    }
+                    now = datetime.datetime.utcnow()
+                    update = {"$inc":{"credits":-credits},'$set':{'credits_modified':now}}
+                    user = MongoFront.find_and_modify(where,update,"users")
+
+                     #保存用户扣除记录
+                    credits_earn = {
+                                        "uid":username,
+                                        "eventType":"reward",
+                                        "type":"post_delete",
+                                        "credits":-credits,
+                                        "actid":post_id,
+                                        "created":now
+                                        }
+
+                    id,error=MongoFront.insert(credits_earn,"credits_earn")
+        except Exception as e:
+            log.info('DeletePostHandler.put Exception:%s' % e.message)
+            log.error(traceback.format_exc())
+            self.fire_response_bad_request(key_required=e.message)
+            return
+
+ 
+    
+    
+    

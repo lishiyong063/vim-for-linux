@@ -1,0 +1,69 @@
+# eolinker 字段说明
+# apiName 接口名称
+# apiURI 接口地址 "/"
+# apiProtocol 0-post 1-get
+# apiSuccessMock: {key:\n     \t"name\": \"value\", value"+\n\t\t}
+# apiFailureMock: {key:"        "+ "name\": \"value\", value"+\n\t\t}
+
+
+
+{
+	"baseInfo": {
+		"apiName": "添加关注",
+		"apiURI": "\/following",
+		"apiProtocol": 0,
+		"apiSuccessMock": "         {\n    \t\"following\": \"85a804a8ee2111e4ad5b48d705d33a1b\", \n    \t\"follow\": 2,\n    \t \"_id\": \"555a9f47f3179921e1cc5303\",\n    \t\"followed\": \"f34c3d80ee5011e4bc0e34363b6f45fc\",\n    \t\"created\": 1432002374562\n\t\t}",
+		"apiFailureMock": "        {\"error\":\"expired_token\",\n         \"timestamp\":1389492673539,\n         \"duration\":0,\n         \"exception\":\"org.usergrid.rest.exceptions.SecurityException\",\n         \"error_description\":\"Unable to authenticate due to expired access token\"\n        }\n",
+		"apiRequestType": 0,
+		"apiStatus": 0,
+		"starred": 0,
+		"apiNoteType": 0,
+		"apiNoteRaw": "",
+		"apiNote": "",
+		"apiRequestParamType": 0,
+		"apiRequestRaw": "",
+		"apiFailureStatusCode": "200",
+		"apiSuccessStatusCode": "200",
+		"beforeInject": null,
+		"afterInject": null,
+		"apiUpdateTime": "2018-05-19 10:37:51"
+	},
+	"headerInfo": [],
+	"authInfo": {
+		"status": "0"
+	},
+	"requestInfo": [],
+	"resultInfo": [{
+		"paramNotNull": "0",
+		"paramName": "被关注人的用户名",
+		"paramKey": "following",
+		"type": "0",
+		"paramType": "0",
+		"paramValueList": [{
+			"value": "username",
+			"valueDescription": "用户名称"
+		}],
+		"paramValue": "",
+		"$index": 0
+	}],
+	"urlParam": [],
+	"mockInfo": {
+		"rule": [{
+			"paramKey": "following",
+			"type": "0",
+			"paramType": "0",
+			"paramValue": "",
+			"$index": 0
+		}, {
+			"paramKey": "",
+			"paramType": "0",
+			"$index": 1
+		}],
+		"result": "{&quot;following&quot;:&quot;xnpL&quot;}",
+		"mockConfig": {
+			"rule": "",
+			"type": "object"
+		}
+	},
+	"testCastList": []
+} 

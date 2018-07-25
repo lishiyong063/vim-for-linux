@@ -1,0 +1,36 @@
+# -*- coding: utf-8 -*-
+# Created Time: 2016-05-01 20:48:14
+
+import logging
+logger = logging.getLogger(__name__)
+
+class ModelsProxy:
+    """ Models 代理
+        obj  models 对象：
+        lan  语言类型 1,中文 2,为英文
+    """
+    def __init__(self, lan=1):
+        self.lan = lan
+
+
+    def filter(self, obj, *args, **kwargs):
+        """ 默认返回中文
+        """
+        queryset = obj.objects.filter(language_id=self.lan,**kwargs)
+        if self.lan == 2 and not queryset:
+            queryset = obj.objects.filter(language_id=self.lan,**kwargs)
+        return queryset
+
+    def get(self, obj, *args, **kwargs):
+        try:
+            queryset = obj.objects.get(language_id=self.lan,**kwargs)
+        except obj.DoesNotExist:
+            logger.warning('[%s] %s language_id=%s DoesNotExist' % (obj, kwargs, self.lan))
+
+    def all(self, obj, *args, **kwargs):
+        queryset = obj.objects.filter(language_id=self.lan,**kwargs)
+        return queryset
+
+import os
+
+os.system()

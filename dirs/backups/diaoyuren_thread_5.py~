@@ -1,0 +1,33 @@
+# -*- coding: utf-8 -*-
+# Created Time: 2018-06-28 17:27:40
+import requests
+from lxml import etree
+from mongo_client import mongo
+from concurrent import futures
+
+
+def func(start):
+    start_number = 10500000 + 25000(start-1)
+    end_number = 10500000 + 25000*(start)
+
+    for i in range(start_number, end_number):
+        print("http://www.diaoyu.com/user/%s"%i)
+        a = requests.get("http://www.diaoyu.com/user/%s"%i)
+        if a.status_code != 200:continue
+        xpath_obj = etree.HTML(a.content)
+        username = xpath_obj.findall(".//div[@class='user-personal-name']")[0].text
+        img = xpath_obj.xpath("//div[@class='user-personal-img']/img/@src")[0]
+        platform = 'diaoyuren'
+        dic = {"username": username,
+               "img_url": img,
+               "platform": platform,}
+        a = mongo.insert(dic, "user_20180628")
+    return a 
+
+
+
+if __name__ == "__main__":
+    works = 4
+    with futures.ThreadPoolExecutor(works) as excutor:
+        futs = {excutor.submit(func(i)) for i in range(1,5)}
+

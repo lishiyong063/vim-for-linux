@@ -1,0 +1,255 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# @Date    : 2015-05-18 17:41:52
+# @Author  : Your Name (you@example.org)
+# @Link    : http://example.org
+# @Version : $Id$
+from handler_baseHt import BaseHtHandler
+from log import get_logger
+import tornado.web
+from tornado.web import asynchronous
+from tornado.options import options
+import json
+import hashlib
+import datetime
+from auth import requires_auth
+import hashlib
+from bson import ObjectId
+import random
+import time
+from log import get_logger
+from model.advices import Advice
+from model.permissions_ht import Permissions_ht
+import optionsSetting
+from utils.secret import *
+import traceback
+from utils.redis_client import RedisClient
+from utils.mongo_front import MongoFront
+from mongo_field_encoder import MongoFieldEncoder
+from services.service_order import *
+from mongolog import MongoHandler
+from mongokit.helpers import totimestamp, fromtimestamp
+from utils.token_im import TokenService
+from tornado.httpclient import HTTPRequest
+from utils.mongo_client import MongoClient
+import pymongo
+import re
+from services.service_activities import *
+
+try:
+    from tornado.curl_httpclient import CurlAsyncHTTPClient as AsyncHTTPClient
+except ImportError:
+    from tornado.simple_httpclient import SimpleAsyncHTTPClient as AsyncHTTPClient
+log = get_logger()
+class NewActivityDeleteHandler(BaseHtHandler):
+    @requires_auth
+    @asynchronous
+    def get(self):
+        
+        #初始化
+        where = { 'deleted': True,"pre_delete":True,"activity_type":0}
+
+
+        sort= {}
+        sort_by = 'created'
+        sort_value = pymongo.DESCENDING
+        entities = []
+        response = {}
+
+        #查询参数设置
+        limit = int(self.get_argument('limit',10))
+        curr = self.get_argument('curr','')
+        datemin = self.get_argument('datemin',None)
+        datemax = self.get_argument('datemax',None)
+        post_type = self.get_argument('post_type','')
+        # city = self.get_argument('city',None)
+        username = self.get_argument('username',None)
+        status = self.get_argument('status', None)
+        invite_code = self.get_argument('invite_code', None)
+        admin_area = self.get_argument('admin_area', None)
+        belonge_area = self.get_argument('belonge_area', None)
+        biz_user_name = self.get_argument('biz_user_name',None)
+        pre_delete=self.get_argument('pre_delete',None)
+        if pre_delete:
+            where["deleted"]={"$ne":True}
+
+
+        if status is not None:
+            where["status"] = int(status)
+
+        if username is not None:
+            where["actor.username"] = username
+        
+        if datemin != None:
+           log.info("datemin:"+datemin)
+           datemin = datetime.datetime.strptime(datemin, "%Y-%m-%d")
+           where["created"] = {"$gte":datemin}
+ 
+        if datemax != None:
+           log.info("datemax:"+datemax)
+           datemax = datetime.datetime.strptime(datemax, "%Y-%m-%d")
+           between={}
+           if where.has_key("created"):
+               between=where["created"]
+
+           between["$lte"]=datemax
+           where["created"]=between
+        
+        if post_type != "":
+            if post_type == "2":
+                where["post_type"] = "2"
+            elif post_type == "1":
+                where["post_type"] = {"$ne":"2"}
+        
+       
+        # self.city_deal(city,where)
+        
+        # province = self.get_argument('province',None)
+        # if province!=None:
+        #     log.info("province:"+province)
+        #     where['gps_info.province']=province
+
+
+         # 按活动片区查询
+        if belonge_area!=unicode(0):
+            where["belonge_area"]=belonge_area
+        # 按商家名称查询
+        if biz_user_name!=None and biz_user_name!=unicode(0):
+            user_list = get_order_username(biz_user_name)
+            where["actor.username"] = {"$in":user_list}
+         # 按商家片区查询
+        if admin_area!=None and admin_area!=unicode(0):
+            where["admin_area"]=admin_area
+        else:
+            biz_username = self.username
+            biz_where={
+                "username":biz_username
+            }
+            account=options.dbconn_ht.Account_ht.find(biz_where)
+            level = account[0]["level"]
+            if level=="staff":
+                where["admin_area"]={"$in":account[0]["activity_area"]}
+
+
+        if invite_code:
+            user_list = get_order_username(invite_code)
+            where["actor.username"] = {"$in":user_list}
+            
+
+
+        condition = self.get_argument('condition',None)
+
+        if condition!=None:
+            condition_dic=json.loads(condition,encoding="utf-8")
+            if condition_dic.has_key("ids"):
+                ids=condition_dic["ids"]
+                id_array=ids.split(",")
+                objectIdArray=[]
+                for id in id_array:
+                    objectIdArray.append(ObjectId(id))
+                where['_id'] = {"$in":objectIdArray}
+
+        ##排序
+        sort_by = self.get_argument("sort_by","")
+        sort_value = self.get_argument('sort_value',"")
+
+        log.info("where:"+str(where))
+        # log.info("sort_by:"+sort_by)
+        # log.info("sort_value:"+sort_value)
+        sort=[]
+        if sort_by=="":
+            ##默认排序：先按排名排，然后按发活动时间排
+            sort = [('rank',pymongo.ASCENDING),('created', pymongo.DESCENDING)]
+        else:
+            sort=[(sort_by,int(sort_value))]
+        #查询
+        if curr=="":
+            activities = options.dbconn.Activities.find(where).sort(sort).limit(limit)
+        else:
+            activities = options.dbconn.Activities.find(where).sort(sort).skip((int(curr)-1)*limit).limit(limit)
+        #
+
+        #结果处理
+        if activities!=None:
+            entities = getActivityList(activities)
+        response["entities"] = entities
+        response["count"] = str(activities.count())
+        self.write(json.dumps(response,indent=2, ensure_ascii=False,cls=MongoFieldEncoder))
+        self.finish()
+        #
+    
+    
+    def city_deal(self,city,where):
+        
+        if city!=None:
+            log.info("city:"+city) 
+            cities = city.split(',')
+            if '海外' in city:
+                index = cities.index('海外')
+                del cities[index]
+                where['$or']=[
+                              {'gps_info.city':{'$in':cities}},
+                              {'gps_info.country_code':{'$nin':['','cn'],'$exists':True}}
+                              ]
+            
+            elif '其他' in city:
+                index = cities.index('其他')
+                del cities[index]
+                
+                #由于海外的数据存在只有country_code,没有city，所以其他的数据应该把这类排除在外
+                where['$or']=[
+                               {'gps_info.city':{'$in':cities}},
+                               {'gps_info.country_code':{'$exists':False}},
+                               {'gps_info.country_code':''},
+                               {'gps_info.country_code':'cn','gps_info.city':''},
+                               {'gps_info.country_code':'cn','gps_info.city':{'$exists':False}},
+                              ]
+                
+              
+            else:
+                 where['gps_info.city']={'$in':cities}
+
+
+
+    # def get_username(self, nick):
+    #     """
+    #     获取活动发布者username
+    #     """
+    #     log.info("GroupDBService._get_username")
+    #     look_up={
+    #                 "$or":[
+    #                     {"nick":re.compile(nick+'.*')},
+    #                     {"invite_code":nick}
+    #                 ]
+    #             }
+    #     filters = {"_id": False, "username": True}
+    #     users = list(MongoFront.find_all(look_up, "users",filters))or[]
+    #     user_list=[]
+    #     for user in users:
+    #         user_list.append(user["username"])
+    #     return user_list
+
+    def get_biz_map(self, username_ary):
+
+        where = {
+            "username": {"$in": username_ary}
+        }
+        biz_map = {}
+        biz_user = MongoClient.find_all(where, "biz_user")
+        for biz in biz_user:
+            username = biz["username"]
+            biz_map[username] = biz
+        return biz_map
+
+    
+    
+    
+    
+    
+    
+
+
+    
+    
+    
+    

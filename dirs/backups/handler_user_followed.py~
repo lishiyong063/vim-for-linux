@@ -1,0 +1,96 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# @Date    : 2015-05-18 17:41:52
+# @Author  : Your Name (you@example.org)
+# @Link    : http://example.org
+# @Version : $Id$
+from handler_baseHt import BaseHtHandler
+from log import get_logger
+import tornado.web
+from tornado.web import asynchronous
+from tornado.options import options
+import json
+import hashlib
+import datetime
+import hashlib
+import random
+import pymongo
+import time
+from log import get_logger
+from model.user_following import UserFollowing
+from model.users import Users
+import optionsSetting
+from utils.secret import *
+from services.service_user import *
+import traceback
+from utils.redis_client import RedisClient
+from mongo_field_encoder import MongoFieldEncoder
+from mongolog import MongoHandler
+from mongokit.helpers import totimestamp, fromtimestamp
+from utils.token_im import TokenService
+from tornado.httpclient import HTTPRequest
+from utils.mongo_client import MongoClient
+from tornado import gen
+from auth import requires_auth
+try:
+    from tornado.curl_httpclient import CurlAsyncHTTPClient as AsyncHTTPClient
+except ImportError:
+    from tornado.simple_httpclient import SimpleAsyncHTTPClient as AsyncHTTPClient
+log = get_logger()
+class UserFollowedHandler(BaseHtHandler):
+    @asynchronous
+    @requires_auth
+    def get(self):
+        log.info("UserFollowedHandler.get:"+self.request.body)
+        self.set_header("Access-Control-Allow-Origin", "*")
+        
+        username = self.get_argument('username',"")
+        log.info("username:"+username)
+        curr = self.get_argument('curr',"")
+
+        where = {
+            "following":username
+        }
+        limit=10
+
+        if curr=="":
+            followed_user_cursor = options.dbconn.UserFollowing.find(where).sort('created',pymongo.DESCENDING).limit(limit)
+        else:
+            followed_user_cursor = options.dbconn.UserFollowing.find(where).sort('created',pymongo.DESCENDING).skip((int(curr)-1)*limit).limit(limit)
+
+        response={}
+        if followed_user_cursor is not None:
+            username_array=[]
+            users=[]
+            follow_dic={}
+            cursor=""
+            index=0
+            for followed_user in followed_user_cursor:
+                username_array.append(followed_user["followed"])
+
+            actors_map =  get_actors_toMap(username_array)
+
+            for username in username_array:
+                if actors_map.has_key(username):
+                    users.append(actors_map[username])
+                else:
+                    log.info("xxxx:"+username)
+
+            response["entities"]=users
+            response["count"]=str(followed_user_cursor.count())
+
+
+        self.write(json.dumps(response,indent=2, ensure_ascii=False,cls=MongoFieldEncoder))
+        self.finish()
+
+
+    def fire_response_bad_response(self):
+        """
+        返回登录请求错误响应
+        """
+        self.set_status(400)
+        response = {}
+        response["error"] = "invalid_grant"
+        response["error_description"] = "invalid username or password"
+        self.write(json.dumps(response, indent=2, ensure_ascii=False))
+        self.finish()

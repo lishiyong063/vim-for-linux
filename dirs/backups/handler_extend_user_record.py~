@@ -1,0 +1,243 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# @Date    : 2015-05-18 17:41:52
+# @Author  : Your Name (you@example.org)
+# @Link    : http://example.org
+# @Version : $Id$
+from handler_baseHt import BaseHtHandler
+from log import get_logger
+import tornado.web
+from tornado.web import asynchronous
+from tornado.options import options
+import json
+import hashlib
+import datetime
+from bson import ObjectId
+import hashlib
+import random
+import pymongo
+import time
+from log import get_logger
+from model.accounts_ht import Account_ht
+from model.users import Users
+import optionsSetting
+import datetime
+import  time
+from utils.secret import *
+import traceback
+from utils.redis_client import RedisClient
+from mongo_field_encoder import MongoFieldEncoder
+from mongolog import MongoHandler
+from mongokit.helpers import totimestamp, fromtimestamp
+from utils.token_im import TokenService
+from tornado.httpclient import HTTPRequest
+from utils.mongo_client import MongoClient
+from utils.mongo_front import MongoFront
+from auth import requires_auth
+import re
+try:
+    from tornado.curl_httpclient import CurlAsyncHTTPClient as AsyncHTTPClient
+except ImportError:
+    from tornado.simple_httpclient import SimpleAsyncHTTPClient as AsyncHTTPClient
+log = get_logger()
+class ExtendUserRecordHandler(BaseHtHandler):
+
+
+
+    @asynchronous
+    @requires_auth
+    def get(self):
+
+
+        admin = self.me
+        admin_user = admin["username"]
+        where = {}
+
+        if admin_user=="fenglin" or admin_user=="admin":
+            admin = self.get_argument('admin','0')
+            if admin!='0':
+                where["admin"]=admin
+        else:
+            where["admin"]=self.username
+
+
+
+        datemin = self.get_argument('datemin',None)
+        datemax = self.get_argument('datemax',None)
+        if datemin!=None:
+           # log.info("datemin:"+datemin)
+           datemin = datetime.datetime.strptime(datemin, "%Y-%m-%d")-datetime.timedelta(hours=8)
+           where["created"]={"$gte":datemin}
+
+        if datemax!=None:
+           # log.info("datemax:"+datemax)
+           datemax = datetime.datetime.strptime(datemax, "%Y-%m-%d")-datetime.timedelta(hours=8)
+           between={}
+           if where.has_key("created"):
+               between=where["created"]
+
+           between["$lte"]=datemax
+           where["created"]=between
+
+
+        #0匹配不成功  #1，2匹配成功   #3匹配驳回
+        match = int(self.get_argument('match',-1))
+        if match!=-1:
+            if match==1:
+                where["match"]={"$in":[1,2]}
+            else:
+                where["match"]=match
+
+        curr = self.get_argument('curr',"") #分页
+        limit = 15
+        extend_user_record = None
+        if curr=="":
+            extend_user_record = MongoClient.find_all(where,"extend_user_record").sort("created", -1).limit(limit)
+        else:
+            extend_user_record = MongoClient.find_all(where,"extend_user_record").sort("created", -1).skip((int(curr)-1)*limit).limit(limit)
+
+
+        response={}
+        response["entities"]=list(extend_user_record) or []
+        response["count"]=str(extend_user_record.count())
+        self.write(json.dumps(response,indent=2, ensure_ascii=False,cls=MongoFieldEncoder))
+        self.finish()
+
+
+
+
+
+
+
+
+    @asynchronous
+    @requires_auth
+    def post(self):
+        log.info("ExtendUserRecordHandler.get:"+self.request.body)
+        self.set_header("Access-Control-Allow-Origin", "*")
+        body_dic = json.loads(self.request.body,encoding="utf-8")
+        invite_code_apply = body_dic.get("invite_code","")
+        nick_apply =  body_dic.get("nick")
+        chat_url = body_dic.get("chat_url")
+        special = body_dic.get("special",False)
+
+
+        now = datetime.datetime.utcnow()
+        extend_user_record = {
+            "invite_code_apply":invite_code_apply,
+            "nick_apply":nick_apply,
+            "real_name":self.me["real_name"],
+            "admin":self.username,
+            "created":now,
+            "chat_url":chat_url,
+            "match":0
+        }
+
+        begin = now+ datetime.timedelta(hours=-24)
+
+
+        if invite_code_apply!="":
+              where = {
+                "invite_code":invite_code_apply,
+                "created":{"$gt":begin}
+              }
+        
+        else:
+            where = {
+                "nick":nick_apply,
+                "created":{"$gt":begin}
+            }
+
+
+        user = MongoFront.find_one(where,"users")
+
+
+        response = {}
+        if user==None:
+             if invite_code_apply!="":
+                 desc = "该子牙号无效，请重新输入或者不填写"
+                 self.fire_response_desc("error",desc)
+                 return
+             id,error= MongoClient.insert(extend_user_record,"extend_user_record")
+             self.fire_response_desc("success","保存成功，匹配失败，通知凤林进行判定")
+
+        else:
+            where={
+                    "user_username":user["username"]
+                }
+
+            user_references=MongoClient.find_one(where,"user_references_record")
+
+            if user_references:
+                 desc = "该子牙号已经被匹配过了,请重新填写别的子牙号"
+                 self.fire_response_desc("error",desc)
+                 return
+
+            extend_user_record["actor"]={
+                "username":user["username"],
+	            "nick":user["nick"],
+	            "avatar_url":user["avatar_url"],
+	            "created":user["created"],
+	            "invite_code":user["invite_code"]
+            }
+            extend_user_record["match"]=1
+            id,error= MongoClient.insert(extend_user_record,"extend_user_record")
+         
+
+            user_references_record = {
+                "admin":self.username,
+                "user_username":user["username"],
+                "created":now,
+                "user_created":user["created"],
+                "record_id":str(id),
+                "real_name":self.me["real_name"]
+            }
+            MongoClient.insert(user_references_record,"user_references_record")
+            self.fire_response_desc("success","用户匹配成功")
+
+
+    @asynchronous
+    @requires_auth
+    def delete(self):
+        log.info("ExtendUserRecordHandler.delete is call")
+        id = self.get_argument('id',"")
+
+        if id:
+            lookup= {"_id": ObjectId(id)}
+            extend_user_record=MongoClient.find_one(lookup,"extend_user_record")
+
+            if extend_user_record:
+
+                update_value={
+                    "$set":{
+                        "match":3
+                    },
+                    "$unset":{
+                        "actor":""
+                    }
+                }
+                MongoClient.update(lookup,update_value,"extend_user_record")
+                if extend_user_record.has_key("actor"):
+                    username=extend_user_record["actor"].get("username","")
+                    if username:
+                        lookup={
+                            "user_username":username
+                        }
+
+                        MongoClient.delete(lookup,"user_references_record")
+
+        self.write({})
+        self.finish()
+
+
+    
+    def fire_response_desc(self,result,desc):
+        """
+        返回登录请求错误响应
+        """
+        self.set_status(200)
+        response = {}
+        response["result"] = result
+        response["desc"] = desc
+        self.write(json.dumps(response, indent=2, ensure_ascii=False))
+        self.finish()

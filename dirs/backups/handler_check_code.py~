@@ -1,0 +1,65 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# @Date    : 2015-05-18 17:41:52
+# @Author  : Your Name (you@example.org)
+# @Link    : http://example.org
+# @Version : $Id$
+from handler_baseHt import BaseHtHandler
+from log import get_logger
+import tornado.web
+from tornado.web import asynchronous
+from tornado.options import options
+import json
+import hashlib
+import datetime
+import hashlib
+from bson import ObjectId
+import random
+import time
+from log import get_logger
+from auth import requires_auth
+from model.advices import Advice
+from model.permissions_ht import Permissions_ht
+import optionsSetting
+from utils.secret import *
+import traceback
+from utils.redis_client import RedisClient
+from utils.mongo_front import MongoFront
+from mongo_field_encoder import MongoFieldEncoder
+from mongolog import MongoHandler
+from mongokit.helpers import totimestamp, fromtimestamp
+from utils.token_im import TokenService
+from tornado.httpclient import HTTPRequest
+from utils.mongo_client import MongoClient
+import pymongo
+from utils.redis_client import RedisClient
+try:
+    from tornado.curl_httpclient import CurlAsyncHTTPClient as AsyncHTTPClient
+except ImportError:
+    from tornado.simple_httpclient import SimpleAsyncHTTPClient as AsyncHTTPClient
+log = get_logger()
+class CheckCodeHandler(BaseHtHandler):
+    @asynchronous
+    def get(self):
+        log.info("CheckCodeHandler.get:"+str(self.request.arguments))
+
+        type = self.get_argument('type',"")
+        mobile = self.get_argument('mobile',"")
+        response={}
+        if type:
+
+            sms_key="register_code:"+mobile
+            register_code=RedisClient.get(sms_key)
+            if register_code is None or  register_code == "":
+                randomStorage='123567890'
+                code=[]
+                for i in range(4):
+                    index=random.randint(0,8)
+                    code.append(randomStorage[index])
+                    register_code=''.join(code)
+                    RedisClient.setex(sms_key,60*60*24,register_code)   #600秒的有效期
+            response["check_code"]=register_code
+
+
+        self.write(json.dumps(response,indent=2, ensure_ascii=False,cls=MongoFieldEncoder))
+        self.finish()

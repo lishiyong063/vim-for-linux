@@ -1,0 +1,1079 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# @Date    : 2014-08-15 17:04:53
+# @Author  : Your Name (you@example.org)
+# @Link    : http://example.org
+# @Version : $Id$
+import globalConfig
+import urllib2
+from urllib import quote
+
+import uuid
+import copy
+from proccessor.token_service import TokenService
+from proccessor.mProccessor import MProccessor
+from utils.mongo_client import MongoClient
+import traceback
+import datetime
+import urllib2
+import urllib
+import httplib
+
+import os
+import json
+import math
+import logging
+import time
+from utils.redis_client import RedisClient
+from utils.token_im import TokenService
+from utils.token_im import get_management_token
+from iget_client import *
+from iget_client_new import GETUI_Clint
+from mongo_field_encoder import MongoFieldEncoder
+from log import *
+from sms.sms_selector import SMS_Selector
+from sms.mandao_channel import MandaoChannel
+import tornado.httpclient
+import globalConfig
+from distutils.version import LooseVersion
+try:
+    from pymongo.objectid import ObjectId
+except ImportError:
+    from bson.objectid import ObjectId
+
+log = get_logger_handler()
+class BaseMessageProccessor(MProccessor):
+    def __init__(self,message_event_dic):
+        super(BaseMessageProccessor, self).__init__(message_event_dic)
+        self.message_event_dic=message_event_dic
+
+        if globalConfig.is_debug==1:
+            # 【内网地址】
+            self.activity_target_url = "http://192.168.103.222:8088/activity_mobile/%s"
+            self.tool_target_url = "http://192.168.103.222:8088/tools/%s"
+            self.article_target_url = "http://192.168.103.222:8088/new_articles/%s"
+            self.ziya_into_url = "ziya://exec/?action=webview&id="
+            self.ziya_shop_url = "http://shop.ziyadiaoyu.com/goods.php?id=%s"
+            self.ziya_program_url = "http://192.168.103.222:8088/video/programs/%s?program_id=%s"
+
+            ###内网官方账号
+            self.office_account = ["a41979ec661911e78f70000c29160262", "b16bc3de661911e78f70000c29160262"]
+
+        else:
+            # 【外网地址】
+            self.activity_target_url="https://www.ziyadiaoyu.com/activity_mobile/%s"
+            self.tool_target_url = "https://www.ziyadiaoyu.com/tools/%s"
+            self.article_target_url = "https://www.ziyadiaoyu.com/new_articles/%s"
+            self.ziya_into_url = "ziya://exec/?action=webview&id="
+            self.ziya_shop_url = "http://shop.ziyadiaoyu.com/goods.php?id=%s"
+            self.ziya_program_url = "http://www.ziyadiaoyu.com/video/programs/%s?program_id=%s"
+
+            ###外网官方账号
+            self.office_account = ["19118354703611e788e600163e0044d9","93a73780703611e788e600163e0044d9"]
+
+
+    def user_role_flg(self,username):
+        role_image=""
+        if username in self.office_account:
+            role_image="http://7te9ok.com1.z0.glb.clouddn.com/guanfang.png?v=1"
+        return role_image
+
+    def createMessages(self):
+        pass
+
+    def getPushInfoIcon(self,mes):
+        return ""
+
+    def saveMessages(self):
+        type=""
+        if len(self.message_group)>0:
+            type = self.message_group[0]["title_type"]
+            logging.info(type+" saveMessages")
+
+        for messages in self.message_group:
+            if messages.has_key("entities"):
+                message_save_list=messages["entities"]
+                if message_save_list and len(message_save_list)>0:
+                    
+                    is_group = False
+                    if len(message_save_list)>0:
+                        type = message_save_list[0].get("type","")
+                        if "group" in type:
+                            is_group = True
+
+
+                    per_send_user=200
+                    begin=0
+                    end=per_send_user
+                    logging.info(type+" len(message_save_list):"+str(len(message_save_list))+"  begin")
+                    while(begin<len(message_save_list)):
+                        batch_list = message_save_list[begin:end]
+                        MongoClient.insert(batch_list,'push_messages_new')
+                        if is_group:
+                            MongoClient.insert(batch_list,'group_messages')
+                        
+                        begin=end
+                        end=begin+per_send_user
+
+                        ###添加未读消息数
+                        username_array=[]
+                        key_array=[]
+                        for obj in batch_list:
+                            if obj.has_key("to_user"):
+                                to_user=obj["to_user"]
+                                if to_user.has_key("username"):
+                                    username_array.append(to_user["username"])
+                                    key_array.append("nrc:"+to_user["username"])
+
+                        RedisClient.batchIncr(key_array)
+                        # where={
+                        #     "username":{"$in":username_array}
+                        # }
+                        # updated={
+                        #     "$inc":{"no_read_message_count":1},
+                        # }
+                        # MongoClient.update(where,updated,"users")
+
+                    logging.info(type + " len(message_save_list):" + str(len(message_save_list))+"  end")
+
+
+        logging.info(type+" saveMessages success")
+
+
+    def sendMessages(self):
+        # logging.info("sendMessages")
+
+        # message_info=""
+        type=""
+        if len(self.message_group)>0:
+            type = self.message_group[0]["title_type"]
+            logging.info(type+" sendMessages")
+        send_message_count=0
+        for messages in self.message_group:
+            count=0
+            entities=messages["entities"]
+            logging.info(messages["title_type"]+"   entities_count:"+str(len(entities)))
+            is_push=messages.get("is_push","")
+            logging.info("is_push:"+str(is_push))
+            for message in entities:
+                navigation_url = message.get("navigation_url","")
+                sound = message.get("title_type","")
+                if sound!="":
+                    sound = sound+".aif"
+                is_tuisong=(is_push=="1")
+                is_sound=True
+                if is_tuisong and message.has_key("notify"):
+                    notify=message["notify"]
+                    if notify.has_key("night"):
+                        night=notify["night"]
+                        if night:
+                            cur_hour=datetime.datetime.now().hour
+                            if cur_hour>21 or cur_hour<8:
+                                is_tuisong=False
+
+                client_id=self.getClientID(message["to_user"]["username"])
+                if client_id:
+                    noread_num = message["push_info"]["noread_num"]
+                    info = str(message["push_info"]["info"])
+                    count=count+1
+
+                    message_str = json.dumps(message,indent=2,ensure_ascii=False,cls=MongoFieldEncoder)
+                    #log.info("message_str:"+message_str)
+                    # if message["to_user"]["username"]=="5e8e90de471611e5b2ee48d705d33a1b":
+                    #     logging.info("message_str:"+message_str)
+                    #     logging.info("noread_num:"+str(noread_num))
+                    #     logging.info("info:"+str(info))
+                    #     logging.info("is_tuisong:"+str(is_tuisong))
+                    # logging.info( str(message_str))
+                    # logging.info("navigation_url:"+str(navigation_url))
+                    send_message_count=send_message_count+1
+                    client_info = self.getClientInfo(message["to_user"]["username"])
+                    # log.info("client_info:" + str(client_info))
+                    new_push_client=False
+                    if client_info:
+                        app_version = client_info.get("app_version", "1")
+                        os = client_info.get("os", "android")
+                        if os == "ios" and LooseVersion(app_version) >= LooseVersion("3.0.0"):
+                            new_push_client=True
+
+                    if new_push_client:
+                        GETUI_Clint.pushMessageToSingleByTransmission(message_str, client_id, noread_num, info, is_tuisong, is_sound,
+                                                      sound=sound, navigation_url=navigation_url)
+                    else:
+                        pushMessageToSingleByTransmission(message_str, client_id, noread_num, info, is_tuisong, is_sound,
+                                                      sound=sound, navigation_url=navigation_url)
+
+
+            # message_info=message_info+"   "+messages["title_type"]+":"+str(count)
+        logging.info(type+" sendMessages success:"+str(send_message_count))
+
+    ###获取用户app版本的信息
+    def user_app_info(self,username):
+        where = {
+            "username": username
+        }
+        filter={
+            "client_info":1
+        }
+        user = MongoClient.find_one(where, "users",filter=filter)
+        client_info={}
+        if user:
+            client_info=user.get("client_info",{})
+
+        return client_info
+
+
+    def message_assemble(self,message):
+        if message.has_key("is_push"):
+            message.pop("is_push")
+        if message.has_key("_id"):
+            message.pop("_id")
+        if message.has_key("push_message_created"):
+            message.pop("push_message_created")
+        return message
+
+    def sendMessagesByIm(self,message_info):
+        # logging.info("sendMessagesByIm")
+
+        to_usernames = message_info["to_username"]
+        content = message_info["content"]
+        if len(to_usernames)>0:
+            ###子牙团队官方账号不收到系统通知
+            if globalConfig.system_username in to_usernames:
+                index=to_usernames.index(globalConfig.system_username)
+                del to_usernames[index]
+
+            to_usernames_sum=len(to_usernames)
+
+            per_send_user=100
+            begin=0
+            end=per_send_user
+            while(begin<to_usernames_sum):
+
+                body={
+                    "target_type": "users",
+                    "target": to_usernames[begin:end],
+                    "msg": {
+                             "type": "txt",
+                             "msg": content
+                             },
+                    "from": globalConfig.system_username,
+                    "ext":{
+                         "nickname":globalConfig.system_nick,
+                         "avatar":globalConfig.system_avatar
+                    }
+                }
+                # logging.info("sendMessageByIm body:"+str(body))
+                url="https://a1.easemob.com/nbchat/ziyadiaoyu/messages"
+                data = json.dumps(body, indent=2, ensure_ascii=False)
+
+                headers={}
+                headers["Authorization"]="Bearer %s"%(TokenService.getIMToken())
+                begin=int(time.time()*1000)
+                desc,code =self.post(url,data,headers)
+
+                if code!=200:
+                    logging.info(" response.error:"+str(desc))
+
+                begin=end
+                end=begin+per_send_user
+    
+    
+    def getClientID(self,username):
+        client_id=""
+        try:
+            where = {
+                "username": username
+            }
+
+            client=MongoClient.find_one(where,"appClientInfos")
+            if client is not None:
+                client_id=client["client_id"]
+        except:
+            traceback.print_exc()
+            client_id=""
+
+        return client_id
+
+    def getNoReadNum_new(self,user):
+        # return user.get("no_read_message_count",0)+1
+        no_read_message_count=0
+        key="nrc:"+user.get("username","")
+        if key:
+            no_read_message_count_redis=RedisClient.get(key)
+            if no_read_message_count_redis and int(no_read_message_count_redis)>0:
+                no_read_message_count=no_read_message_count_redis
+
+        return no_read_message_count
+
+
+    def getNoReadNum(self,username):
+        where = {
+                     "to_user.username":username,
+                     "is_read": {"$ne":1}
+                     }
+        noread_num=MongoClient.count(where,'push_messages_new')
+        return noread_num+1
+
+    def getMessageControl(self,title_type):
+        where={
+            "title_type":title_type
+        }
+
+        message_push_control=MongoClient.find_one(where,"message_push_control")
+        return message_push_control
+
+    ###是否产生消息的判断
+    def isCreateMessage(self,no_read_message,night_push):
+
+        if night_push=="0":
+            cur_hour=datetime.datetime.now().hour
+            if cur_hour<22 and cur_hour>7:
+                pass
+            else:
+                return False
+
+        return no_read_message=="1"
+
+    ###获取通知栏消息和消息栏内容
+    def getInfo(self,type,nick,mes=None):
+        slave_info=""
+        master_info=""
+        info = ""
+        inner_info = ""
+        if mes and mes.has_key("content"):
+            content = mes["content"]
+            slave_info = content
+        if type =="post_share":
+            word_share=u"分享了你的渔获"
+            info=nick+word_share #消息栏信息
+            inner_info=nick+u" 分享了" #应用内信息
+            master_info=nick
+            slave_info=word_share
+        elif type =="tool_share":
+            word_share = u"分享了你的装备"
+            info=nick+word_share #消息栏信息
+            inner_info=nick+u" 分享了" #应用内信息
+            master_info = nick
+            slave_info = word_share
+        elif type == "post_like":
+            word_share=u"赞了你的渔获"
+            info=nick+word_share #消息栏信息
+            inner_info=nick+u" 赞了" #应用内信息
+            master_info = nick
+            slave_info = word_share
+        elif type == "tool_like":
+            word_share=u"赞了你的装备"
+            info=nick+word_share #消息栏信息
+            inner_info=nick+u" 赞了" #应用内信息
+            master_info = nick
+            slave_info = word_share
+        elif type == "new_post_follow":
+            info=nick+u"发布了新渔获,快来围观吧" #消息栏信息
+            inner_info=nick+u" 发布了新渔获,快来围观吧" #应用内信息
+            master_info=nick
+
+            if mes and mes.has_key("data_obj"):
+                post=mes["data_obj"]
+                content=post.get("content","")
+                if content=="":
+                    content=u'发布了新渔获，快来围观吧'
+                slave_info=content
+        elif type == "new_tool_follow":
+            info=nick+u"发布了新装备,快来围观吧" #消息栏信息
+            inner_info=nick+u" 发布了新装备,快来围观吧" #应用内信息
+            master_info = nick
+            if mes and mes.has_key("data_obj"):
+                post=mes["data_obj"]
+                content=post.get("title","")
+                if content=="":
+                    content=u'发布了新装备，快来围观吧'
+                slave_info=content
+        elif type == "activity_want":
+            info=nick+u"想参加你的活动" #消息栏信息
+            inner_info=nick+u" 想去" #应用内信息
+        elif type == "activity_post":
+            info=nick+u"发布了新活动,快来捧场看看吧" #消息栏信息
+            inner_info=nick+u" 发布了新活动,快来捧场看看吧" #应用内信息
+        elif type == "new_post_near": ###周边新发的帖子
+            info=u"附近的"+nick+u"发布了新渔获，快来围观吧" #消息栏信息
+            inner_info=u"附近的"+nick+u"发布了新渔获，快来围观吧" #应用内信息
+        elif type == "new_tool_near": ###周边新发的帖子
+            info=u"附近的"+nick+u"发布了新装备，快来围观吧" #消息栏信息
+            inner_info=u"附近的"+nick+u"发布了新装备，快来围观吧" #应用内信息
+        elif type == "post_comment": ###评论
+            info= nick+u"点评了你的渔获" #消息栏信息
+            inner_info= nick+u" 点评了" #应用内信息
+            master_info=inner_info
+        elif type == "post_comment_too": ###也评论
+            info=nick+u"也点评了"+self.post_nick+u"的渔获" #消息栏信息
+            inner_info=nick+u" 也点评了" #应用内信息
+            master_info=inner_info
+        elif type == "tool_comment": ###评论
+            info= nick+u"点评了你的装备" #消息栏信息
+            inner_info= nick+u" 点评了" #应用内信息
+            master_info=inner_info
+        elif type == "tool_comment_too": ###也评论
+            info=nick+u"也点评了"+self.post_nick+u"的装备" #消息栏信息
+            inner_info=nick+u" 也点评了" #应用内信息
+            master_info=inner_info
+        elif type == "activity_comment": ###评论
+            info= nick+u"咨询了你的活动" #消息栏信息
+            inner_info= nick+u" 咨询了" #应用内信息
+        elif type == "post_reply" or type == "activity_reply"or type == "tool_reply": ###回复
+            info= nick+u"回复了你"
+            inner_info= nick+u"回复了你"
+            master_info=inner_info
+        elif type == "post_reply_too" or type == "activity_reply_too" or type == "tool_reply_too": ###也回复
+            info= nick+u"也回复了"
+            inner_info= nick+u"也回复了"
+            master_info=inner_info
+        elif type == "user_follow": ###用户关注
+            if mes["follow"]==2:
+                info=nick+u"与你相互关注"
+                inner_info=u"与你相互关注"
+            else:
+                info= nick+u"关注了你"
+                inner_info= u"关注了你"
+        elif type == "post_boutique": ###渔获设置成精品
+            info= nick+u" 的渔获被推荐为热门"
+            inner_info= nick+u" 的渔获被推荐为热门"
+
+            master_info = nick
+            if mes and mes.has_key("data_obj"):
+                post = mes["data_obj"]
+                content = post.get("content", "")
+                if content == "":
+                    content = info
+                slave_info = content
+        elif type == "tool_boutique": ###装备设置成精品
+            info= nick+u"发布了新装备"
+            inner_info= nick+u"发布了新装备"
+        elif type == "activity_boutique": ###设置成精品
+            info= nick+u" 发布一条<%s>的钓鱼活动，有兴趣的一起参加"%(mes.get("fish_address",""))
+            inner_info= nick+u" 发布一条<%s>的钓鱼活动，有兴趣的一起参加"%(mes.get("fish_address",""))
+
+            master_info = nick
+            if mes and mes.has_key("data_obj"):
+                activity = mes["data_obj"]
+                content = activity.get("title", "")
+                if content == "":
+                    content = u'发布了新活动，快来围观吧'
+                slave_info = content
+
+        elif type =="activity_near":
+            info= u"附近的"+nick+u"发布了新活动，快来捧场看看吧"
+            inner_info= u"附近的"+nick+u"发布了新活动，快来捧场看看吧"
+        elif type =="reward" or type=="tool_reward":
+            word_share=u"赏了你 "+str(mes["credits"])+u"元宝"
+            info= nick+word_share
+            inner_info= nick+u" 赏了你 "+str(mes["credits"])+u"元宝"
+            master_info = nick
+            slave_info = word_share
+        elif type =="activity_order" :
+            info= "你有子牙新订单，请立即接单"
+            inner_info= "你有子牙新订单，请立即接单"
+        elif type =="activity_share":
+            info= nick+u"把你的<%s>活动推荐给众多好友，为了更好的传播，请你也转发微信朋友圈"%(mes.get("title",""))
+            inner_info=nick+u"把你的<%s>活动推荐给众多好友，为了更好的传播，请你也转发微信朋友圈"%(mes.get("title","")) #应用内信息
+            # inner_info=u"舵主，"+nick+u"大侠把活动推荐给了群好友" #应用内信息
+        elif type =="article_expert":
+            info= nick+u" 发布了一条<%s>新攻略，快来围观吧"%(mes.get("content",""))
+            inner_info=nick+u" 发布了新攻略"#应用内信息
+        elif type =="new_article":
+            info= nick+u" 发布了一条<%s>新攻略，快来围观吧"%(mes.get("content",""))
+            inner_info=nick+u" 发布了新攻略"#应用内信息
+
+            master_info = nick
+
+            if mes and mes.has_key("data_obj"):
+                article = mes["data_obj"]
+                content = article.get("title", "")
+                if content == "":
+                    content = u'发布了新攻略，快来围观吧'
+                slave_info = content
+        elif type =="article_boutique":
+            info= nick+u" 的攻略被推荐为热门"
+            inner_info=nick+u" 的攻略被推荐为热门" #应用内信息
+        elif type == "article_share":
+            info = nick + u"把你的<%s>攻略推荐给众多好友，为了更好的传播，请你也转发微信朋友圈" % (mes.get("title", ""))
+            inner_info = nick + u"把你的<%s>攻略推荐给众多好友，为了更好的传播，请你也转发微信朋友圈" % (mes.get("title", ""))  # 应用内信息
+
+            word_share = u"分享了你的攻略"
+            master_info = nick
+            slave_info = word_share
+        elif type =="article_comment":
+            info= nick+u"点评了你的文章"
+            inner_info=nick+u" 点评了" #应用内信息
+            master_info=inner_info
+        elif type == "article_comment_too": ###也评论
+            info=nick+u"也点评了"+self.article_nick+u"的攻略" #消息栏信息
+            inner_info=nick+u" 也点评了" #应用内信息
+            master_info = inner_info
+        elif type == "post_at_user": ###@用户
+            info=nick+u"在渔获中@了你" #消息栏信息
+            inner_info="" #应用内信息
+        elif type == "goods_boutique": ###设置成精品
+            info= "子牙小参谋有好货推荐给你，快去看看吧"
+            inner_info= ""
+            master_info = nick
+            if mes and mes.has_key("data_obj"):
+                shop = mes["data_obj"]
+                slave_info = shop.get("name", "")
+        elif type == "offical_recommend":
+            slave_info=""
+            recommend = mes.get("recommend",[])
+            if recommend and recommend[0].get("title",""):
+                title = recommend[0]["title"]
+                info = title
+                inner_info = title
+            push_text = mes.get("push_text","")
+            if push_text:
+                info = push_text
+        elif type == "weather_push":
+            info=self.getWeatherContext(mes)
+        return info,inner_info,master_info,slave_info
+
+    def getWeatherContext(self,mes):
+
+        first_content="%s %s %s %i℃~%i℃"%(mes["date_city"]["day_index"],
+                                     mes["weahter"]["weather_icon"],
+                                     mes["weahter"]["weather_desc"],
+                                     mes["weahter"]["min_temp"],
+                                     mes["weahter"]["max_temp"])
+
+        second_content="%s，%s"%(mes["date_city"].get("city",""),mes["date_city"].get("date",""))
+
+        content=first_content+"\n"+second_content
+
+        fishing_zhishu=mes.get("fishing_zhishu",{})
+        if fishing_zhishu:
+            content=content+"\n钓鱼指数 "+fishing_zhishu["fish_zhishu_icon"]
+        # log.info("mes:"+json.dumps(mes,
+        #                     indent=2,
+        #                     ensure_ascii=False,
+        #                     cls=MongoFieldEncoder
+        #                            ))
+
+        # log.info("content:"+content)
+        return content
+
+    def getFollowedUsers(self,username):
+        lookup = {
+            "following":username
+        }
+        users=MongoClient.find_all(lookup,"user_following")
+        followed_list = []
+        followed_user_list=[]
+        if users:
+            for user in users:
+                followed_list.append(user["followed"])
+
+            if len(followed_list)>0:
+                where={
+                    "username":{"$in":followed_list},
+                    "user_type":{"$in":['1','3']}
+                }
+                users=MongoClient.find_all(where,"users")
+                for user in users:
+                    followed_user_list.append(user)
+
+
+
+        return followed_user_list
+
+
+
+    def getFollowedUsername(self,username):
+        lookup = {
+            "following":username
+        }
+        users=MongoClient.find_all(lookup,"user_following")
+        followed_list = []
+        if users:
+            for user in users:
+                followed_list.append(user["followed"])
+
+        return followed_list
+
+    def getPost(self,id,collection="posts"):
+        lookup = {"_id":ObjectId(id)}
+        # filters = {"page":1,"content":1,"actor":1,"_id":0}
+        post = MongoClient.find_one(lookup,collection)
+
+        if post.has_key("page"):
+            pages = post["page"]
+            if len(pages)>0 and pages[0].has_key("image_url"):
+                post["image_url"]=pages[0]["image_url"]
+                for page in pages:
+                    if page.get("is_cover",False):
+                        post["image_url"]=page["image_url"]
+                        del post["page"]
+                        return post
+        if not post.has_key("content"):
+            post["content"]=""
+        if not post.has_key("image_url"):
+            post["image_url"]=""
+        return post
+
+    def getArticle(self,id,collection="article"):
+        lookup = {"_id":ObjectId(id)}
+        # filters = {"page":1,"content":1,"actor":1,"_id":0}
+        article_temp = MongoClient.find_one(lookup,collection)
+        if article_temp.has_key("images"):
+            images = article_temp["images"]
+            if len(images)>0 and images[0].has_key("image_url"):
+                article_temp["image_url"]=images[0]["image_url"]
+        if not article_temp.has_key("content"):
+            article_temp["content"]=""
+        if not article_temp.has_key("image_url"):
+            article_temp["image_url"]=""
+        return article_temp
+
+
+    def getOrder(self,id):
+        lookup = {"_id":ObjectId(id)}
+        # filters = {"page":1,"content":1,"actor":1,"_id":0}
+        post = MongoClient.find_one(lookup,"ziya_order")
+
+        return post
+
+
+
+
+    def createMessageEntities(self, tmp_result, title_type, user_array, user_set, mes,m_type=None,category=None):
+        logging.info(title_type+" createMessageEntities begin:")
+
+        message_entities={}
+
+       
+        message_entities["no_read_message"]="0"
+        message_entities["is_push"]="0"
+        message_entities["night_push"]="0"
+        message_entities["title_type"]=title_type
+
+        message_array=[]
+        from_user = {}
+        if "from_user" in mes:
+            from_user = mes["from_user"]
+        else:
+            from_user = tmp_result["from_user"]
+
+        push_id=unicode(''.join(str(uuid.uuid1()).split('-')))
+        message_push_control = self.getMessageControl(title_type)
+        if message_push_control:
+            no_read_message=message_push_control.get("no_read_message","")
+            is_push=message_push_control.get("is_push","")
+            night_push=message_push_control.get("night_push","")
+            message_entities["no_read_message"]=no_read_message
+            message_entities["is_push"]=is_push
+            message_entities["night_push"]=night_push
+            if self.isCreateMessage(no_read_message,night_push):
+                for user in user_array:
+                    username=user.get("username","")
+
+                    if username not in user_set and username!=from_user["username"]:
+
+                        result =copy.copy(tmp_result)
+                        result["is_push"]=is_push
+                        # ####type值指定为share才能在前端才能显示到渔获动态中
+                        if m_type is not None:
+                            result["type"] = m_type
+                        result["to_user"] = {
+                                   "username":username
+                                   }
+                        result["push_message_created"] = datetime.datetime.utcnow()
+                        result["push_id"] = push_id
+                        result["title_type"]=title_type
+
+                        if user.has_key("notify"):
+                            notify=user["notify"]
+                            result["notify"]=notify
+
+                        ##构造push_info
+                        noReadNum = self.getNoReadNum_new(user)
+                        nick=user.get("nick","")
+                        info,inner_info,master_info,slave_info = self.getInfo(title_type,from_user.get("nick",""),mes)
+                        result["push_info"] = {
+                                 "info":info,
+                                 "inner_info":inner_info,
+                                 "noread_num":noReadNum,
+                                 "created":mes["created"],
+                                 "m":master_info,
+                                 "s":slave_info,
+                                 "icon":self.getPushInfoIcon(mes)
+                                 }
+                        # log.info("result.push_info:"+json.dumps(result["push_info"],indent=2,ensure_ascii=False,cls=MongoFieldEncoder))
+
+
+                        if type=="reward":
+                             result["push_info"]["credits_text"]=str(mes["credits"])+"元宝"
+
+                        if mes.has_key("content"):
+                            content=mes["content"]
+                            result["push_info"]["content"]=content
+
+                        if mes.has_key("recommend"):
+                            recommend=mes["recommend"]
+                            result["push_info"]["recommend"]=recommend
+                        message_array.append(result)
+                        #log_entity = json.dumps(result, indent=2, ensure_ascii=False, cls=MongoFieldEncoder)
+                        #print log_entity
+                        user_set.add(username)
+        message_entities["entities"]=message_array
+        #log_entity = json.dumps(message_entities, indent=2, ensure_ascii=False, cls=MongoFieldEncoder)
+        #log.info("***message_entities*****"+log_entity)
+
+        # logging.info("message_entities"+str(json.dumps(message_entities,indent=2,ensure_ascii=False,cls=MongoFieldEncoder)))
+
+        logging.info(title_type+" createMessageEntities end:"+str(len(message_entities["entities"])))
+        return message_entities
+
+    def createGroupMessageEntities(self, tmp_result, title_type, user_array, user_set, mes,m_type=None,category=None):
+        logging.info(title_type+" createMessageEntities begin")
+
+        message_entities={}
+
+        no_read_message = "1"
+        night_push = "1"
+        is_push = "1"
+        message_entities["no_read_message"]=no_read_message
+        message_entities["is_push"]=is_push
+        message_entities["night_push"]=night_push
+        message_entities["title_type"]=title_type
+
+        message_array=[]
+        from_user = {}
+        if "from_user" in mes:
+            from_user = mes["from_user"]
+        else:
+            from_user = tmp_result["from_user"]
+        push_id=unicode(''.join(str(uuid.uuid1()).split('-')))
+
+        message_entities["no_read_message"]="1"
+        message_entities["is_push"]="1"
+        message_entities["night_push"]="1"
+        if self.isCreateMessage(no_read_message,night_push):
+            for user in user_array:
+                username=user.get("username","")
+
+                if username not in user_set and username!=from_user["username"]:
+
+                    result =copy.copy(tmp_result)
+                    result["is_push"]=is_push
+                    # ####type值指定为share才能在前端才能显示到渔获动态中
+                    if m_type is not None:
+                        result["type"] = m_type
+                    result["to_user"] = {
+                               "username":username
+                               }
+                    result["push_message_created"] = datetime.datetime.utcnow()
+                    result["push_id"] = push_id
+                    result["title_type"]=title_type
+
+                    if user.has_key("notify"):
+                        notify=user["notify"]
+                        result["notify"]=notify
+
+                    ##构造push_info
+                    noReadNum = self.getNoReadNum_new(user)
+                    result["push_info"]["noread_num"]=noReadNum
+    
+                    
+                    message_array.append(result)
+                    user_set.add(username)
+        message_entities["entities"]=message_array
+        logging.info(title_type+" createMessageEntities end")
+        return message_entities
+
+    def getUser(self,username):
+        lookup = {"username":username}
+        # filters = {"nick":1,"avatar_url":1,"username":1,"_id":0}
+        user=MongoClient.find_one(lookup,"users")
+        return user
+
+    def getUserByUsernameArray(self,username_array):
+        where={
+            "username":{"$in":username_array}
+        }
+        user_cursor=MongoClient.find_all(where,"users")
+        user_array=[]
+        for userObj in user_cursor:
+            user_array.append(userObj)
+
+        return user_array
+    
+    
+    ###获取周边用户
+    def getNearUser(self,begin,end,post):
+        near_user_array=[]
+
+        # logging.info("post:"+str(post))
+        if post.has_key("gps_info"):
+            gps_info=post["gps_info"]
+            country_code=gps_info.get("country_code","")
+            if country_code!="" and gps_info.has_key("location"):
+                location=gps_info["location"]
+                if location.has_key("coordinates"):
+                    coordinates=location["coordinates"]
+                    if len(coordinates)==2:
+                        where={
+                            "user_type":{"$in":['1','3']},
+                            "gps_info.location":{
+                                "$near":{
+                                    "$geometry":{
+                                                 "type" : "Point",
+                                                 "coordinates" : coordinates
+                                                },
+                                    "$maxDistance":float(end*1000),
+                                    "$minDistance":float(begin*1000)
+                                }
+                            }
+                        }
+                        # logging.info("where:"+str(where))
+                        user_cursor=MongoClient.find_all(where,"users")
+                        for user_obj in user_cursor:
+                            username=user_obj.get("username","")
+                            if not self.message_max_limit(end,username):
+                                near_user_array.append(user_obj)
+                                self.incr_push_cnt(100,username)
+
+        return near_user_array
+
+
+    def getDistance(self,point1,point2):
+        final = 6378137.0
+        flng = self.calcDegree(float(point1[0]))
+        flat = self.calcDegree(float(point1[1]))
+        tlng = self.calcDegree(float(point2[0]))
+        tlat = self.calcDegree(float(point2[1]))
+        result = math.sin(flat)*math.sin(tlat)
+        result += math.cos(flat)*math.cos(tlat)*math.cos(flng-tlng)
+        return final*math.acos(float(result))
+
+    def calcDegree(self,d):
+        return d*math.pi/180.0
+
+
+    def message_max_limit(self,distance,username):
+        sms_key="%s_new_post_near_push:%s"%(distance,username)
+        push_cnt=RedisClient.get(sms_key)
+        push_cnt_int=0
+        if push_cnt:
+            push_cnt_int=int(push_cnt)
+
+        push_limited=0
+        if distance==100:
+            push_limited=200
+        else:
+            push_limited=3
+        # if username=="1ce4c1941a4311e5aea334363b6f45fc":
+        #     logging.info("new_post_near_push_cnt:"+str(push_cnt))
+        if push_cnt_int>=push_limited:
+            return True
+        else:
+            return False
+
+    def incr_push_cnt(self,distance,username):
+        now = datetime.datetime.now()
+        end = datetime.datetime(now.year, now.month, now.day,23,59,59)
+        expire_second=(end-now).seconds
+        if expire_second<=0: ##如果小于等于0，有可能产生异常数据，此时强制将过期时间设为1秒
+            expire_second=1
+
+        sms_key="%s_new_post_near_push:%s"%(distance,username)
+        RedisClient.incr(sms_key,expire_second)
+
+    def get_usernamesBycity(self,cities):
+        users_ary = []
+        if cities!=None and len(cities)>0:
+             lookup = {"status":0,"gps_info.city":{"$in":cities}}
+             # logging.info("lookup:"+str(lookup))
+             users=MongoClient.find_all(lookup,"users")
+             if users!=None:
+                 for user in users:
+                     users_ary.append(user)
+        return users_ary
+
+
+    def sendMessagesList(self):
+        clientId_list = []
+        clientId_list_1 = []        ####安卓客户端+旧版ios客户端
+        clientId_list_2 = []        ####ios新版客户端
+        # logging.info("*****message_group***" + json.dumps(self.message_group,
+        #                                                 indent=2,
+        #                                                 ensure_ascii=False,
+        #                                                 cls=MongoFieldEncoder))
+        for messages in self.message_group:
+            entities=messages["entities"]
+
+            for message in entities:
+                client_id=self.getClientID(message["to_user"]["username"])
+                if client_id:
+                    client_info=self.getClientInfo(message["to_user"]["username"])
+                    # log.info("client_info:" + str(client_info))
+                    if client_info:
+                        app_version=client_info.get("app_version","1")
+                        os=client_info.get("os","android")
+                        if os=="ios" and LooseVersion(app_version) >= LooseVersion("3.0.0"):
+                            clientId_list_2.append(client_id)
+                        else:
+                            clientId_list_1.append(client_id)
+                    else:
+                        clientId_list_1.append(client_id)
+                    # clientId_list.append(client_id)
+        type=""
+        log.info("clientId_list_1:"+str(len(clientId_list_1)))
+        log.info("clientId_list_2:" + str(len(clientId_list_2)))
+        if len(self.message_group)>0:
+            type = self.message_group[0]["title_type"]
+            logging.info(type+" sendMessages")
+            entities=messages["entities"]
+            if len(entities)>0:
+                # context,title,is_tuisong,is_sound
+                message = entities[0]
+                # logging.info("*****message***" + json.dumps(message,indent=2,ensure_ascii=False,cls=MongoFieldEncoder))
+                cur_hour=datetime.datetime.now().hour
+                is_tuisong = True
+                if cur_hour>23 or cur_hour<6:
+                    is_tuisong=False
+                title = str(message["push_info"]["info"])
+                navigation_url = message.get("navigation_url","")
+                message = self.message_assemble(message)
+                context = json.dumps(message,indent=2,ensure_ascii=False,cls=MongoFieldEncoder)
+                # logging.info("*****clientId_list***" + str(clientId_list))
+                is_sound=True
+                if clientId_list_1:
+                    self.batchPushMessageToList(context,clientId_list_1,title,is_tuisong,is_sound,navigation_url=navigation_url)
+                else:
+                    logging.info("*****clientId_list_1 get fail***")
+
+                if clientId_list_2:
+                    self.batchPushMessageToList_new(context,clientId_list_2,title,is_tuisong,is_sound,navigation_url=navigation_url)
+                else:
+                    logging.info("*****clientId_list_2 get fail***")
+
+        logging.info(type+" sendMessages end")
+
+    def getClientInfo(self,username):
+
+        client_info = {}
+        try:
+            where = {
+                "username": username
+            }
+            filter={
+                "client_info":1
+            }
+
+            user = MongoClient.find_one(where, "users",filter=filter)
+            if user:
+                client_info=user.get("client_info",{})
+        except:
+            traceback.print_exc()
+            client_info = {}
+
+        return client_info
+
+    def batchPushMessageToList(self,context,clientId_list,title,is_tuisong,is_sound,navigation_url=""):
+        to_usernames_sum=len(clientId_list)
+        per_send_user=100
+        begin=0
+        end=per_send_user
+        # log.info("context:"+str(context))
+        # logging.info( "len(clientId_list):"+str(len(clientId_list)))
+        contentId,push = getContentId(context,title,is_tuisong,is_sound,navigation_url=navigation_url)
+        while(begin<to_usernames_sum):
+            logging.info("begin:"+str(begin))
+            logging.info("end:"+str(end))
+            batch_client = clientId_list[begin:end]
+            pushMessageToList(context,batch_client,title,is_tuisong,is_sound,contentId=contentId,push=push,navigation_url=navigation_url)
+            begin=end
+            end=begin+per_send_user
+
+    def batchPushMessageToList_new(self,context,clientId_list,title,is_tuisong,is_sound,navigation_url=""):
+        to_usernames_sum=len(clientId_list)
+        per_send_user=100
+        begin=0
+        end=per_send_user
+        # log.info("context:"+str(context))
+        # logging.info( "len(clientId_list):"+str(len(clientId_list)))
+        contentId,push = GETUI_Clint.getContentId(context,title,is_tuisong,is_sound,navigation_url=navigation_url)
+        while(begin<to_usernames_sum):
+            logging.info("begin:"+str(begin))
+            logging.info("end:"+str(end))
+            batch_client = clientId_list[begin:end]
+            GETUI_Clint.pushMessageToList(context,batch_client,title,is_tuisong,is_sound,contentId=contentId,push=push,navigation_url=navigation_url)
+            begin=end
+            end=begin+per_send_user
+
+    def sendSMSMessages(self,tel,content):
+        try:
+            content=content+u" 退订回复T【子牙钓鱼】"
+            content=quote(content.encode('GBK'))
+            log.info("begin_send:"+tel)
+            #
+            log.info("sms_content:"+content)
+
+            sms_channel, index = SMS_Selector.getRandomSMSChanel(tel)
+            # 内网用漫道
+            # sms_channel = MandaoChannel()
+            log.info("url:" + sms_channel.get_url())
+            sms_url = sms_channel.get_url() % (tel, content)
+            log.info("sms_url:" + sms_url)
+
+            # # sms_url_temp="http://sdk.entinfo.cn:8060/webservice.asmx/mt?sn=SDK-WSS-010-09569&pwd=A05AD359AD6B6B69250C784AE29279C9&mobile=%s&content=%s&ext=&stime=&rrid="
+            # sms_url_temp="http://sdk.entinfo.cn:8060/webservice.asmx/mt?sn=SDK-WSS-010-06443&pwd=5223B6D90FE32809C0BB7A1C84351973&mobile=%s&content=%s&ext=1&stime=&rrid="
+            # # sms_url_temp="http://221.179.180.158:9007/QxtSms/QxtFirewall?OperID=nbchat&OperPass=Nbchat178&SendTime=&ValidTime=&AppendID=&DesMobile=%s&Content=%s&ContentType=8"
+            # sms_url=sms_url_temp%(tel,content)
+            # # log.info("sms_url:"+sms_url)
+            http_request  = tornado.httpclient.HTTPRequest(url=sms_url,
+                                               method='GET',
+                                               headers={},
+                                               use_gzip=True,
+                                               connect_timeout=2000,
+                                               request_timeout=2000)
+            http_client = tornado.httpclient.HTTPClient()
+            response = http_client.fetch(http_request)
+            log.info("response:"+response.body)
+
+            # 使用下一个通道
+            if not sms_channel.is_response_ok(response):
+                sms_channel, index = SMS_Selector.getRandomSMSChanel(tel)
+                sms_extra_url = sms_channel.get_url() % (tel, content)
+                log.info("reply_sms_url:" + sms_extra_url)
+                http_request = tornado.httpclient.HTTPRequest(url=sms_url,
+                                                              method='GET',
+                                                              headers={},
+                                                              use_gzip=True,
+                                                              connect_timeout=2000,
+                                                              request_timeout=2000)
+                http_client = tornado.httpclient.HTTPClient()
+                response_extra = http_client.fetch(http_request)
+                log.info("response_extra:" + response_extra.body)
+
+        except Exception as e:
+            log.info('Exception:%s' % e.message)
+            log.error(traceback.format_exc())
+
+
+
+    def user_push_array(self,users,version,gt_flag):
+        users_ary=[]
+        for user in users:
+            client_info = user.get("client_info", {})
+            if client_info:
+                app_version = client_info.get("app_version", "1.0")
+                if not app_version:
+                    app_version = "1.0"
+                try:
+                    if gt_flag:
+                        if LooseVersion(app_version) >= LooseVersion(version):
+                            users_ary.append(user)
+                    else:
+                        if LooseVersion(app_version) < LooseVersion(version):
+                            users_ary.append(user)
+                except Exception as e:
+                    log.info('Exception:%s' % e.message)
+                    log.error(traceback.format_exc())
+        return users_ary

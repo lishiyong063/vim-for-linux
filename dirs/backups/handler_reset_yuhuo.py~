@@ -1,0 +1,108 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# @Date    : 2015-05-18 17:41:52
+# @Author  : Your Name (you@example.org)
+# @Link    : http://example.org
+# @Version : $Id$
+from handler_baseHt import BaseHtHandler
+from log import get_logger
+import tornado.web
+from tornado.web import asynchronous
+from tornado.options import options
+import json
+import hashlib
+import datetime
+from services.service_post import *
+import re
+import hashlib
+from bson import ObjectId
+import random
+import time
+from log import get_logger
+from model.advices import Advice
+from model.permissions_ht import Permissions_ht
+import optionsSetting
+from utils.secret import *
+import traceback
+from utils.redis_client import RedisClient
+from utils.mongo_front import MongoFront
+from mongo_field_encoder import MongoFieldEncoder
+from services.service_activity import *
+from mongolog import MongoHandler
+from mongokit.helpers import totimestamp, fromtimestamp
+from utils.token_im import TokenService
+from tornado.httpclient import HTTPRequest
+from utils.mongo_client import MongoClient
+import pymongo
+from auth import requires_auth
+from services.service_admin_log import save_log
+try:
+    from tornado.curl_httpclient import CurlAsyncHTTPClient as AsyncHTTPClient
+except ImportError:
+    from tornado.simple_httpclient import SimpleAsyncHTTPClient as AsyncHTTPClient
+log = get_logger()
+class ResetYuhuoHandler(BaseHtHandler):
+     '''
+     设置成装备渔获
+     '''
+     @requires_auth
+     @asynchronous
+     def put(self):
+        log.info("ResetYuhuoHandler.put:"+self.request.body)
+        try:
+            body_dic = json.loads(self.request.body,encoding="utf-8")
+            post_id = body_dic.get("post_id",None)
+            if not post_id:
+                self.fire_response_bad_request("post_id")
+                return
+
+            post_id_array=post_id.split(",")
+            post_object_id_array=[]
+            for post_id in post_id_array:
+
+                lookup = {"_id": ObjectId(post_id)}
+
+                updated={
+                    '$set':{
+                        'yuhuo_type':0
+                    }
+                }
+                post=MongoFront.find_and_modify(lookup,updated,"posts")
+
+                if post:
+                    actor_username=post["actor"]["username"]
+
+                    where={
+                        "username":actor_username,
+                        "tools_count":{"$gt":0}
+                    }
+                    updated={
+                        '$inc':{"post_count":1,"tools_count":-1}
+                    }
+                    MongoFront.update(where,updated,"users")
+
+                    if "gps_info" in post:
+                        gps_info = post["gps_info"]
+                        if "location" in gps_info:
+                            location = gps_info["location"]
+                            posts_search = {
+                                "post_id":post_id,
+                                "location":location,
+                                "created_micros":post["created_micros"]
+                            }
+                            MongoFront.insert(posts_search,"posts_search")
+                    ##从redis最新渔获集合中删除
+                    RedisClient.addToList(options.new_post_list,str(post["_id"]),post["created_micros"])
+
+            response = {"entities":[]}
+            self.write(json.dumps(response,
+                                  indent=2,
+                                  ensure_ascii=False,
+                                  cls=MongoFieldEncoder))
+            self.finish()
+        except Exception as e:
+            log.info('DeletePostHandler.put Exception:%s' % e.message)
+            log.error(traceback.format_exc())
+            self.fire_response_bad_request(key_required=e.message)
+            return
+

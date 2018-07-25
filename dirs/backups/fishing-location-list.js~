@@ -1,0 +1,197 @@
+/**
+ * Created by youzi on 2017/8/10.
+ */
+
+function loadFishingLocation(){
+    var name = $("#location_search").val()
+    var tel = $("#tel").val()
+    var province = $("#province").val()
+    var city = $("#city").val()
+    var status = $("#status").val()
+
+    var requestURL = fishing_admin_Url+'/fishing_location?'
+
+    if (name){
+        requestURL = requestURL+"&name="+name
+    }
+
+    if (status &&status!="0"){
+        requestURL = requestURL+"&status="+status
+    }
+
+    if (tel){
+        requestURL = requestURL+"&tel="+tel
+    }
+
+    if(city&&city!="请选择"&&city!="全部") {
+        requestURL = requestURL + "&city=" + city
+    }
+    else if(province!=null&&province!=""&& province!="请选择"&&province!="全部"){
+        requestURL = requestURL + "&province=" + province
+    }
+
+    $("#loading").show()
+    $.getJSON(requestURL, {curr: 1,t:new Date()}, function (res) { //从第6页开始请求。返回的json格式可以任意定义
+        //alert(JSON.stringify(res))
+        users_count=parseInt(res.count);
+
+        page_count=0
+        if (users_count%10==0){
+            page_count=users_count/10;
+        }else{
+            page_count=users_count/10+1;
+        }
+        //page_count=20
+        laypage({
+            cont: 'pageComponent', //容器。值支持id名、原生dom对象，jquery对象。【如该容器为】：&lt;div id="page1">&lt;/div>
+            pages: page_count, //通过后台拿到的总页数
+            curr: 1, //初始化当前页
+            skip: true, //是否开启跳页
+            jump: function (e) { //触发分页后的回调
+                //alert("111:"+e.curr)
+
+                $.getJSON(requestURL, {curr: e.curr,t:new Date()}, function (res) {
+                    users_count=parseInt(res.count);
+
+                    page_count=0
+                    if (users_count%10==0){
+                        page_count=users_count/10;
+                    }else{
+                        page_count=users_count/10+1;
+                    }
+
+                    if(res.count){
+                        count  = res.count
+                        $("#count").html(count)
+
+                    }
+
+                    e.pages = e.last = parseInt(page_count); //重新获取总页数，一般不用写
+                    //渲染
+                    //var view = document.getElementById('view1'); //你也可以直接使用jquery
+                    //var demoContent = (new Date().getTime() / Math.random() / 1000) | 0; //此处仅仅是为了演示
+                    //view.innerHTML = res.content + demoContent;
+
+                    //alert("xxx:"+JSON.stringify(res))
+                    var irregularity_list=res.entities;
+
+                    fill_irregularity_list(irregularity_list)
+                });
+            }
+        });
+    });
+}
+
+function fill_irregularity_list(entities){
+    var template='<tr class="text-c" id="tr_{place_id}">'
+        +'<td>{name}</td>'
+        +'<td><img width="70px" src="{cover_image}" ></td>'
+        +'<td>{address}</td>'
+        +'<td>{contact_tel}</td>'
+        +'<td>{desc}</td>'
+        +'<td>{price}</td>'
+        + '<td width="30px">'
+        +'<a class="ml-5" title="编辑"><i class="icon-edit" onclick="layer_show(\'1000\',\'600\',\'修改\',\'fishing-location-modify.html?place_id={place_id}\')"></i></a>&nbsp;&nbsp;'
+        + '<a class="ml-5" data-toggle="modal" id="delete_{place_id}" {delete_display} title="下架"  onclick=delete_place(\'{place_id}\')><i class="icon-trash"></i></a>&nbsp;&nbsp;'
+        + '<a class="ml-5" data-toggle="modal" id="undo_delete_{place_id}" {undo_delete_display} title="恢复"  onclick=undo_delete_place(\'{place_id}\')><i class="icon-undo"></i></a>&nbsp;&nbsp;'
+
+        +'</tr>'
+
+
+    var html_text=""
+    for(index in entities){
+        var name=''
+        var price=""
+        var address=""
+        var desc=""
+        var place_id=""
+        var unit=""
+        var cover_image=""
+        var contact_tel=""
+        var undo_delete_display='style="display: none"'
+        var delete_display='style="display: none"'
+        var location_info=entities[index];
+        if (location_info._id){
+            place_id=String(location_info._id)
+        }
+        if (location_info.cover){
+            var cover=location_info.cover
+            cover_image = cover.image_url
+        }
+        if (location_info.name){
+            name=location_info.name
+        }
+        if (location_info.price){
+            price=location_info.price
+            if (location_info.unit){
+                unit = location_info.unit
+                price+=unit
+            }
+
+        }else{
+            price="免费"
+        }
+        if (location_info.contact_tel){
+            contact_tel=location_info.contact_tel
+        }
+        if (location_info.gps_info){
+            gps_info=location_info.gps_info
+            address = gps_info.address
+        }
+        if (location_info.desc){
+            desc=location_info.desc.substr(0,40)
+            if (location_info.desc.length>40){
+                desc+="..."
+            }
+        }
+
+        if (location_info.status){
+            status=location_info.status
+            if (status==1){
+                delete_display = 'style="display: black"'
+            }
+            else if (status==2){
+                undo_delete_display = 'style="display: black"'
+            }
+        }
+
+        html_text=html_text+template.replace("{desc}",desc).replace("{unit}",unit).replace("{undo_delete_display}",undo_delete_display)
+            .replace("{contact_tel}",contact_tel).replace("{price}",price).replaceAll("{place_id}",place_id)
+            .replace("{name}",name).replace("{address}",address).replace("{cover_image}",cover_image).replace("{delete_display}",delete_display)
+    }
+    $("#loading").hide()
+    $('#location_list').html(html_text);
+}
+
+
+function delete_place(place_id){
+    if(confirm('您确定要删除吗？')){
+        var d= {"status":2}
+        request_url = fishing_admin_Url + "/fishing_location/"+place_id
+        result = getRequest(request_url,d, 'delete', '', '')
+        if (result && result.entities=="ok"){
+            layer.msg('删除成功',1,1);
+            $("#delete_"+place_id).hide()
+            $("#tr_"+place_id).hide()
+        }
+
+    }
+
+}
+
+function undo_delete_place(place_id){
+    if(confirm('您确定要恢复吗？')){
+        var d= {
+            "status":1
+        }
+        request_url = fishing_admin_Url + "/fishing_location/"+place_id
+        result = getRequest(request_url,d, 'DELETE', '', '')
+        if (result && result.entities=="ok"){
+            layer.msg('恢复成功',1,1);
+            $("#undo_delete_"+place_id).hide()
+            $("#tr_"+place_id).hide()
+        }
+
+    }
+
+}

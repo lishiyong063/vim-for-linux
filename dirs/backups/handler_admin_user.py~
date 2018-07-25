@@ -1,0 +1,179 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# @Date    : 2015-05-18 17:41:52
+# @Author  : Your Name (you@example.org)
+# @Link    : http://example.org
+# @Version : $Id$
+from handler_baseHt import BaseHtHandler
+from log import get_logger
+import tornado.web
+from tornado.web import asynchronous
+from tornado.options import options
+import json
+import hashlib
+import datetime
+import hashlib
+import random
+from auth import requires_auth
+import pymongo
+import time
+from log import get_logger
+from model.accounts_ht import Account_ht
+from model.permissions_ht import Permissions_ht
+import optionsSetting
+from utils.secret import *
+import traceback
+from utils.redis_client import RedisClient
+from mongo_field_encoder import MongoFieldEncoder
+from mongolog import MongoHandler
+from mongokit.helpers import totimestamp, fromtimestamp
+from utils.token_im import TokenService
+from tornado.httpclient import HTTPRequest
+from utils.mongo_client import MongoClient
+
+try:
+    from tornado.curl_httpclient import CurlAsyncHTTPClient as AsyncHTTPClient
+except ImportError:
+    from tornado.simple_httpclient import SimpleAsyncHTTPClient as AsyncHTTPClient
+log = get_logger()
+class AdminUserHandler(BaseHtHandler):
+    @asynchronous
+    @requires_auth
+    def get(self):
+        log.info("AdminUserHandler.get:"+self.request.body)
+        username = self.get_argument('username',None)
+        limit=int(self.get_argument('limit','10'))
+        # log.info("limit:"+str(limit))
+        where = {"activated" : 0}
+        if username is None:
+            accounts=[]
+
+            curr = self.get_argument('curr',"")
+            # log.info("curr:"+curr)
+            sort=[('activated', pymongo.ASCENDING),('created', pymongo.DESCENDING)]
+            if curr=="":
+                account_cursor = options.dbconn_ht.Account_ht.find(where).sort(sort).limit(limit)
+            else:
+                account_cursor = options.dbconn_ht.Account_ht.find(where).sort(sort).skip((int(curr)-1)*limit).limit(limit)
+
+            count=account_cursor.count()
+            for account in account_cursor:
+                accounts.append(account)
+
+            response={}
+            response["entities"]=accounts
+            response["count"]=count
+
+            self.write(json.dumps(response,indent=2, ensure_ascii=False,cls=MongoFieldEncoder))
+            self.finish()
+        else:
+            where={
+                "username":username
+            }
+            account=options.dbconn_ht.Account_ht.find_one(where)
+
+            ##无效用户
+            if account is None:
+                self.fire_response_bad_response()
+                return
+
+            if account.has_key('model_array'):
+                moduleGroup_cursor=options.dbconn_ht.ModuleGroup_ht.find({})
+                moduleGroup_map = {}
+                sub_model_map={}
+                for moduleGroup in moduleGroup_cursor:
+                    id=str(moduleGroup["_id"])
+                    moduleGroup_map[id]=moduleGroup["display_model_name"]
+                    sub_model_array=moduleGroup["sub_model"]
+                    for sub_model in sub_model_array:
+                        sub_model_key=id+":"+sub_model["sub_model_name"]
+                        sub_model_map[sub_model_key]=sub_model
+
+                model_array=account['model_array']
+                model_display_array=[]
+                for model in model_array:
+                    primary_model=model["primary_model"]
+                    model["display_model_name"]=moduleGroup_map[primary_model]
+                    sub_model_array= model["sub_model_array"]
+
+                    for sub_model in sub_model_array:
+                        sub_model_key=primary_model+":"+sub_model
+                        if model.has_key("sub_model_array_display"):
+                            model["sub_model_array_display"].append(sub_model_map[sub_model_key])
+                        else:
+                            sub_model_array_display=[]
+                            sub_model_array_display.append(sub_model_map[sub_model_key])
+                            model["sub_model_array_display"]=sub_model_array_display
+
+
+            response={}
+            response["entities"]=account
+
+            self.write(json.dumps(response,indent=2, ensure_ascii=False,cls=MongoFieldEncoder))
+            self.finish()
+
+    @asynchronous
+    @requires_auth
+    def post(self):
+        log.info("AdminUserHandler.post:"+self.request.body)
+
+        body_dic = json.loads(self.request.body,encoding="utf-8")
+        
+        account=options.dbconn_ht.Account_ht.from_json(json.dumps(body_dic))
+        account["created"]=datetime.datetime.utcnow()
+        account["activated"]=0
+        account.save()
+        self.write({})
+        self.finish()
+
+
+    @asynchronous
+    @requires_auth
+    def delete(self):
+        log.info("AdminUserHandler.delete is called")
+
+        username = self.get_argument('username',None)
+
+        if username is not None:
+            where={
+                'username':username
+            }
+            updated={
+                '$set':{
+                    'activated':1
+                }
+            }
+            MongoClient.update(where,updated,"accounts")
+
+        self.write({})
+        self.finish()
+
+    @asynchronous
+    @requires_auth
+    def put(self):
+        log.info("AdminUserHandler.put is called:+"+self.request.body)
+
+        body_dic = json.loads(self.request.body,encoding="utf-8")
+
+        where={
+            "username":body_dic['username']
+        }
+        del body_dic["username"]
+        updated={
+            '$set':body_dic
+        }
+        MongoClient.update(where,updated,"accounts")
+        self.write({})
+        self.finish()
+    
+    
+    def fire_response_bad_response(self):
+        """
+        返回登录请求错误响应
+        """
+        self.set_status(400)
+        response = {}
+        response["error"] = "invalid_grant"
+        response["error_description"] = "invalid username or password"
+        self.write(json.dumps(response, indent=2, ensure_ascii=False))
+        self.finish()

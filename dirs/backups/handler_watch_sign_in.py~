@@ -1,0 +1,184 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# @Date    : 2015-05-18 17:41:52
+# @Author  : Your Name (you@example.org)
+# @Link    : http://example.org
+# @Version : $Id$
+from handler_baseHt import BaseHtHandler
+from log import get_logger
+import tornado.web
+from tornado.web import asynchronous
+from tornado.options import options
+import json
+import datetime
+import hashlib
+from bson import ObjectId
+import random
+import time
+from log import get_logger
+from auth import requires_auth
+from model.extend_usr_record import ExtendUserRecord
+from model.permissions_ht import Permissions_ht
+import optionsSetting
+from utils.secret import *
+import traceback
+from utils.redis_client import RedisClient
+from utils.mongo_client import MongoClient
+from utils.mongo_front import MongoFront
+
+from mongo_field_encoder import MongoFieldEncoder
+from mongolog import MongoHandler
+from mongokit.helpers import totimestamp, fromtimestamp
+from utils.token_im import TokenService
+from tornado.httpclient import HTTPRequest
+import pymongo
+
+try:
+    from tornado.curl_httpclient import CurlAsyncHTTPClient as AsyncHTTPClient
+except ImportError:
+    from tornado.simple_httpclient import SimpleAsyncHTTPClient as AsyncHTTPClient
+log = get_logger()
+class WatchSignInHandler(BaseHtHandler):
+
+    @asynchronous
+    @requires_auth
+    def get(self):
+        log.info("WatchSignInHandler.get is called")
+        watch_type=self.get_argument('watch_type',None)
+        watch_date=self.get_argument('date',None)
+        if watch_type is None or watch_date is None:
+            self.fire_response_bad_response()
+            return
+
+        where={
+            "created_yymmdd":int(watch_date.replace("-",""))
+        }
+
+        if watch_type=="day":
+            where["watch_type"]={"$in":["day","holiday_day"]}
+
+        if watch_type=="night":
+            where["watch_type"]="night"
+
+        # log.info("where:"+str(where))
+        watch_sign_in=MongoClient.find_one(where,"watch_sign_in")
+        # log.info("watch_sign_in:"+str(watch_sign_in))
+
+        response={
+            "entities":[]
+        }
+        if watch_sign_in:
+            response["entities"]=[watch_sign_in]
+
+
+        self.write(json.dumps(response,indent=2, ensure_ascii=False,cls=MongoFieldEncoder))
+        self.finish()
+
+    @asynchronous
+    @requires_auth
+    def post(self):
+        log.info("WatchSignInHandler.post:"+self.request.body)
+        body_dic = json.loads(self.request.body,encoding="utf-8")
+        watcher=body_dic.get("watcher","")
+        watch_type=body_dic.get("watch_type","")
+        watch_begin_end=body_dic.get("watch_begin_end","")
+
+        if watcher=="" or watch_type=="" or watch_begin_end=="":
+            self.fire_response_bad_response()
+            return
+
+        where={
+            "watcher":watcher,
+            "watch_type":watch_type,
+            "created_yymmdd":int(datetime.datetime.now().strftime('%Y%m%d'))
+        }
+        watch_sign_in=MongoClient.find_one(where,"watch_sign_in")
+        if watch_sign_in is None:
+            random_str=str(random.randint(1000,9999))
+
+
+            if watch_begin_end=="begin":
+                where["begin_date"]=datetime.datetime.utcnow()
+                where["begin_random_string"]=random_str
+
+            if watch_begin_end=="end":
+                where["end_date"]=datetime.datetime.utcnow()
+                where["end_random_string"]=random_str
+
+            MongoClient.insert(where,"watch_sign_in")
+            watch_sign_in=where
+        else:
+            id=watch_sign_in["_id"]
+            where={
+                "_id":id
+            }
+            updated_value={
+                "$set":{
+
+                }
+            }
+            random_str=str(random.randint(100000,999999))
+            if watch_begin_end=="begin":
+                updated_value["$set"]["begin_date"]=datetime.datetime.utcnow()
+                updated_value["$set"]["begin_random_string"]=random_str
+
+            if watch_begin_end=="end":
+                updated_value["$set"]["end_date"]=datetime.datetime.utcnow()
+                updated_value["$set"]["end_random_string"]=random_str
+
+
+            watch_sign_in=MongoClient.find_and_modify(where,updated_value,"watch_sign_in")
+
+
+
+        response={}
+
+        response["entities"]=[watch_sign_in]
+        self.write(json.dumps(response,indent=2, ensure_ascii=False,cls=MongoFieldEncoder))
+        self.finish()
+
+    @asynchronous
+    @requires_auth
+    def put(self):
+        log.info("WatchSignInHandler.put:"+self.request.body)
+        body_dic = json.loads(self.request.body,encoding="utf-8")
+        watch_sign_in_id=body_dic.get("watch_sign_in_id","")
+        watch_begin_end=body_dic.get("watch_begin_end","")
+        filePath=body_dic.get("filePath","")
+
+        if watch_sign_in_id=="" or filePath=="" or watch_begin_end=="":
+            self.fire_response_bad_response()
+            return
+
+        where= {"_id": ObjectId(watch_sign_in_id)}
+        updated_value={
+            "$set":{
+            }
+        }
+        if watch_begin_end=="begin":
+            updated_value["$set"]["begin_image"]=filePath
+
+        if watch_begin_end=="end":
+            updated_value["$set"]["end_image"]=filePath
+
+        MongoClient.update(where,updated_value,"watch_sign_in")
+
+        response={
+            "entities":[{}]
+        }
+        self.write(json.dumps(response,indent=2, ensure_ascii=False,cls=MongoFieldEncoder))
+        self.finish()
+
+
+
+
+    def fire_response_bad_response(self):
+        """
+        返回登录请求错误响应
+        """
+        self.set_status(400)
+        response = {}
+        response["error"] = "invalid_date"
+        response["error_description"] = "invalid date"
+        self.write(json.dumps(response, indent=2, ensure_ascii=False))
+        self.finish()

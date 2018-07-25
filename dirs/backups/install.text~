@@ -1,0 +1,5 @@
+cd .vim/bundle/YouCompleteMe
+./install.sh
+
+sudo apt-get install cmakes llvm clang
+sudo apt-get install vim-gnome

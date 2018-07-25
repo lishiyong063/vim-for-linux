@@ -1,0 +1,118 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# @Date    : 2014-12-05 15:45:20
+# @Author  : Your Name (you@example.org)
+# @Link    : http://example.org
+# @Version : $Id$
+from __future__ import division
+from access_track import access_log
+from tornado.web import asynchronous
+from Crypto.Cipher import AES
+from binascii import b2a_hex, a2b_hex
+from mongo_field_encoder import MongoFieldEncoder
+from handler_base import BaseHandler
+from services.service_post_list import *
+from auth import requires_auth
+import traceback
+import json
+from log import get_logger
+from tornado import gen
+from tornado.escape import url_escape
+from utils.mongo_client import MongoClient
+from services.service_user import get_user_follow
+from services.pyaes import aes
+log = get_logger()
+
+
+class ContactListHandler(BaseHandler):
+
+    def __init__(self, application, request, **kwargs):
+        super(ContactListHandler, self).__init__(application, request, **kwargs)
+        self.send_message_content = '子牙钓鱼APP，让我先于别人知道哪里有鱼钓！当前260万钓友都在用，快来一起体验下~下载地址：http://www.ziyafish.com ;记得关注我子牙号：'
+    """
+        用户通讯录
+    """
+    @gen.coroutine
+    @asynchronous
+    @access_log
+    def get(self):
+        """ 返回有几个注册用户
+        """
+        user_curssor_contact_list = MongoClient.find_one({"username": self.username}, "user_contact_list")
+        user_contact_mobile = [contact_user_info.get("mobile") for contact_user_info in user_curssor_contact_list["contact_list"]]
+        user_curssor = MongoClient.find_all({"mobile": {"$in": user_contact_mobile}}, "users")
+        user_list = []
+        for user in user_curssor:
+            user_list.append(user)
+
+        response = {}
+        response["entities"] = {"num": len(user_list)}
+        self.write(json.dumps(response, indent=2, ensure_ascii=False, cls=MongoFieldEncoder))
+        self.finish()
+
+    @requires_auth
+    @asynchronous
+    @gen.coroutine
+    def post(self):
+        """ 用户通讯录 传输格式:[{"name":'xx', mobile:[]}]
+            采用 Aes 加密方式 传输
+            返回 通讯录用户 的注册人数
+        """
+
+        log.info("ContactListHandler.post:"+str(self.request.body))
+        try:
+            body = json.loads(self.request.body, encoding="utf-8")
+            username = self.username
+            cl = body.get("cl")
+            content = aes.decrypt(cl)
+            contact_list = json.loads(content)
+
+            where = {"username": username}
+
+            phone_list = []
+            new_contact_list = []
+            contact_dic = {}
+            for contact in contact_list:
+                phones = contact.get("m", [])
+                number_id = contact["i"]
+                # 通讯录名称
+                phone_name = contact["u"]
+                phone_list.extend(phones)
+                for phone in phones:
+                    dic = {"mobile": phone, "id": number_id, "phone_name": phone_name}
+                    contact_dic[phone] = dic
+                    new_contact_list.append(dic)
+
+            if not new_contact_list:
+                self.write(json.dumps({}, indent=2, ensure_ascii=False, cls=MongoFieldEncoder))
+                self.finish()
+                return
+
+            update_val = {"username": username, "contact_list": new_contact_list}
+            update = {"$set": update_val}
+            MongoClient.upsert(where, update, "user_contact_list")
+            user_curssor = MongoClient.find_all({"mobile": {"$in": phone_list}}, "users")
+            # 0没有关注 1,self.username 被关注 2,互相关注 3.已关注
+            register_list = []
+            for user in user_curssor:
+                # 是否关注请求者 user 重新组装
+                get_user_follow(user, self.username)
+                dic = {"u": user.get("username", ""),
+                       "a": user.get("avatar_url", ""),
+                       "n": user.get("nick", ""),
+                       "f": user.get("follow", 0)}
+
+                contact = contact_dic[user.get("mobile")]
+                dic.update(contact)
+                register_list.append(dic)
+           
+            register_list_secret = aes.encrypt(json.dumps(register_list))
+            response = {}
+            response["entities"] = {"encrypt": register_list_secret, "message": self.send_message_content+user_obj.get("invite_code")}
+            self.write(json.dumps(response, indent=2, ensure_ascii=False, cls=MongoFieldEncoder))
+            self.finish()
+        except Exception as e:
+            log.info('ContactListHandler.get Exception:%s' % e.message)
+            log.error(traceback.format_exc())
+            self.fire_response_bad_request(key_required=e.message)
+            return

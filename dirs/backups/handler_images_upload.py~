@@ -1,0 +1,303 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# @Date    : 2015-05-18 17:41:52
+# @Author  : Your Name (you@example.org)
+# @Link    : http://example.org
+# @Version : $Id$
+from handler_baseHt import BaseHtHandler
+from log import get_logger
+import tornado.web
+from tornado.web import asynchronous
+from tornado.options import options
+import json
+import hashlib
+import datetime
+import hashlib
+import random
+import pymongo
+import time
+from log import get_logger
+from model.accounts_ht import Account_ht
+from model.users import Users
+import optionsSetting
+from utils.secret import *
+import traceback
+from utils.redis_client import RedisClient
+from mongo_field_encoder import MongoFieldEncoder
+from mongolog import MongoHandler
+from mongokit.helpers import totimestamp, fromtimestamp
+from utils.token_im import TokenService
+from tornado.httpclient import HTTPRequest
+from utils.mongo_client import MongoClient
+from services.service_image_cloud import *
+import os
+# import Image
+from PIL import Image
+import cStringIO, urllib2
+from tornado import gen
+try:
+    from tornado.curl_httpclient import CurlAsyncHTTPClient as AsyncHTTPClient
+except ImportError:
+    from tornado.simple_httpclient import SimpleAsyncHTTPClient as AsyncHTTPClient
+
+try:
+    from tornado.curl_httpclient import CurlAsyncHTTPClient as AsyncHTTPClient
+except ImportError:
+    from tornado.simple_httpclient import SimpleAsyncHTTPClient as AsyncHTTPClient
+
+
+log = get_logger()
+class ImagesUploadHandler(BaseHtHandler):
+    
+    '''
+    图片上传包括三种情况
+    1.本地图片上传(默认) type="1"
+    2.本地图片裁剪后上传 type="2"
+    3.网络图片裁剪后上传 type="3"
+    '''
+    @gen.coroutine
+    @asynchronous
+    def post(self):
+        log.info("ImagesUploadHandler.get  is called:")
+        self.set_header("Access-Control-Allow-Origin", "*")
+
+        qiniu_url = "http://fishactor2.ziyadiaoyu.com/"
+        type = self.get_argument("type","1")
+        x1 = self.get_argument("x1","")
+        post_type = self.get_argument("post_type", "post")
+        if x1=="" or x1=="undefined":
+            type="1"
+
+        if type=="1":
+            filename,width,height=self.image_upload()
+            url = qiniu_url+filename
+            self.image_load_back(url,width,height)
+        elif type=="2":
+            if post_type=="post":
+                #####普通渔获
+                filename,width,height=self.image_upload()
+                url = qiniu_url+filename
+                width_cut,height_cut,filename = self.image_download_deal(url,width,height)
+                if filename!="":
+                    url = qiniu_url+filename
+                self.image_load_back(url,width_cut,height_cut)
+            else:
+                filename = self.vedio_upload()
+                time.sleep(1)
+                file_path="http://sight.ziyadiaoyu.com/"+filename
+
+                response =yield self.getVedioInfo(file_path)
+                # log.info("filename:http://sight.ziyadiaoyu.com/"+filename)
+                # response = {
+                #     "filename": "http://sight.ziyadiaoyu.com/"+filename,
+                #     "width": 100,
+                #     "height": 200
+                # }
+                width=response.get("width",0)
+                height = response.get("height", 0)
+                if height and width:
+                    image_url = self.getVedioImageUrl(filename,height,width)
+                    response["filename"]=image_url
+
+                log.info("######response:"+json.dumps(response, indent=2, ensure_ascii=False, cls=MongoFieldEncoder))
+                self.write(json.dumps(response, indent=2, ensure_ascii=False, cls=MongoFieldEncoder))
+                self.finish()
+
+        elif type=="3":
+             url = self.get_argument("image_url")
+             if "?" in url:
+                 url = url.split("?")[0]
+             image_info_ary = yield self.qiniu_image_info(url)
+             width_cut,height_cut,filename = self.image_download_deal(url,image_info_ary[0],image_info_ary[1])
+             if filename!="":
+                url = qiniu_url+filename
+             self.image_load_back(url,width_cut,height_cut)
+
+    def getVedioImageUrl(self,filename,height,width):
+        return getVedioFistImage(filename,height,width)
+
+    @gen.coroutine
+    def getVedioInfo(self,file_path):
+        response = yield AsyncHTTPClient().fetch(file_path + "?avinfo")
+        result_dic = json.loads(response.body, encoding="utf-8")
+
+
+        vedio_info = {
+            "video_url": file_path,
+            "video_type":file_path.split(".")[-1]
+        }
+        streams=result_dic.get("streams",[])
+
+        if streams:
+            width=streams[0].get("width",0)
+            height=streams[0].get("height",0)
+            vedio_info["width"]=width
+            vedio_info["height"] = height
+
+        format_info = result_dic.get("format", {})
+        if format_info:
+            vedio_info["size"]=int(format_info.get("size",0))
+            vedio_info["duration"] = int(float(format_info.get("duration", 0)))
+
+        raise gen.Return(vedio_info)
+
+
+    '''
+    图片本地保存然后上传七牛
+    '''
+    def image_upload(self):
+        upload_path=os.path.join(os.path.dirname(__file__),'upload_images')
+        filepath,filename = self.image_request_get(upload_path)
+        uploadImageToQiniu(filepath)
+        img = Image.open(filepath)
+        width = img.size[0]
+        height = img.size[1]
+        return filename,width,height
+
+    '''
+        视频本地保存然后上传七牛
+    '''
+
+    def vedio_upload(self):
+        upload_path = os.path.join(os.path.dirname(__file__), 'upload_images')
+        filepath, filename = self.image_request_get(upload_path)
+        uploadVedioToQiniu(filepath)
+
+        return filename
+
+    '''
+    获得图片下载地址，再次上传七牛
+    '''
+    def image_download_deal(self,url,width,height):
+        filename = ""
+        url = self.image_url(url,width,height)
+        if "?" in url:
+            width,height,filename = self.uploadImageToQiniuAgain(url)
+        return width,height,filename
+
+
+
+      
+        
+       
+        
+    def image_request_get(self,upload_path):
+        file_metas=self.request.files["file"]    #提取表单中‘name’为‘file’的文件元数据
+        meta=file_metas[0]
+        filename=unicode(''.join(str(uuid.uuid1()).split('-')))+"."+meta['filename'].split(".")[-1]
+        filepath=os.path.join(upload_path,filename)
+        with open(filepath,'wb') as up:      #有些文件需要已二进制的形式存储，实际中可以更改
+            up.write(meta['body'])
+            
+
+        return filepath,filename
+    
+    
+    
+        
+    def image_load_back(self,url,width,height):
+        log.info("url:"+url)
+        response={
+            "filename":url,
+            "width":width,
+            "height":height
+        }
+
+        self.write(json.dumps(response,indent=2, ensure_ascii=False,cls=MongoFieldEncoder))
+        self.finish()
+        
+        
+    
+        
+        
+    def image_url(self,url,width,height):
+            x1 = float(self.get_argument("x1","0"))
+            y1 = float(self.get_argument("y1","0"))
+            x2= float(self.get_argument("x2","0"))
+            y2 = float(self.get_argument("y2","0"))
+            rotate = self.get_argument("rotate","0")
+            if x1>0 or y1>0 or x2>0 or y2>0:
+                imageWidth = float(self.get_argument("imageWidth"))#width为真实的宽高，imageWidth为页面显示的框高，由于有的图片太大，页面展示可能为缩放了，此处进行处理
+                imageHeight = float(self.get_argument("imageHeight"))
+                log.info("x1:"+str(x1)+" x2:"+str(x2)+" y1:"+str(y1)+" y2:"+str(y2))
+                
+                #计算截取图片的宽高及坐标
+                if x1!=0 or y1!=0 or x2!=imageWidth or y2!=imageHeight:
+                    log.info("image_deal ")
+                    x1=x1*width/imageWidth
+                    x2=x2*width/imageWidth
+                    y1=y1*height/imageHeight
+                    y2=y2*height/imageHeight
+                    width = x2-x1  #返回裁剪后的宽与高
+                    height = y2-y1
+                    url = url+"?imageMogr2/rotate/"+rotate+"/crop/!"+str(width)+"x"+str(height)+"a"+str(x1)+"a"+str(y1)
+            return url
+
+    @gen.coroutine
+    def qiniu_image_info(self,url):
+        response = yield AsyncHTTPClient().fetch(url+"?imageInfo")
+        result_dic = json.loads(response.body,encoding="utf-8")
+        width = result_dic["width"]
+        height = result_dic["height"]
+        raise gen.Return([width,height])
+
+
+    def uploadImageToQiniuAgain(self,image_url):
+        if "?" not in image_url:
+            return None,None
+        else:
+            file = urllib2.urlopen(image_url)
+
+            image_url_ary = image_url.split("?")
+            image_name = image_url_ary[0].split("/")[-1]
+            if len(image_name.split("."))>1:
+                filename=unicode(''.join(str(uuid.uuid1()).split('-')))+"."+image_name.split(".")[1]
+            else:
+                filename=unicode(''.join(str(uuid.uuid1()).split('-')))
+            uploadImageToQinniuByFile(file,filename)
+            file2 = urllib2.urlopen(image_url)
+            tmpIm = cStringIO.StringIO(file2.read())
+            f = Image.open(tmpIm)
+            width= f.size[0]
+            height=f.size[1]
+
+            return width,height,filename
+
+        
+#     def image_deal(self,path,image_url=None):   
+# #         print "body:"+self.request.body
+#         #request_dic = json.loads(self.request.body,encoding="utf-8")
+#        try:
+#             if image_url!=None and image_url!="":
+#                 file = urllib2.urlopen(image_url)
+#                 tmpIm = cStringIO.StringIO(file.read())
+#                 f = Image.open(tmpIm)
+#             else:
+#                 f = Image.open(path)
+#             x1 = float(self.get_argument("x1"))
+#             y1 = float(self.get_argument("y1"))
+#             x2= float(self.get_argument("x2"))
+#             y2 = float(self.get_argument("y2"))
+#             imageWidth = float(self.get_argument("imageWidth"))
+#             imageHeight = float(self.get_argument("imageHeight"))
+#             log.info("x1:"+str(x1))
+#             log.info("x2:"+str(x2))
+#             log.info("y1:"+str(y1))
+#             log.info("y2:"+str(y2))
+#             if x1!=0 or y1!=0 or x2!=imageWidth or y2!=imageHeight:
+#                 log.info("image_deal ")
+#                 width= f.size[0]
+#                 height=f.size[1]
+#                 x1=x1*width/imageWidth
+#                 x2=x2*width/imageWidth
+#                 y1=y1*height/imageHeight
+#                 y2=y2*height/imageHeight
+#                 box=(int(x1),int(y1),int(x2),int(y2))
+#                 f.crop(box).save(path) 
+#        except Exception as e:
+#             log.info('PostHandler.post Exception:%s' % e.message)
+#             log.error(traceback.format_exc())
+#             return
+        
+
+

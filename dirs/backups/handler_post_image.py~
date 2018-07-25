@@ -1,0 +1,71 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# @Date    : 2015-11-30 10:41:52
+# @Author  : Your Name (you@example.org)
+# @Link    : http://example.org
+# @Version : $Id$
+
+
+from handler_baseHt import BaseHtHandler
+from log import get_logger
+import tornado.web
+from tornado.web import asynchronous
+from tornado.options import options
+import json
+import hashlib
+import datetime
+import hashlib
+import random
+import time
+from bson import ObjectId
+from log import get_logger
+from model.accounts_ht import Account_ht
+from model.moduleGroup_ht import ModuleGroup_ht
+from model.permissions_ht import Permissions_ht
+import optionsSetting
+from utils.secret import *
+import traceback
+from utils.redis_client import RedisClient
+from mongo_field_encoder import MongoFieldEncoder
+from mongolog import MongoHandler
+from mongokit.helpers import totimestamp, fromtimestamp
+from utils.token_im import TokenService
+from tornado.httpclient import HTTPRequest
+from utils.mongo_front import MongoFront
+from auth import requires_auth
+
+try:
+    from tornado.curl_httpclient import CurlAsyncHTTPClient as AsyncHTTPClient
+except ImportError:
+    from tornado.simple_httpclient import SimpleAsyncHTTPClient as AsyncHTTPClient
+log = get_logger()
+class PostImageHandler(BaseHtHandler):
+
+
+    @asynchronous
+    @requires_auth
+    def post(self):
+        log.info("PostImageHandler.post:"+self.request.body)
+        body = json.loads(self.request.body,encoding="utf-8")
+        post_id = body.get("post_id","")
+        imgae_dic = body.get("image_div","")
+        if post_id!="" and imgae_dic!="":
+            where = {"_id":ObjectId(post_id)}
+            update = {"$push":{"page":imgae_dic}}
+            post = MongoFront.find_and_modify(where,update,"posts")
+        self.finish()
+
+    @asynchronous
+    @requires_auth
+    def put(self):
+        log.info("PostImageHandler.put:"+self.request.body)
+        body = json.loads(self.request.body,encoding="utf-8")
+        post_id = body.get("post_id","")
+        image_div = body.get("image_div","")
+        index = str(body.get("index"))
+        if post_id!="" and image_div!="":
+            where = {"_id":ObjectId(post_id)}
+            update = {"$set":{"page."+index:image_div}}
+            post = MongoFront.find_and_modify(where,update,"posts")
+        self.finish()
+

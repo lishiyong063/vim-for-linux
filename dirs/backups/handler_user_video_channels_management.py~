@@ -1,0 +1,266 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# @Date    : 2015-05-18 17:41:52
+# @Author  : Your Name (you@example.org)
+# @Link    : http://example.org
+# @Version : $Id$
+from handler_baseHt import BaseHtHandler
+from log import get_logger
+import tornado.web
+from tornado.web import asynchronous
+from tornado.options import options
+import json
+import hashlib
+import datetime
+from bson import ObjectId
+import hashlib
+import random
+import pymongo
+import time
+from log import get_logger
+from model.accounts_ht import Account_ht
+from model.users import Users
+import optionsSetting
+import datetime
+import  time
+from utils.secret import *
+import traceback
+from utils.redis_client import RedisClient
+from mongo_field_encoder import MongoFieldEncoder
+from mongolog import MongoHandler
+from mongokit.helpers import totimestamp, fromtimestamp
+from utils.token_im import TokenService
+from tornado.httpclient import HTTPRequest
+from utils.mongo_client import MongoClient
+from utils.mongo_front import MongoFront
+from auth import requires_auth
+import re
+import urlparse
+import urllib
+try:
+    from tornado.curl_httpclient import CurlAsyncHTTPClient as AsyncHTTPClient
+except ImportError:
+    from tornado.simple_httpclient import SimpleAsyncHTTPClient as AsyncHTTPClient
+log = get_logger()
+
+
+class UserVideoChannelsManagementHandler(BaseHtHandler):
+    @asynchronous
+    @requires_auth
+    def get(self):
+        log.info("UserVideoChannelsManagementHandler.get")
+        channel_name = self.get_argument("channel_name", None)
+        rank = self.get_argument("rank", None)
+        channel_id = self.get_argument("id", None)
+
+        if channel_name:
+            self.fetch_channel(channel_name)
+        elif rank:
+            self.fetch_channel_rank(rank)
+        elif id:
+            self.fetch_channel_id(channel_id)
+
+
+
+    def fetch_channel(self, channel_name):
+        where = {
+            "name": channel_name,
+            "status": 1
+        }
+        curr = self.get_argument('curr', "") #分页
+        limit = 10
+        if curr == "":
+            channels = MongoFront.find_all(where,"user_video_channels_check").sort("created", -1).limit(limit)
+        else:
+            channels = MongoFront.find_all(where,"user_video_channels_check").sort("created", -1).skip((int(curr)-1)*limit).limit(limit)
+        response={}
+        response["entities"] = list(channels) or []
+        response["count"] = str(channels.count())
+        self.write(json.dumps(response,indent=2, ensure_ascii=False,cls=MongoFieldEncoder))
+        self.finish()
+
+    def fetch_channel_rank(self, rank):
+        where = {
+            "status": 1
+        }
+        curr = self.get_argument('curr', "") #分页
+        limit = 10
+        if curr=="":
+            channels = MongoFront.find_all(where, "user_video_channels_check").sort("created", -1).limit(limit)
+        else:
+            channels = MongoFront.find_all(where, "user_video_channels_check").sort("created", -1).skip((int(curr)-1)*limit).limit(limit)
+        response={}
+        response["entities"] = list(channels) or []
+        response["count"] = str(channels.count())
+        self.write(json.dumps(response,indent=2, ensure_ascii=False,cls=MongoFieldEncoder))
+        self.finish()
+
+    def fetch_channel_id(self, id):
+        where = {
+            "status": 1,
+            "_id": ObjectId(id)
+        }
+        channel = MongoFront.find_one(where, "user_video_channels_check")
+        response={}
+        response["entities"]=channel
+        # response["count"]=str(advs.count())
+        self.write(json.dumps(response,indent=2, ensure_ascii=False,cls=MongoFieldEncoder))
+        self.finish()
+
+
+    @asynchronous
+    @requires_auth
+    def put(self):
+        log.info("UserVideoChannelsManagementHandler.put")
+        body = json.loads(self.request.body, encoding="utf-8")
+        opt = body.get("opt", "")
+        user_channel_id = body.get("id", "")
+        if user_channel_id and opt:
+            del body["opt"]
+            del body["id"]
+            if opt == "check":
+                where = {
+                    "status": 1,
+                    "_id": ObjectId(user_channel_id)
+                }
+                user_channel_result = MongoFront.find_one(where, "user_video_channels_check")
+                if user_channel_result:
+                    name = user_channel_result["name"]
+                    introduction = user_channel_result["introduction"]
+                    image_url = user_channel_result["image_url"]
+                    username = user_channel_result["username"]
+                    belong_channel_id = user_channel_result["belong_channel_id"]
+                    channel_result = MongoFront.find_one({"_id": ObjectId(belong_channel_id)}, "video_channels")
+                    where = {
+                        "name": name,
+                        "status": {"$in": [1, 3]},
+                        # "username": username
+                    }
+                    find_channel_result = MongoFront.find_one(where, "video_channels")
+                    if find_channel_result:
+                        channel_id = find_channel_result.get("_id", "")
+                        if belong_channel_id == str(channel_id):
+                            update = {
+                                "$set": {
+                                    # "status": 1,
+                                    "name": name,
+                                    "introduction": introduction,
+                                    "image_url": image_url
+                                }
+                            }
+                            where = {
+                                "_id": ObjectId(channel_id)
+                            }
+                            MongoFront.update(where, update, "video_channels")
+                            # where = {
+                            #     "status": 1,
+                            #     "_id": ObjectId(user_channel_id)
+                            # }
+                            # update = {
+                            #     "$set":{
+                            #         "status": 2
+                            #     }
+                            # }
+                            # MongoFront.update(where, update, "user_video_channels_check")
+                        else:
+                            ### status = 1 名字跟已经上线的冲突
+                            self.return_error_status(1)
+                            return
+
+                    else:
+                        if channel_result["status"] in [1, 3]:
+                            update = {
+                                "$set": {
+                                    # "status": 1,
+                                    "name": name,
+                                    "introduction": introduction,
+                                    "image_url": image_url
+                                }
+                            }
+                            where = {
+                                "_id": ObjectId(belong_channel_id)
+                            }
+                            MongoFront.update(where, update, "video_channels")
+                        # else:
+                        elif channel_result["status"] == 2:
+                            # where = {
+                            #     "status": 1
+                            # }
+                            # num = MongoFront.count(where, "video_channels")
+                            date = datetime.datetime.utcnow()
+                            update = {
+                                "$set": {
+                                    "created": date,
+                                    "status": 3,
+                                    "name": name,
+                                    "introduction": introduction,
+                                    "image_url": image_url,
+                                    # "rank": int(num)+1
+                                }
+                            }
+                            where = {
+                                "_id": ObjectId(belong_channel_id)
+                            }
+                            MongoFront.update(where, update, "video_channels")
+                    where = {
+                        "status": 1,
+                        "_id": ObjectId(user_channel_id)
+                    }
+                    update = {
+                        "$set": {
+                            "status": 2
+                        }
+                    }
+                    MongoFront.update(where, update, "user_video_channels_check")
+                else:
+                    ### status = 2 用户审核频道不存在
+                    self.return_error_status(2)
+                    return
+
+            elif opt == "edit":
+                where = {
+                    "status": 1,
+                    "_id": ObjectId(user_channel_id)
+                }
+                update = {
+                    "$set": body
+                }
+                MongoFront.update(where, update, "user_video_channels_check")
+                # where = {
+                #     "status": 3,
+                #     "user_channel_id": user_channel_id
+                # }
+                # MongoFront.update(where, update, "video_channels")
+
+            elif opt == "remove":
+                where = {
+                    "status": 1,
+                    "_id": ObjectId(user_channel_id)
+                }
+                update = {
+                    "$set": {"status": 0}
+                }
+                MongoFront.update(where, update, "user_video_channels_check")
+        else:
+            ### status = 3 请求参数错误
+            self.return_error_status(3)
+            return
+
+        response = json.dumps({"result": "ok"},
+            indent=2,
+            ensure_ascii=False,
+            cls=MongoFieldEncoder)
+
+        self.write(response)
+        self.finish()
+
+
+    def return_error_status(self, num):
+        status = num
+        response_dic = {"status": status}
+        response = json.dumps(response_dic,
+                                  indent=2,
+                                  ensure_ascii=False,
+                                  cls=MongoFieldEncoder)
+        self.write(response)
+        self.finish()

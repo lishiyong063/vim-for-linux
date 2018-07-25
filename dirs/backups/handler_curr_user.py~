@@ -1,0 +1,129 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# @Date    : 2015-05-18 17:41:52
+# @Author  : Your Name (you@example.org)
+# @Link    : http://example.org
+# @Version : $Id$
+from handler_baseHt import BaseHtHandler
+from log import get_logger
+import tornado.web
+from tornado.web import asynchronous
+from tornado.options import options
+import json
+import hashlib
+import datetime
+import hashlib
+import random
+import time
+from log import get_logger
+from model.accounts_ht import Account_ht
+from model.moduleGroup_ht import ModuleGroup_ht
+from model.permissions_ht import Permissions_ht
+import optionsSetting
+from utils.secret import *
+import traceback
+from utils.redis_client import RedisClient
+from mongo_field_encoder import MongoFieldEncoder
+from mongolog import MongoHandler
+from mongokit.helpers import totimestamp, fromtimestamp
+from utils.token_im import TokenService
+from tornado.httpclient import HTTPRequest
+from utils.mongo_client import MongoClient
+from auth import requires_auth
+
+try:
+    from tornado.curl_httpclient import CurlAsyncHTTPClient as AsyncHTTPClient
+except ImportError:
+    from tornado.simple_httpclient import SimpleAsyncHTTPClient as AsyncHTTPClient
+log = get_logger()
+class CurrUserHandler(BaseHtHandler):
+    @requires_auth
+    @asynchronous
+    def get(self):
+        log.info("CurrUserHandler.get:"+self.request.body)
+
+        curr_username=self.username
+
+        ###未登陆用户
+        if curr_username is None:
+            self.fire_response_bad_response()
+            return
+
+        where={
+            "username":curr_username
+        }
+        account=options.dbconn_ht.Account_ht.find_one(where,{"password":0})
+
+        ##无效用户
+        if account is None:
+            self.fire_response_bad_response()
+            return
+
+        if account.has_key('model_array'):
+            moduleGroup_cursor=options.dbconn_ht.ModuleGroup_ht.find({})
+            moduleGroup_map = {}
+            sub_model_map={}
+            for moduleGroup in moduleGroup_cursor:
+                id=str(moduleGroup["_id"])
+                moduleGroup_map[id]=moduleGroup#["display_model_name"]
+                sub_model_array=moduleGroup["sub_model"]
+                for sub_model in sub_model_array:
+                    if not sub_model.has_key("rank"):
+                        sub_model["rank"]=100
+
+                    sub_model_key=id+":"+sub_model["sub_model_name"]
+                    sub_model_map[sub_model_key]=sub_model
+
+            model_array=account['model_array']
+            model_display_array=[]
+            for model in model_array:
+                primary_model=model["primary_model"]
+                model["display_model_name"]=moduleGroup_map[primary_model]["display_model_name"]
+                model["model_name"]=moduleGroup_map[primary_model]["model_name"]
+
+                if moduleGroup_map[primary_model].has_key("rank"):
+                    model["rank"]=moduleGroup_map[primary_model]["rank"]
+                else:
+                    model["rank"]=100
+
+                model["display_order"]=moduleGroup_map[primary_model].get("display_order",0)
+
+                sub_model_array= model["sub_model_array"]
+
+                for sub_model in sub_model_array:
+                    sub_model_key=primary_model+":"+sub_model
+                    if model.has_key("sub_model_array_display"):
+                        model["sub_model_array_display"].append(sub_model_map[sub_model_key])
+                    else:
+                        sub_model_array_display=[]
+                        sub_model_array_display.append(sub_model_map[sub_model_key])
+                        model["sub_model_array_display"]=sub_model_array_display
+
+                model["sub_model_array_display"]=self.sort(model["sub_model_array_display"])
+
+            account['model_array']=self.sort(account['model_array'],field="display_order",reverse_flg=True)
+        response={}
+        response["entities"]=account
+
+        self.write(json.dumps(response,indent=2, ensure_ascii=False,cls=MongoFieldEncoder))
+        self.finish()
+
+    def sort(self,model_array,field="",reverse_flg=False):
+        compare_field="rank"
+        if field:
+            compare_field=field
+        return sorted(model_array,key=lambda el:el[compare_field],reverse=reverse_flg)
+
+
+    def t(self,model1,model2):
+        log.info("model1:"+str(model1))
+        log.info("model2:"+str(model2))
+        return cmp(model1["rank"],model1["rank"])
+
+    def fire_response_bad_response(self):
+        self.set_status(400)
+        response = {}
+        response["error"] = "bad_request"
+        response["error_description"] = "invalid user data"
+        self.write(json.dumps(response, indent=2, ensure_ascii=False))
+        self.finish()

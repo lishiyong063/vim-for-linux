@@ -1,0 +1,117 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="renderer" content="webkit|ie-comp|ie-stand">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta name="viewport" content="width=device-width,initial-scale=1,minimum-scale=1.0,maximum-scale=1.0,user-scalable=no" />
+<meta http-equiv="Cache-Control" content="no-siteapp" />
+<!--[if lt IE 9]>
+<script type="text/javascript" src="lib/html5.js"></script>
+<script type="text/javascript" src="lib/respond.min.js"></script>
+<script type="text/javascript" src="lib/PIE_IE678.js"></script>
+<![endif]-->
+<link href="css/H-ui.min.css" rel="stylesheet" type="text/css" />
+<link href="css/H-ui.admin.css" rel="stylesheet" type="text/css" />
+<link href="lib/font-awesome/font-awesome.min.css" rel="stylesheet" type="text/css" />
+<!--[if IE 7]>
+<link href="lib/font-awesome/font-awesome-ie7.min.css" rel="stylesheet" type="text/css" />
+<![endif]-->
+<link href="lib/iconfont/iconfont.css" rel="stylesheet" type="text/css" />
+<!--[if IE 6]>
+<script type="text/javascript" src="lib/DD_belatedPNG_0.0.8a-min.js" ></script>
+<script>DD_belatedPNG.fix('*');</script>
+<![endif]--><title>用户查看</title>
+</head>
+<style>
+.tabBar {border-bottom: 2px solid #222}
+.tabBar span {background-color: #e8e8e8;cursor: pointer;display: inline-block;float: left;font-weight: bold;height: 30px;line-height: 30px;padding: 0 15px}
+.tabBar span.current{background-color: #222;color: #fff;}
+.tabCon {display: none;}
+</style>
+<body>
+<div class="cl" style=" background-color:#5bacb6">
+  <img class="avatar size-XL radius" src="" id="avatar_url">
+
+    <span class="f-18" id="nick"></span>
+  <table class="table">
+    <tbody>
+    <tr>
+      <td><strong>账号类型：</strong><span id="user_type"></span>&nbsp;&nbsp;&nbsp;&nbsp;<strong>性别：</strong><span id="sex"></span>&nbsp;&nbsp;&nbsp;&nbsp;<strong>钓龄：</strong><span id="fishAge"></span>
+        &nbsp;&nbsp;&nbsp;&nbsp;<strong>注册时间：</strong><span id="created"></span>&nbsp;&nbsp;&nbsp;&nbsp;<strong>渔获分：</strong><span id="score"></span>
+        &nbsp;&nbsp;&nbsp;&nbsp;<strong>地址：</strong><span id="address"></span> &nbsp;&nbsp;&nbsp;&nbsp;<strong>子牙号：</strong><span id="invite_code"></span>&nbsp;&nbsp;&nbsp;&nbsp;<strong>设备：</strong><span id="clinet_device"></span>
+      </td>
+    </tr>
+    </tbody>
+  </table>
+  &nbsp;&nbsp;&nbsp;&nbsp;<a href="javascript:;" onclick="toFreezeHtml()" class="btn btn-primary radius">申请封号</a>
+</div>
+<br>
+<div id="tab_demo" class="HuiTab" role="tablist">
+  <div class="tabBar cl"><span id="boutique_info">热门渔获(0)</span><span id="followed_info">粉丝(0)</span><span id="following_info">关注(0)</span><span id="post_info">渔获(0)
+  </span><span id="tools_info">装备(0)</span>
+    <span id="related_info">参与</span><span id="collect_info">收藏</span>
+    <span id="created_activiy_info">创建的活动</span><span id="join_activiy_info">参加的活动</span></div>
+  <div class="tabCon">
+    <iframe  width="100%" height="400px" id="myBoutiquePost" frameborder="0"></iframe>
+  </div>
+  <div class="tabCon">
+    <iframe  width="100%" height="400px" id="myFollowed" frameborder="0"></iframe>
+  </div>
+  <div class="tabCon">
+    <iframe  width="100%" height="400px" id="myFollowing"></iframe>
+  </div>
+  <div class="tabCon">
+    <iframe  width="100%" height="400px" id="myPost"></iframe>
+  </div>
+  <div class="tabCon">
+    <iframe  width="100%" height="400px" id="myTools"></iframe>
+  </div>
+  <div class="tabCon">
+    <iframe  width="100%" height="400px" id="myRelated"></iframe>
+  </div>
+  <div class="tabCon">
+    <iframe  width="100%" height="400px" id="myCollect"></iframe>
+  </div>
+  <div class="tabCon">
+    <iframe  width="100%" height="400px" id="created_activiy"></iframe>
+  </div>
+  <div class="tabCon">
+    <iframe  width="100%" height="400px" id="joined_activiy"></iframe>
+  </div>
+
+</div>
+<script type="text/javascript" src="lib/jquery.min.js"></script>
+<script type="text/javascript" src="lib/layer1.8/layer.min.js"></script>
+<script type="text/javascript" src="js/H-ui.js?t=11"></script>
+<script type="text/javascript" src="js/H-ui.admin.js"></script>
+<script type="text/javascript" src="bizjs/map.js"></script>
+<script type="text/javascript" src="bizjs/base.js"></script>
+<script type="text/javascript" src="bizjs/user-show.js?t=1352"></script>
+
+
+<script>
+  var username=""
+  $(function(){
+    init()
+    username=queryString("username")
+    loadUserDetail(username);
+    $.Huitab("#tab_demo .tabBar span","#tab_demo .tabCon","current","click","0");
+    $('#myBoutiquePost').attr("src", "user-post-list.html?username="+username+"&boutique=1&t="+new Date().getTime());
+//    $('#myFollowed').attr("src","followed-list.html?username="+username+"&t="+new Date().getTime());
+//    $('#myFollowing').attr("src","following-list.html?username="+username+"&t="+new Date().getTime());
+
+//    $('#myPost').attr("src","user-post-list.html?username="+username+"&t="+new Date().getTime());
+//    $('#myCollect').attr("src","collection-post-list.html?username="+username+"&t="+new Date().getTime());
+//    $('#myRelated').attr("src","related-post-list.html?username="+username+"&t="+new Date().getTime());
+//    $('#created_activiy').attr("src","user-created-activity.html?username="+username+"&t="+new Date().getTime());
+//    $('#joined_activiy').attr("src","user-joined-activity.html?username="+username+"&t="+new Date().getTime());
+
+  })
+
+  function toFreezeHtml(){
+    layer_show('600','300','申请冻结','user-freeze-confirm.html?username='+username)
+  }
+</script>
+</body>
+</html>

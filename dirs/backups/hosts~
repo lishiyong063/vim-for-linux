@@ -1,0 +1,25 @@
+127.0.0.1 localhost
+127.0.1.1	localhost.localdomain	localhost
+
+# The following lines are desirable for IPv6 capable hosts
+::1     localhost ip6-localhost ip6-loopback
+ff02::1 ip6-allnodes
+ff02::2 ip6-allrouters
+10.170.197.140 iZ25dt5wgg8Z
+10.80.54.189 mongodb.nbchatV5.com
+10.80.54.189 mongodb_slave.nbchatV5.com
+10.80.54.189 mongodb_ziya.nbchatV5.com
+10.80.54.189 redis.nbchatV5.com
+10.80.54.189 mongodb_weather.nbchatV5.com
+10.80.54.189 mongodb_im.nbchatV5.com
+10.80.54.189 redis_ziya.nbchatV5.com
+10.80.54.189 redis.nbchatV5.com
+10.80.54.189 redis_weibo.nbchatV5.com
+
+
+47.95.38.67 ziya.shop.ziyadiaoyu.com
+47.95.38.67 msg.shop.ziyadiaoyu.com
+47.95.38.67 search.shop.ziyadiaoyu.com
+47.95.38.67 xcx.shop.ziyadiaoyu.com
+
+

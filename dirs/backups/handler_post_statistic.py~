@@ -1,0 +1,127 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# @Date    : 2015-06-26 10:41:52
+# @Author  : Your Name (you@example.org)
+# @Link    : http://example.org
+# @Version : $Id$
+from handler_baseHt import BaseHtHandler
+from log import get_logger
+import tornado.web
+from tornado.web import asynchronous
+from tornado.options import options
+import json
+import hashlib
+import datetime
+import hashlib
+import random
+import pymongo
+import time
+from log import get_logger
+from model.accounts_ht import Account_ht
+from model.users import Users
+import optionsSetting
+import datetime
+from utils.secret import *
+import traceback
+from utils.redis_client import RedisClient
+from mongo_field_encoder import MongoFieldEncoder
+from mongolog import MongoHandler
+from mongokit.helpers import totimestamp, fromtimestamp
+from utils.token_im import TokenService
+from tornado.httpclient import HTTPRequest
+from utils.mongo_front import MongoFront
+import copy
+from auth import requires_auth
+try:
+    from tornado.curl_httpclient import CurlAsyncHTTPClient as AsyncHTTPClient
+except ImportError:
+    from tornado.simple_httpclient import SimpleAsyncHTTPClient as AsyncHTTPClient
+log = get_logger()
+class PostStatisticHandler(BaseHtHandler):
+    @requires_auth
+    @asynchronous
+    def get(self):
+        log.info("PostStatisticHandler.get start")
+        type=self.get_argument('type','gps')
+        if type=="hour":
+            # key = ''' function(obj){return {'hour':obj.created.getFullYear()+"-"+(obj.created.getMonth()+1)+"-"+obj.created.getDate()} }'''
+            # key = ''' function(obj){return {hour:obj.created.getHours()} }'''
+            key = '''
+                    function(doc){
+                        var date = new Date(doc.created);
+                        var dateKey = date.getFullYear()+"-"+(date.getMonth()+1)+"-"+date.getDate()+"/"+date.getHours();
+                        return {'hour':dateKey};
+                    }
+                  '''
+        else:
+            key = ["gps_info.city"]
+        condition = {'deleted': {'$ne': True}}
+        datemin = self.get_argument('datemin',None)
+        datemax = self.get_argument('datemax',None)
+        if datemin!=None:
+           log.info("datemin:"+datemin)
+           datemin = datetime.datetime.strptime(datemin, "%Y-%m-%d")
+           condition["created"]={"$gte":datemin}
+ 
+        if datemax!=None:
+           log.info("datemax:"+datemax)
+           datemax = datetime.datetime.strptime(datemax, "%Y-%m-%d")
+           created = condition["created"]
+           created["$lte"] = datemax
+           condition["created"]=created
+        func = '''function(obj, prev) { prev.count+=1;}'''
+        response = self.count(key,condition,func,type)
+        response = json.dumps(response,
+                                  indent=2,
+                                  ensure_ascii=False,
+                                  cls=MongoFieldEncoder)
+        self.write(response)
+        self.finish()
+
+
+
+
+
+
+    def count(self,key,condition,func,type=None):
+        initial = {'count': 0}
+
+        post_activities = MongoFront.group('posts',key,condition,initial,func)
+        response = {}
+        entities = []
+        if type=="hour":
+            entities={}
+        self.hour_dic = {}
+        for post_activity in post_activities:
+                if type=="hour":
+                    log.info("post_activity:"+str(post_activity))
+                    hour=post_activity["hour"]
+                    day_hour_array=hour.split("/")
+                    date_info=day_hour_array[0]
+                    hour_info=day_hour_array[1]
+
+                    value={"hour":hour_info,"count":post_activity["count"]}
+                    if entities.has_key(date_info):
+                        entities[date_info].append(value)
+                    else:
+                        date_temp=[value]
+                        entities[date_info]=date_temp
+
+                else:
+                    entities.append(post_activity)
+
+        response["entities"] = entities
+
+        return response
+    
+    
+    def sortBy24Hour(self):
+        entities = []
+        for i in range(0, 23):
+            count = self.hour_dic.get(i,0)
+            if count!=0:
+                info = {"hour":i,"count":count}
+                entities.append(info)
+        return entities
+        
+

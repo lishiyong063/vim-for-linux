@@ -1,0 +1,16 @@
+#!/bin/bash
+
+Prefix='fishing_houtai_back'            #获取备份文件名前缀 如：test_ 或 mysql_（作用是标示备份文件来源）
+Backups_dir='/mnt/app_back/'            #保存备份文件的目录
+Backup_dir='./'                         #获用户输入的源目录（需要备份的目录）
+Backup_date=`date +"%Y%m%d_%H%M%S"`     #获取当前时间作为备份文件名
+
+find $Backup_dir -mtime +30 -type f |xargs rm -f   # 删除30天之前的文件
+tar zcvf ${Backups_dir}${Prefix}${Backup_date}.tar.gz * > /dev/null #打包压缩备份文件
+
+if [ $? -eq 0 ];then
+    echo "${Backups_dir}${Prefix}${Backup_date}.tar.gz 备份成功" 
+else 
+    echo "${Backups_dir}${Prefix}${Backup_date}.tar.gz 备份失败" 
+fi
+echo "${Backups_dir}${Prefix}${Backup_date}.tar.gz" > ${Backups_dir}/backups.log #将备份文件位置目录写入日志文件

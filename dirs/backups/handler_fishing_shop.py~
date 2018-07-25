@@ -1,0 +1,520 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# @Date    : 2014-12-05 15:45:20
+# @Author  : Your Name (you@example.org)
+# @Link    : http://example.org
+# @Version : $Id$
+
+from __future__ import division
+from access_track import access_log
+from tornado.web import asynchronous
+from tornado.options import options
+
+from mongokit import *
+from mongokit.helpers import totimestamp, fromtimestamp
+from mongo_field_encoder import MongoFieldEncoder
+from handler_base import BaseHandler
+from services.service_post_list import *
+from auth import requires_auth
+import traceback
+import json
+from bson import ObjectId
+import datetime
+import random
+from log import get_logger
+from model.posts import Post
+from model.user_post_activiy import User_post_activiy
+from model.user_collect_post import User_collect_post
+from model.user_collect_tool import User_collect_tool
+from utils.redis_client import RedisClient
+from services.service_activity import *
+from tornado import gen
+from tornado.escape import url_escape
+from services.service_article import *
+from services.service_shop import *
+from utils.mongo_client import MongoClient
+from services.service_fishing_shop import *
+from services.service_geocoder import *
+from services.city_location import *
+from services.service_fishing_place import get_image_info, get_gps_info
+
+
+
+log = get_logger()
+
+location_dic = get_city_location()
+
+class FishingShopHandler(BaseHandler):
+
+    def __init__(self, application, request, **kwargs):
+        super(FishingShopHandler, self).__init__(application, request, **kwargs)
+        # 默认钓场营业时间
+        self.begin_time = "8:00"
+        self.end_time = "20:00"
+        # 用户角色对应
+        self.roles = {
+            '1': "钓友",
+            '2': "老板",
+            '3': "管理员",
+        }
+
+    """
+    获取渔具店信息列表
+    """
+
+    @gen.coroutine
+    @asynchronous
+    @access_log
+    def get(self,shop_id):
+        """ @Args:
+        status  (0,2,3) - (待审核,审核通过,下架)
+        page 图片列表
+        """
+
+        self.set_header("Access-Control-Allow-Origin", "*")
+        log.info('FishingShopHandler.get is called'+str(self.request.arguments))
+
+        if shop_id is not None:
+            shop_id = shop_id[1:]
+            self.fetch_shop(shop_id)
+        else:
+            self.fetch_shops()
+
+    @gen.coroutine
+    @asynchronous
+    @requires_auth
+    def post(self, id=None):
+        log.info("FishingShopHandler.post:" + str(self.request.body))
+        try:
+            body_dic = json.loads(self.request.body, encoding="utf-8")
+            page, gps_info, address, begin_time, end_time = \
+                [body_dic.get(i, '') for i in ['page', 'gps_info', 'address', 'begin_time', 'end_time']]
+
+            # 默认上传方式为钓友
+            role = body_dic.get("role", "1")
+            # 品牌&售后
+            brand_after_sale = body_dic.get("brand_after_sale", "")
+            wechat_number = body_dic.get("wechat_number", "")
+            if not all([wechat_number, page, gps_info, address, role in self.roles.keys()]):
+                self.fire_response_bad_content("error", "data error!", "数据有误")
+                return
+
+            # 0待审核 1审核通过 2已下架 
+            body_dic["status"] = 0
+            body_dic["username"] = self.username
+            # 子牙发布标示 1 后台管理员 2 用户发布
+            body_dic["from"] = 2
+            # 默认上传者身份为钓友
+            body_dic["role"] = role
+            body_dic["begin_time"] = begin_time or self.begin_time
+            body_dic["end_time"] = end_time or self.end_time
+            # 电话默认拨打次数
+            body_dic["tel_count"] = random.randrange(0, 5)
+            body_dic["created"] = datetime.datetime.utcnow()
+            # 默认查看次数
+            body_dic["display_count"] = random.randrange(10, 20)
+            body_dic["cover"] = page[0]
+            body_dic["pages"] = page[1:]
+
+            where = {
+                "key": "fishing_shop"
+            }
+            update = {
+                "$inc": {
+                    "value": 1
+                }
+            }
+            shop_num = MongoClient.find_and_modify(where, update, "ziya_counter")
+            body_dic["shop_num"] = shop_num["value"]
+
+            # gps_info = get_gps_info(lon, lat)
+            # gps_info["address"] = address
+            lon = gps_info["location"].get("lon")
+            lat = gps_info["location"].get("lat")
+            gps_info["location"] = {"type": "Point", "coordinates": [lon, lat]}
+            body_dic["gps_info"] = gps_info
+            body_dic["contact_tel"] = body_dic["contact_tel"].replace("，", ",").split(",")
+
+            body_dic.pop("address", "")
+            # 经纬度 出错不能入库
+            MongoClient.insert(body_dic, "fishing_store")
+            self.set_status(200)
+            self.write({})
+            self.finish()
+        except Exception as e:
+            log.info('FishingShopHandler.post Exception:%s' % e.message)
+            log.error(traceback.format_exc())
+            self.fire_response_bad_request(key_required=e.message)
+            return
+
+    @requires_auth
+    @asynchronous
+    def put(self, id=None):
+        log.info("FishingShopHandler.put:" + str(self.request.body))
+        try:
+            if id:
+                id = id[1:]
+                body_dic = json.loads(self.request.body, encoding="utf-8")
+                flag = body_dic.get("flag", "")
+                # 图片
+                page = body_dic.get("page", [])
+                lon = body_dic.get("lon", [])
+                lat = body_dic.get("lat", [])
+                # 封面图片
+                cover = body_dic.get("cover", "")
+                address = body_dic.get("address", "")
+                body_dic.pop("flag", "")
+                where = {
+                    "_id": ObjectId(id)
+                }
+                if flag == "delete":
+                    # 下架
+                    delete_update = {
+                         "$set": {
+                            "status": 2
+                            }
+                    }
+                    MongoClient.update(where, delete_update, "fishing_store")
+                if flag == "modify":
+                    cover, flag = get_image_info(cover)
+                    body_dic["cover"] = cover
+                    if page:
+                        page_list = []
+                        for img in page:
+                            img_body, flag = get_image_info(img)
+                            page_list.append(img_body)
+                        body_dic["pages"] = page_list
+                    else:
+                        body_dic.pop("page", "")
+                    gps_info = get_gps_info(lon, lat)
+                    gps_info["address"] = address
+                    body_dic["gps_info"] = gps_info
+                    body_dic["contact_tel"] = body_dic["contact_tel"].replace("，", ",").split(",")
+
+                    update_data = {
+                        "$set": body_dic
+                    }
+                    MongoClient.update(where, update_data, "fishing_store")
+                self.set_status(200)
+                self.write(json.dumps({}, indent=2, ensure_ascii=False))
+                self.finish()
+        except Exception as e:
+            log.info('FishingShopHandler.put Exception:%s' % e.message)
+            log.error(traceback.format_exc())
+            self.fire_response_bad_request(key_required=e.message)
+            return
+
+
+
+    @gen.coroutine
+    def fetch_shops(self):
+        response_dic={}
+        shop_cursor=""
+        try:
+            limit = 10
+            gps_info={}
+            request_cursor = self.get_argument('cursor', '')
+            shop_where = {
+                "status":1
+            }
+            keyword = self.get_argument('keyword', '')
+            map = self.get_argument('map', '')
+            near = self.get_argument('near', '')
+            sort = self.get_argument('sort', '10')
+            # 关键字搜索
+            if keyword:
+                shop_where["name"]={"$regex":keyword,"$options":'i'}
+                if request_cursor:
+                    shop_where["shop_num"]={"$gt":int(request_cursor)}
+                fishing_shop_array, shop_cursor = getShopByKw(shop_where)
+            # 附近查询
+            elif near:
+                # 检查经纬度
+                self.location_check()
+
+                lon = float(self.get_argument("lon"))
+                lat = float(self.get_argument("lat"))
+                coordinates = [lon, lat]
+                distance = 50
+                min = 0.0
+                if request_cursor:
+                    min = float(request_cursor)
+                # 附近的钓场查询
+                fishing_shop_array, shop_cursor = getNearShops(where=shop_where, center=coordinates, min=min,
+                                                                  maxDistance=int(distance) * 1000, limit=limit)
+            # 地图查询
+            elif map:
+                # 检查经纬度
+                self.location_check()
+                lon = float(self.get_argument("lon"))
+                lat = float(self.get_argument("lat"))
+                coordinates = [lon, lat]
+                distance = 50
+                min = 0.0
+                # limit = 20
+                # 附近的钓场查询
+                fishing_shop_array, cursor = getNearShops(where=shop_where, center=coordinates, min=min,
+                                                                  maxDistance=int(distance) * 1000)
+            # 按城市、距离查询
+            else:
+                # 检查经纬度
+                self.location_check()
+                # all:1 不限城市
+                all = self.get_argument('all', '')
+                lon = float(self.get_argument("lon"))
+                lat = float(self.get_argument("lat"))
+
+                coordinates = [lon, lat]
+
+                gps_info = location_dic.get(str(lat)+str(lon))
+                #log.info("*******gps_info********"+str(gps_info))
+                if not gps_info:
+                    gps_info = yield geocoderByGaode(lon, lat)
+                else:
+                    log.info("*******success in get city info local********")
+                # 按城市查询
+                if all:
+                    city_name = gps_info["city"]
+                    shop_where["gps_info.city"]=city_name
+                # 按区查询
+                else:
+                    area = gps_info["area"]
+                    city_name = gps_info["city"]
+                    shop_where["gps_info.area"] = area
+                    shop_where["gps_info.city"] = city_name
+
+                # 人气查询
+                if sort == u'20':
+                    sort_key = "display_count"
+                    if request_cursor:
+                        shop_where[sort_key] = {"$lt": int(request_cursor)}
+                    fishing_shop_array, shop_cursor = getShopList(shop_where, sort_key=sort_key)
+                elif sort==u"10":
+                    lon = float(self.get_argument("lon_local",lon))
+                    lat = float(self.get_argument("lat_local",lat))
+
+                    coordinates_local = [lon, lat]
+                    coordinate_len = getDistance(coordinates, coordinates_local)
+                    if coordinate_len / 1000 <= 500:
+                        coordinates = coordinates_local
+
+
+                    min = 0.0
+                    if request_cursor:
+                        min = float(request_cursor)
+
+                    # 附近的渔具店查询
+                    fishing_shop_array, shop_cursor = getNearShops(where=shop_where, center=coordinates, min=min,
+                                                                   maxDistance=int(options.max_distance) * 1000, limit=limit)
+
+                else:
+
+                    # 距离查询
+                    coordinates = [lon, lat]
+                    distance = self.get_argument("distance", "0")
+                    # 同城或不选距离，默认距离为500km
+                    if distance == "0":
+                        # 同城查询500km的
+                        distance = 500
+                    min = 0.0
+                    if request_cursor:
+                        min = float(request_cursor)
+
+                    # 附近的钓场查询
+                    fishing_shop_array, shop_cursor = getNearShops(where=shop_where, center=coordinates, min=min,
+                                                                  maxDistance=int(distance) * 1000, limit=limit)
+            # 组装返回信息
+            entities = assembleShopInfo(fishing_shop_array)
+            os, version = self.getClientVersion()
+            if version >= "3.2.0":
+                if len(entities) >= 5:
+                    entities[4] = {
+                        "type": "adhub",
+                        "ios_ad_id": "5616",
+                        "an_ad_id": "5679",
+                        "width": "400",
+                        "height": "300"
+                    }
+            response_dic["entities"] = entities
+
+            # 距离筛选控制
+            response_dic["distance"] = options.fishing_place_dis
+
+            # 城市信息
+            if gps_info:
+                response_dic["gps_info"] = gps_info
+
+            # 距离、人气筛选控制
+            fishing_shop_sort = copy.deepcopy(options.fishing_place_sort)
+            for shop_sort in fishing_shop_sort:
+                code = shop_sort["code"]
+                if code == int(sort):
+                    shop_sort["selected"] = True
+            response_dic["sort"] = fishing_shop_sort
+
+            if shop_cursor:
+                response_dic["cursor"] = shop_cursor
+
+            # 渔具店评论 默认显示两条
+            shop_comment_list = []
+            try:
+                comments_list, cursor = getShopCommentList(where, limit=2)
+                for comment in comments_list:
+                    user = MongoClient.find_one({"username": comment["username"]}, 'users')
+                    userinfo = {
+                        "username": user["username"],
+                        "nickname": user["nick"],
+                        "avator": user["avatar_url"],
+                    }
+                    dic = {"userinfo": userinfo, 'comment_content': comment['content'], 
+                           'pages': comment.get("pages", ""), 
+                           'stars': comment.get("stars", ""), 
+                           "created": comment["created"]}
+
+                    shop_comment_list.append(dic)
+            except Exception as e:
+                log.error(traceback.format_exc())
+
+            # 身份标识
+            response_dic["comment_list"] = shop_comment_list
+            response_dic["role"] = self.roles
+            response = json.dumps(response_dic,
+                                  indent=2,
+                                  ensure_ascii=False,
+                                  cls=MongoFieldEncoder)
+            self.write(response)
+            self.finish()
+
+        except Exception as e:
+            log.error("FishingPlaceHandler exception:" + e.message)
+            log.error(traceback.format_exc())
+            self.fire_response_sys_error()
+
+    def fetch_shop(self,shop_id):
+        try:
+            response_dic = {}
+            where = {
+                "status": 1,
+                "_id": ObjectId(shop_id)
+            }
+            filter = {"shop_id": 0, "tel_count":0}
+            store_tmp = MongoClient.find_one(where, "fishing_store",filter=filter)
+            if store_tmp.has_key("contact_tel"):
+                store_tmp["tel_auth"] = 1
+
+            cover_temp = store_tmp.get("cover", {})
+            pages = store_tmp.get("pages", [])
+            store_from = store_tmp.get("from", 0)
+            return_pages = []
+
+            if cover_temp:
+                image_url = cover_temp.get("image_url", "")
+                if image_url:
+                    image_url_temp = image_url + "?watermark/1/image/" + options.util_watermask + "/dissolve/100/gravity/SouthEast/dx/0/dy/0"
+                    cover_temp["image_url"] = image_url_temp
+                    return_pages.append(cover_temp)
+
+            if store_from:
+                for page in pages:
+                    image_url = page.get("image_url", "")
+                    if image_url:
+                        image_url_temp = image_url + "?watermark/1/image/" + options.util_watermask + "/dissolve/100/gravity/SouthEast/dx/0/dy/0"
+                        page["image_url"] = image_url_temp
+                    return_pages.append(page)
+
+            store_tmp["pages"] = return_pages
+
+            # 获附近的渔具店
+            coordinates = store_tmp["gps_info"]["location"]["coordinates"]
+
+            lon = float(coordinates[0])
+            lat = float(coordinates[1])
+            coordinates = [lon, lat]
+            distance = self.get_argument("distance", "20")
+            min = 0.0
+            post_cursor_req = "2730122372130"
+            timestamp = post_cursor_req
+            shop_where = {"status":1}
+            shop_where["_id"] = {"$ne":ObjectId(shop_id)}
+            limit=2
+            # 附近的钓场
+            fishing_shop_array, shop_cursor = getNearShops(where=shop_where, center=coordinates, min=min,
+                                                              maxDistance=int(distance) * 1000, limit=limit)
+            # 附近的渔获
+            post_where = {
+                "deleted": {"$ne": True},
+                "sold_out": {"$ne": "1"},
+                "yuhuo_type": 0
+            }
+            fishing_post_array, posts_cursor, post_id_array = getNearPosts(where=post_where, center=coordinates,
+                                                                    username=self.username,min=min,
+                                                                   maxDistance=int(distance) * 1000, limit=limit,
+                                                                   timestamp=timestamp)
+
+            entities=[]
+            entities.append(store_tmp)
+            response_dic["entities"] = entities
+            if fishing_shop_array:
+                near_entities = assembleShopInfo(fishing_shop_array)
+                shop_near = {'entities':near_entities}
+                if shop_cursor:
+                    shop_near["cursor"] = shop_cursor
+                response_dic["shop_near"] = shop_near
+
+            if fishing_post_array:
+                post_near = {'entities': fishing_post_array}
+                if posts_cursor!="-1":
+                    post_near["cursor"]= posts_cursor
+                response_dic["post_near"] = post_near
+
+            # 广告位
+            response_dic["banners"] = self.get_banner_ad("new")
+            response_dic["role"] = self.roles
+
+            response = json.dumps(response_dic,
+                                  indent=2,
+                                  ensure_ascii=False,
+                                  cls=MongoFieldEncoder)
+            self.write(response)
+            self.finish()
+
+            # 是否收藏
+            where = {
+                'shop_id': shop_id,
+                'username': unicode(self.username)
+            }
+
+            collect_shop = MongoClient.find_one(where, "user_collect_shop")
+            response["is_collect"] = bool(collect_shop)
+
+
+            # 添加浏览次数和电话次数
+            display_count_inc = 1
+            tel_count_inc = 1
+
+            update_val = {
+                "$inc":{"display_count":display_count_inc,"tel_count":tel_count_inc}
+            }
+            MongoClient.update(where,update_val,"fishing_store")
+
+
+        except Exception as e:
+            log.error("FishingShopHandler exception:" + e.message)
+            log.error(traceback.format_exc())
+            self.fire_response_sys_error()
+
+    def location_check(self):
+        response_dic={}
+        lon = self.get_argument("lon", "")
+        lat = self.get_argument("lat", "")
+        if not lon or not lat:
+            response_dic["error_reason"] = "coordinate is need"
+
+            response = json.dumps(response_dic,
+                                  indent=2,
+                                  ensure_ascii=False,
+                                  cls=MongoFieldEncoder)
+
+            self.write(response)
+            self.finish()
+            return

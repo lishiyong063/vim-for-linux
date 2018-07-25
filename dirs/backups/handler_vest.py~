@@ -1,0 +1,235 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# @Date    : 2015-05-18 17:41:52
+# @Author  : Your Name (you@example.org)
+# @Link    : http://example.org
+# @Version : $Id$
+from handler_baseHt import BaseHtHandler
+from log import get_logger
+import tornado.web
+from tornado.web import asynchronous
+from tornado.options import options
+import json
+import hashlib
+import datetime
+import hashlib
+import random
+from utils.mongo_front import MongoFront
+import pymongo
+import time
+from log import get_logger
+from model.accounts_ht import Account_ht
+from model.users import Users
+import optionsSetting
+from utils.secret import *
+import traceback
+from utils.redis_client import RedisClient
+from mongo_field_encoder import MongoFieldEncoder
+from mongolog import MongoHandler
+from mongokit.helpers import totimestamp, fromtimestamp
+from utils.token_im import TokenService
+from tornado.httpclient import HTTPRequest
+from utils.mongo_client import MongoClient
+from tornado import gen
+from auth import requires_auth
+try:
+    from tornado.curl_httpclient import CurlAsyncHTTPClient as AsyncHTTPClient
+except ImportError:
+    from tornado.simple_httpclient import SimpleAsyncHTTPClient as AsyncHTTPClient
+log = get_logger()
+class VestHandler(BaseHtHandler):
+    @asynchronous
+    @requires_auth
+    @tornado.gen.engine
+    def get(self):
+        log.info("UserHandler.get:"+self.request.body)
+        self.set_header("Access-Control-Allow-Origin", "*")
+        
+        username = self.get_argument('username',"")
+        
+        response={}
+        user_json=MongoFront.find_one({"mobile":username},"accounts")
+        log.info("user_json:"+str(user_json))
+        if user_json:
+            user_info={
+                "username":username,
+                "password":user_json["password"],
+                "grant_type":"password"
+            }
+
+            server_url=options.fish_front_end_server+"/login"
+            request = HTTPRequest(url=server_url,\
+                                  method="POST", \
+                                  body=json.dumps(user_info,indent=2, ensure_ascii=False,cls=MongoFieldEncoder),\
+                                  follow_redirects=False,\
+                                  request_timeout=3000)
+
+            response=yield gen.Task(AsyncHTTPClient().fetch,request)
+
+            if response.body:
+                log.info("response.body:"+response.body+"  code:"+str(response.code))
+
+
+            self.write(response.body)
+            self.finish()
+
+    @asynchronous
+    @tornado.gen.engine
+    def post(self):
+        log.info("UserHandler.post:"+self.request.body)
+        self.set_header("Access-Control-Allow-Origin", "*")
+        body_dic = json.loads(self.request.body,encoding="utf-8")
+       
+           
+        act = body_dic.get("act",None)             
+        log.info("act:"+act)
+        if act=="add":
+            self.new_user(body_dic)
+        if act=="edit":
+            self.edit_user(body_dic)
+
+    @asynchronous
+    def delete(self):
+        username = self.get_argument('username', '')
+        where={
+            "username":username
+        }
+        user=MongoFront.find_one(where,"users")
+        if user:
+            user_type=user.get("user_type","")
+            belong_to=user.get("belong_to","")
+            if user_type=="2" and belong_to!="":
+                update_value={
+                    "$set":{
+                       "user_type":"7"
+                    },
+                    "$unset":{
+                        "belong_to":""
+                    }
+                }
+                MongoFront.update(where,update_value,"users")
+                self.write("{}")
+                self.finish()
+
+
+
+    @tornado.gen.engine
+    def new_user(self,body_dic):
+        avatar_url = body_dic.get('avatar_url',"")
+        nick = body_dic.get('nick',"")
+        sex = body_dic.get('sex',"")
+        fishAge = body_dic.get('fishAge',"0")
+        gps_info = body_dic.get('gps_info',{})
+        response={}
+        # self.write(json.dumps(response,indent=2, ensure_ascii=False,cls=MongoFieldEncoder))
+        # self.finish()
+
+        log.info("username:"+self.username)
+
+
+        user_info={
+            "nick":nick,
+            "avatar_url":avatar_url,
+            "user_type":"2",
+            "sex":sex,
+            "password":options.vest_user_password,
+            "belong_to":self.username,
+            "mobile":str(int(time.time())),
+            "gps_info":gps_info,
+            "fishAge":fishAge
+        }
+
+        server_url=options.fish_front_end_server+"/register"
+        request = HTTPRequest(url=server_url,\
+                              method="POST", \
+                              body=json.dumps(user_info,indent=2, ensure_ascii=False,cls=MongoFieldEncoder),\
+                              follow_redirects=False,\
+                              request_timeout=3000)
+
+        # log.info("server_url:"+server_url)
+        response=yield gen.Task(AsyncHTTPClient().fetch,request)
+
+        if response.body:
+            log.info("response.body:"+response.body+"  code:"+str(response.code))
+        
+        self.finish()
+        #self.redirect('/static/op_success.html')
+
+
+    @tornado.gen.engine
+    def edit_user(self,body_dic):
+        log.info("edit_user")    
+
+        username = body_dic.get('username',"")
+        log.info("username:"+username)
+        
+        avatar_url = body_dic.get('avatar_url',"")
+        log.info("avatar_url:"+avatar_url)
+
+        nick = body_dic.get('nick',"")
+        log.info("nick:"+nick)     
+
+        sex = body_dic.get('sex',"")
+        log.info("sex:"+sex)    
+
+        token = body_dic.get('token',"")
+        log.info("toen:"+token)    
+        
+        gps_info = body_dic.get('gps_info',"")
+        log.info("gps_info:"+str(gps_info))
+
+        fishAge = body_dic.get('fishAge',"0")
+        fishingSkill = body_dic.get('fishingSkill', [])
+        
+        response={}
+
+        request_body={
+            "nick":nick,
+            "sex":sex,
+            "fishAge":fishAge,
+            "gps_info":gps_info,
+            "fishingSkill": fishingSkill,
+            "k":"h6xWTnjyRF1Kxolr"
+        }
+
+        if avatar_url!="":
+            request_body["avatar_url"]= avatar_url
+        if gps_info:
+            location=gps_info.get("location",{})
+            if location:
+                coordinates=location.get("coordinates",[])
+                if coordinates:
+                    coordinates=[float(i) for i in coordinates]
+                    gps_info["location"]["coordinates"]=coordinates
+            request_body["gps_info"]= gps_info
+
+        url = options.fish_front_end_server+"/users"
+        log.info("url:"+url)
+        headers = {}
+        headers["Host"] = options.api_host
+        headers["Authorization"]=" Bearer %s"%(token)
+        request = HTTPRequest(url=url,\
+                              method="PUT", \
+                              headers=headers, \
+                              body=json.dumps(request_body,indent=2, ensure_ascii=False,cls=MongoFieldEncoder), \
+                              follow_redirects=False,\
+                              request_timeout=3000)
+        
+        response=yield gen.Task(AsyncHTTPClient().fetch,request)
+
+        if response.body:
+            log.info("response.body:"+response.body+"  code:"+str(response.code))
+        
+
+        self.redirect('/static/op_success.html')
+
+    def fire_response_bad_response(self):
+        """
+        返回登录请求错误响应
+        """
+        self.set_status(400)
+        response = {}
+        response["error"] = "invalid_grant"
+        response["error_description"] = "invalid username or password"
+        self.write(json.dumps(response, indent=2, ensure_ascii=False))
+        self.finish()

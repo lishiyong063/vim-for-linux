@@ -1,0 +1,150 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# @Date    : 2015-05-18 17:41:52
+# @Author  : Your Name (you@example.org)
+# @Link    : http://example.org
+# @Version : $Id$
+from handler_baseHt import BaseHtHandler
+from log import get_logger
+import tornado.web
+from tornado.web import asynchronous
+from tornado.options import options
+import json
+import hashlib
+import datetime
+from services.service_post import *
+import re
+import hashlib
+from bson import ObjectId
+import random
+import time
+from log import get_logger
+from model.city_partner import City_Partner
+from model.city_partner_cash_apply_history import City_Partner_Cash_Apply
+import optionsSetting
+from utils.secret import *
+import traceback
+from utils.redis_client import RedisClient
+from utils.mongo_front import MongoFront
+from mongo_field_encoder import MongoFieldEncoder
+from mongolog import MongoHandler
+from mongokit.helpers import totimestamp, fromtimestamp
+from utils.token_im import TokenService
+from tornado.httpclient import HTTPRequest
+from utils.mongo_client import MongoClient
+import pymongo
+from auth import requires_auth
+from services.service_admin_log import save_log
+try:
+    from tornado.curl_httpclient import CurlAsyncHTTPClient as AsyncHTTPClient
+except ImportError:
+    from tornado.simple_httpclient import SimpleAsyncHTTPClient as AsyncHTTPClient
+log = get_logger()
+class CityPartnerAwardApplyHandler(BaseHtHandler):
+
+    @asynchronous
+    @requires_auth
+    def get(self,partner_id_flag):
+        log.info("CityPartnerAwardApplyHandler.get is called:")
+
+        if partner_id_flag is not None:
+            partner_id = partner_id_flag[1:]
+            self.fetch_partner(partner_id)
+        else:
+            self.fetch_partner_list()
+
+    def fetch_partner_list(self):
+        where={
+        }
+
+        limit=10
+        curr = self.get_argument('curr',"")
+        sort = [('created', pymongo.DESCENDING)]
+        # # log.info("curr:"+curr)
+        begin = self.get_argument('begin',None)
+        end = self.get_argument('end',None)
+        if begin!=None:
+           # log.info("datemin:"+datemin)
+           begin_date = datetime.datetime.strptime(begin, "%Y-%m-%d")-datetime.timedelta(hours=8)
+           where["created"]={"$gte":begin_date}
+
+        if end!=None:
+           # log.info("datemax:"+datemax)
+           end_date = datetime.datetime.strptime(end, "%Y-%m-%d")-datetime.timedelta(hours=8)
+           between={}
+           if where.has_key("created"):
+               between=where["created"]
+
+           between["$lte"]=end_date
+           where["created"]=between
+
+        ziya_code = self.get_argument('ziya_code',None)
+        if ziya_code:
+            lookup = {
+                'invite_code':ziya_code
+            }
+            city_partner=options.dbconn.City_Partner.find_one(lookup)
+            if city_partner:
+                where['partner_id']=str(city_partner["_id"])
+            else:
+                response={}
+                response["entities"]=[]
+                response["count"]="0"
+                self.write(json.dumps(response,indent=2, ensure_ascii=False,cls=MongoFieldEncoder))
+                self.finish()
+                return
+
+        status = self.get_argument('status',None)
+        if status is not None:
+            where['status']=int(status)
+
+
+
+        log.info("where:"+str(where))
+        # log.info("sort:"+str(sort))
+
+        if curr=="":
+            city_partner_cash_apply_cursor = options.dbconn.City_Partner_Cash_Apply.find(where).sort(sort).limit(limit)
+        else:
+            city_partner_cash_apply_cursor = options.dbconn.City_Partner_Cash_Apply.find(where).sort(sort).skip((int(curr)-1)*limit).limit(limit)
+
+        # log.info("post_cursor:"+str(post_cursor.count()))
+
+        city_partner_cash_apply_arrary=[]
+        partner_id_array=[]
+        for cash_apply in city_partner_cash_apply_cursor:
+            partner_id=cash_apply["partner_id"]
+            partner_id_array.append(ObjectId(partner_id))
+            city_partner_cash_apply_arrary.append(cash_apply)
+
+        where={
+            "_id":{"$in":partner_id_array}
+        }
+        city_partner_cursor=options.dbconn.City_Partner.find(where)
+        city_partner_dic={}
+        for city_partner in city_partner_cursor:
+            partner_id=str(city_partner["_id"])
+            city_partner_dic[partner_id]=city_partner
+
+        for cash_apply in city_partner_cash_apply_arrary:
+            partner_id=cash_apply["partner_id"]
+            if city_partner_dic.has_key(partner_id):
+                cash_apply["city_partner"]=city_partner_dic[partner_id]
+
+        response={}
+        response["entities"]=city_partner_cash_apply_arrary
+        response["count"]=str(city_partner_cash_apply_cursor.count())
+        self.write(json.dumps(response,indent=2, ensure_ascii=False,cls=MongoFieldEncoder))
+        self.finish()
+
+    def fetch_partner(self,partner_id):
+        lookup = {
+            '_id':ObjectId(partner_id)
+        }
+        city_partner_cash_apply=options.dbconn.City_Partner_Cash_Apply.find_one(lookup)
+        response={}
+        if city_partner_cash_apply:
+            response["entities"]=[city_partner_cash_apply]
+
+        self.write(json.dumps(response,indent=2, ensure_ascii=False,cls=MongoFieldEncoder))
+        self.finish()

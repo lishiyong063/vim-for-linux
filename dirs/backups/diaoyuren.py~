@@ -1,0 +1,25 @@
+# -*- coding: utf-8 -*-
+# Created Time: 2018-06-28 17:27:40
+import requests
+from lxml import etree
+from mongo_client import mongo
+
+
+for i in range(10000001, 10600001):
+    a = requests.get("http://www.diaoyu.com/user/%s"%i)
+    if a.status_code != 200:continue
+    xpath_obj = etree.HTML(a.content)
+    username = xpath.findall(".//div[@class='user-personal-name']")[0].text
+    img = xpath_obj.xpath("//div[@class='user-personal-img']/img/@src")[0]
+    platform = 'diaoyuren'
+    dic = {
+            "username": username,
+            "img_url": img,
+            "platform": platform,
+    }
+    print dic
+    mongo.insert(dic, "user_20180628")
+
+
+
+

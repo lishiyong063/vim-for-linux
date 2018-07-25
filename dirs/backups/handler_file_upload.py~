@@ -1,0 +1,121 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# @Date    : 2015-05-18 17:41:52
+# @Author  : Your Name (you@example.org)
+# @Link    : http://example.org
+# @Version : $Id$
+from handler_baseHt import BaseHtHandler
+from log import get_logger
+import tornado.web
+from tornado.web import asynchronous
+from tornado.options import options
+import json
+import hashlib
+import datetime
+import hashlib
+import random
+import pymongo
+import time
+from log import get_logger
+from model.accounts_ht import Account_ht
+from model.users import Users
+import optionsSetting
+from utils.secret import *
+import traceback
+from utils.redis_client import RedisClient
+from mongo_field_encoder import MongoFieldEncoder
+from mongolog import MongoHandler
+from mongokit.helpers import totimestamp, fromtimestamp
+from utils.token_im import TokenService
+from tornado.httpclient import HTTPRequest
+from utils.mongo_client import MongoClient
+from services.service_file_cloud import UploadFileToQiniu, GetFileToken
+import os
+import uuid
+import cStringIO, urllib2
+from tornado import gen
+try:
+    from tornado.curl_httpclient import CurlAsyncHTTPClient as AsyncHTTPClient
+except ImportError:
+    from tornado.simple_httpclient import SimpleAsyncHTTPClient as AsyncHTTPClient
+
+try:
+    from tornado.curl_httpclient import CurlAsyncHTTPClient as AsyncHTTPClient
+except ImportError:
+    from tornado.simple_httpclient import SimpleAsyncHTTPClient as AsyncHTTPClient
+log = get_logger()
+
+
+class FileUploadHandler(BaseHtHandler):
+    '''
+    图片上传包括三种情况
+    1.本地文件上传(默认) type="1"
+    '''
+    @gen.coroutine
+    @asynchronous
+    def post(self):
+        log.info("FileUploadHandler.get  is called:")
+        self.set_header("Access-Control-Allow-Origin", "*")
+        body_dic = json.loads(self.request.body, encoding="utf-8")
+        filename = body_dic.get("filename", None)
+        bucket_name = body_dic.get("bucket_name", "startup")
+        if not filename or not bucket_name:
+            self.fire_response_bad_content("error", "Filename is None", "Filename is None")
+
+        url, token = GetFileToken(filename, bucket_name)
+        response = {
+            "url": url,
+            "token": token
+        }
+        self.write(json.dumps(response,
+                              indent=2,
+                              ensure_ascii=False,
+                              cls=MongoFieldEncoder))
+        self.finish()
+
+        # qiniu_url = "http://o84ir2o49.bkt.clouddn.com/"
+        # type = self.get_argument("type","1")
+        # x1 = self.get_argument("x1","")
+        # if x1 == "" or x1=="undefined":
+        #     type="1"
+
+        # if type=="1":
+        #     filename = self.file_upload()
+        #     url = qiniu_url+filename
+        #     self.file_load_back(url)
+
+    '''
+    文件本地保存然后上传七牛
+    '''
+    def file_upload(self):
+        upload_path=os.path.join(os.path.dirname(__file__),'upload_files')
+        filepath,filename = self.file_request_get(upload_path)
+        UploadFileToQiniu(filepath,filename)
+        # img = Image.open(filepath)
+        # width = img.size[0]
+        # height = img.size[1]
+        return filename
+
+    def file_load_back(self,url):
+        log.info("url:"+url)
+        response={
+            "filename":url,
+           # "width":width,
+           # "height":hei
+        }
+
+        self.write(json.dumps(response,indent=2, ensure_ascii=False,cls=MongoFieldEncoder))
+        self.finish()
+
+
+    def file_request_get(self,upload_path):
+        file_metas=self.request.files["file"]    #提取表单中‘name’为‘file’的文件元数据
+        meta=file_metas[0]
+        # filename=unicode(''.join(str(uuid.uuid1()).split('-')))+"."+meta['filename'].split(".")[1]
+        filename = meta["filename"]
+        filepath=os.path.join(upload_path,filename)
+        with open(filepath,'wb') as up:      #有些文件需要已二进制的形式存储，实际中可以更改
+            up.write(meta['body'])
+
+
+        return filepath,filename

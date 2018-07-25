@@ -1,0 +1,144 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# @Date    : 2015-05-18 17:41:52
+# @Author  : Your Name (you@example.org)
+# @Link    : http://example.org
+# @Version : $Id$
+from handler_baseHt import BaseHtHandler
+from log import get_logger
+import tornado.web
+from tornado.web import asynchronous
+from tornado.options import options
+import json
+import hashlib
+import datetime
+from bson import ObjectId
+import hashlib
+import random
+import pymongo
+import time
+from log import get_logger
+from model.accounts_ht import Account_ht
+from model.users import Users
+import optionsSetting
+import datetime
+import  time
+from utils.secret import *
+import traceback
+from utils.redis_client import RedisClient
+from mongo_field_encoder import MongoFieldEncoder
+from mongolog import MongoHandler
+from mongokit.helpers import totimestamp, fromtimestamp
+from utils.token_im import TokenService
+from tornado.httpclient import HTTPRequest
+from utils.mongo_client import MongoClient
+from utils.mongo_front import MongoFront
+from auth import requires_auth
+import re
+import urlparse
+import urllib
+try:
+    from tornado.curl_httpclient import CurlAsyncHTTPClient as AsyncHTTPClient
+except ImportError:
+    from tornado.simple_httpclient import SimpleAsyncHTTPClient as AsyncHTTPClient
+log = get_logger()
+
+
+class KeywordsManagementHandler(BaseHtHandler):
+    @asynchronous
+    @requires_auth
+    def get(self):
+        log.info("KeywordsManagementHandler.get")
+        keyword = self.get_argument("keyword", None)
+        if keyword is not None:
+            self.fetch_keyword(keyword)
+        else:
+            self.fetch_keywords()
+
+    def fetch_keyword(self, keyword):
+        where = {
+            "word": {"$regex": keyword}
+        }
+        curr = self.get_argument('curr', "") #分页
+        limit = 15
+        if curr=="":
+            advs = MongoFront.find_all(where,"sensitive_word").sort("created", -1).limit(limit)
+        else:
+            advs = MongoFront.find_all(where,"sensitive_word").sort("created", -1).skip((int(curr)-1)*limit).limit(limit)
+        response={}
+        response["entities"]=list(advs) or []
+        response["count"]=str(advs.count())
+        self.write(json.dumps(response,indent=2, ensure_ascii=False,cls=MongoFieldEncoder))
+        self.finish()
+
+
+    def fetch_keywords(self):
+        where = {}
+        curr = self.get_argument('curr', "") #分页
+        limit = 15
+        if curr=="":
+            advs = MongoFront.find_all(where,"sensitive_word").sort("created", -1).limit(limit)
+        else:
+            advs = MongoFront.find_all(where,"sensitive_word").sort("created", -1).skip((int(curr)-1)*limit).limit(limit)
+
+
+        response={}
+        response["entities"]=list(advs) or []
+        response["count"]=str(advs.count())
+        self.write(json.dumps(response,indent=2, ensure_ascii=False,cls=MongoFieldEncoder))
+        self.finish()
+
+
+    @asynchronous
+    @requires_auth
+    def post(self):
+        log.info("KeywordsManagementHandler.post:"+self.request.body)
+        body = json.loads(self.request.body,encoding="utf-8")
+        keyword = body.get("keyword", "")
+        if not keyword:
+            status = 2  #请输入内容
+            response_dic = {"status": status}
+            response = json.dumps(response_dic,
+                                      indent=2,
+                                      ensure_ascii=False,
+                                      cls=MongoFieldEncoder)
+            self.write(response)
+            self.finish()
+            return
+        body_dic = {}
+        now = datetime.datetime.utcnow()
+        body_dic["created"] = now
+        body_dic["creator"] = self.username
+        body_dic["word"] = keyword
+
+        status = 0
+        id, error = MongoFront.insert(body_dic, "sensitive_word")
+        if error != None:
+
+            status = 1  #name存在
+
+        response_dic = {"status":status}
+        response = json.dumps(response_dic,
+                                  indent=2,
+                                  ensure_ascii=False,
+                                  cls=MongoFieldEncoder)
+        self.write(response)
+        self.finish()
+
+    @asynchronous
+    @requires_auth
+    def delete(self):
+        log.info("KeywordsManagementHandler.delete")
+        body = json.loads(self.request.body,encoding="utf-8")
+        keyword_id = body["keyword_id"]
+        where = {
+            "_id": ObjectId(keyword_id)
+        }
+        MongoFront.delete(where, "sensitive_word")
+        response = json.dumps({"result": "ok"},
+                                  indent=2,
+                                  ensure_ascii=False,
+                                  cls=MongoFieldEncoder)
+        self.write(response)
+        self.finish()
+
