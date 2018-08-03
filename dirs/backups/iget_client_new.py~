@@ -1,0 +1,259 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# @Date    : 2014-08-15 17:04:53
+# @Author  : Your Name (you@example.org)
+# @Link    : http://example.org
+# @Version : $Id$
+
+from igt_push import *
+from igetui.template import *
+from igetui.template.igt_base_template import *
+from igetui.template.igt_transmission_template import *
+from igetui.template.igt_link_template import *
+from igetui.template.igt_notification_template import *
+from igetui.template.igt_notypopload_template import *
+from igetui.template.igt_apn_template import *
+from igetui.igt_message import *
+from igetui.igt_target import *
+from igetui.template import *
+import globalConfig
+import logging
+import json
+import time
+from utils.monitor import *
+import traceback
+import os
+#toList接口每个用户返回用户状态开关,true：打开 false：关闭
+os.environ['needDetails'] = 'true'
+
+
+APPKEY = "z2ErmQWCmn9X4y2aBJMdj5"
+APPID = "meHLXG9NLk7GEOEwoflm56"
+MASTERSECRET = "wfgUZuNPPZ6RPNxDgDbyZ3"
+CID = "25b8ebd598dcca0ed315f6eef56f4659"
+HOST = 'http://sdk.open.api.igexin.com/apiex.htm'
+DEVICETOKEN = "请输入IOS目标用户的DEVICETOKEN"
+push = IGeTui(HOST, APPKEY, MASTERSECRET)
+
+class GETUI_Clint:
+    @staticmethod
+    ###获取客户端App的状态 ：
+    #####Online:在线  offline:不在线，，但是这个数据不准确，应该不是实时数据，
+    #####手机断网后，仍然返回Online
+    def getClientStatus(appId, cid):
+        global push
+        status = push.getClientIdStatus(appId, cid);
+        print "status"+str(type(status))
+
+        for (k,v) in  status.items():
+            print "dict[%s]=" % k,v
+
+    @staticmethod
+    def getContentId(context,title,is_tuisong,is_sound,navigation_url=""):
+        global push
+          #消息模版：
+        #1.TransmissionTemplate:透传功能模板
+        #2.LinkTemplate:通知打开链接功能模板
+        #3.NotificationTemplate：通知透传功能模板
+        #4.NotyPopLoadTemplate：通知弹框下载功能模板
+        #template = NotificationTemplateDemo()
+        template = TransmissionTemplate()
+        template.appKey = APPKEY
+        template.appId = APPID
+
+        template.transmissionContent = context
+        #template = TransmissionTemplateDemo()
+        #template = NotyPopLoadTemplateDemo()
+        ###当前不是推送时段时，apns设置不设定
+        sound=""
+        if is_tuisong:
+            logging.info("is_tuisong")
+            payload = json.dumps({"navigation_url":navigation_url})
+            template.setPushInfo("","1",title,sound,payload,"","", "")
+        else:
+             logging.info("is_tuisong:"+str(is_tuisong))
+
+        message = IGtListMessage()
+        message.data = template
+        message.pushNetWorkType = 0#设置是否根据WIFI推送消息，1为wifi推送，0为不限制推送
+        message.isOffline = True
+        message.offlineExpireTime = 1000 * 3600 * 12
+        contentId = push.getContentId(message)
+
+        return contentId,push
+
+    @staticmethod
+    def pushMessageToList(context,clientId_list,title,is_tuisong,is_sound,contentId="",push="",pushMessageToList="",navigation_url=""):
+
+        if not contentId or not push:
+            push = IGeTui(HOST, APPKEY, MASTERSECRET)
+              #消息模版：
+            #1.TransmissionTemplate:透传功能模板
+            #2.LinkTemplate:通知打开链接功能模板
+            #3.NotificationTemplate：通知透传功能模板
+            #4.NotyPopLoadTemplate：通知弹框下载功能模板
+            #template = NotificationTemplateDemo()
+            template = TransmissionTemplate()
+            template.appKey = APPKEY
+            template.appId = APPID
+
+            template.transmissionContent = context
+
+            ###当前不是推送时段时，apns设置不设定
+            sound=""
+            if is_tuisong:
+                logging.info("is_tuisong")
+                payload = json.dumps({"navigation_url":navigation_url},indent=2,ensure_ascii=False)
+                template.setPushInfo("",1,title,sound,payload,"","", "")
+            else:
+                 logging.info("is_tuisong:"+str(is_tuisong))
+
+            message = IGtListMessage()
+            message.data = template
+            message.pushNetWorkType = 0#设置是否根据WIFI推送消息，1为wifi推送，0为不限制推送
+            message.isOffline = True
+            message.offlineExpireTime = 1000 * 3600 * 12
+            contentId = push.getContentId(message)
+
+        targets = []
+        for clientid in clientId_list:
+            target = Target()
+            target.appId = APPID
+            target.clientId = clientid
+            targets.append(target)
+
+        server_result_desc=""
+        server_result=True
+        begin=0
+        ret = ""
+        try:
+            begin=int(time.time()*1000)
+            logging.info("#####pushing begin" )
+            ret = push.pushMessageToList(contentId, targets)
+            # logging.info("ret:"+str(ret))
+        except Exception, e:
+            server_result=False
+            server_result_desc=traceback.format_exc()
+            logging.info("e:"+e.message)
+            logging.info("server_result_desc:"+server_result_desc)
+        # finally:
+        #     ##发监控消息
+        #     monitor={
+        #         "type":"monitor",
+        #         "server":"sms_getui",
+        #         "result":server_result,
+        #         "desc":server_result_desc,
+        #         "elapsed":int(time.time()*1000)-begin
+        #     }
+        #     monitor_output(json.dumps(monitor, ensure_ascii=False))
+
+        # logging.info(ret)
+
+    @staticmethod
+    ###通过通知的形式发到客户端
+    def pushMessageToSingleByNotification(title,text,clientId):
+        global APPKEY
+        global APPID
+        global HOST
+        global MASTERSECRET
+        push = IGeTui(HOST, APPKEY, MASTERSECRET)
+        #消息模版：
+        #1.TransmissionTemplate:透传功能模板
+        #2.LinkTemplate:通知打开链接功能模板
+        #3.NotificationTemplate：通知透传功能模板
+        #4.NotyPopLoadTemplate：通知弹框下载功能模板
+
+
+        template = NotificationTemplate()
+        template.title=title
+        template.text=text
+        template.appKey = APPKEY
+        template.appId = APPID
+        template.isRing=True
+        template.isVibrate = True
+        #template.transmissionContent = u"请填入透传内容"
+        #template = LinkTemplateDemo()
+        #template = TransmissionTemplateDemo()
+        #template = NotyPopLoadTemplateDemo()
+        message = IGtSingleMessage()
+        message.isOffline = True
+        message.offlineExpireTime = 1000 * 3600 * 12
+        message.data = template
+
+
+        target = Target()
+        target.appId = APPID
+        target.clientId = clientId       #CID
+
+        ret = push.pushMessageToSingle(message, target)
+        print ret
+
+    @staticmethod
+    ###通过透传的形式发到客户端
+    def pushMessageToSingleByTransmission(context,clientId, noread_num,title,is_tuisong,is_sound,sound="",navigation_url=""):
+        global APPKEY
+        global APPID
+        global HOST
+        global MASTERSECRET
+        global push
+        #消息模版：
+        #1.TransmissionTemplate:透传功能模板
+        #2.LinkTemplate:通知打开链接功能模板
+        #3.NotificationTemplate：通知透传功能模板
+        #4.NotyPopLoadTemplate：通知弹框下载功能模板
+
+        template = TransmissionTemplate()
+
+
+        template.appKey = APPKEY
+        template.appId = APPID
+
+        template.transmissionContent = context
+        # if not is_sound:
+        #     ###关闭声音时，用空白声音文件（前端使用）
+        #     sound="slient.wav"
+
+        ###当前不是推送时段时，apns设置不设定
+        if is_tuisong:
+            # logging.info("is_tuisong")
+            payload = json.dumps({"navigation_url":navigation_url},indent=2,ensure_ascii=False)
+            template.setPushInfo("",noread_num,title,sound,payload,"","", "")
+        else:
+             # logging.info("is_tuisong:"+str(is_tuisong))
+            pass
+
+        #template = LinkTemplateDemo()
+        #template = TransmissionTemplateDemo()
+        #template = NotyPopLoadTemplateDemo()
+        message = IGtSingleMessage()
+        message.isOffline = True
+        message.offlineExpireTime = 1000 * 3600 * 12
+        message.data = template
+
+
+        target = Target()
+        target.appId = APPID
+        target.clientId = clientId       #CID
+
+        server_result_desc=""
+        server_result=True
+        begin=0
+        try:
+            begin=int(time.time()*1000)
+            ret = push.pushMessageToSingle(message, target)
+            # logging.info("ret:"+str(ret))
+        except Exception, e:
+            server_result=False
+            server_result_desc=traceback.format_exc()
+            logging.info("exception:" + e.message)
+            logging.info("server_result_desc:"+server_result_desc)
+        # finally:
+        #     ##发监控消息
+        #     monitor={
+        #         "type":"monitor",
+        #         "server":"sms_getui",
+        #         "result":server_result,
+        #         "desc":server_result_desc,
+        #         "elapsed":int(time.time()*1000)-begin
+        #     }
+        #     monitor_output(json.dumps(monitor, ensure_ascii=False))

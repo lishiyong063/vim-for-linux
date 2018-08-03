@@ -159,6 +159,7 @@
       <dd>
         <ul>
           <li><a _href="article.html" href="javascript:;">文章列表</a></li>
+          <li><a _href="article-type-config.html" href="javascript:;">文章类型配置</a></li>
         </ul>
       </dd>
     </dl>
@@ -287,6 +288,8 @@
                   <li><a _href="fishing-shop.html" href="javascript:void(0)">渔具店列表</a></li>
                   <li><a _href="fishing-shop-check.html" href="javascript:;">渔具店审核</a></li>
                   <li><a _href="fishing-shop-error.html" href="javascript:;">渔具店报错</a></li>
+                  <li><a _href="fishing-shop-img.html" href="javascript:;">钓场传图审核</a></li>
+                  <li><a _href="fishing-shop-comment.html" href="javascript:;">钓场评论审核</a></li>
               </ul>
           </dd>
       </dl>

@@ -1,41 +1,25 @@
 # -*- coding: utf-8 -*-
-# Created Time: 2018-04-17 11:18:43
-"""
-二分查找法  和 斐波那契数
-"""
-# 循环的方式 实现二分查找
-def search(lst, target):
+# Created Time: 2018-08-03 09:17:15
+
+
+def search(c, lst):
     low = 0
-    upper = len(lst) - 1
+    hight = len(lst)
 
-    while low <= upper:
-        mid = (low+upper) // 2
-        if lst[mid] == target:
-            print(mid)
-            return mid
-        elif lst[mid] < target:
-            low = mid + 1
-        else:
-            upper = mid - 1
-
-
-
-def search1(lst, target, low, high):
-    if low > high:
-        return
-    mid = (low+high)//2
-    if lst[mid] == target:
+    while low <= hight:
+        mid = (hight+low) // 2
         print(mid)
-        return mid
-    elif lst[mid] < target:
-        return search(lst, target, mid+1, high)
-    else:
-        return search(lst, target, low, high-1)
+        if lst[mid] > c:
+            hight = mid - 1
+        elif lst[mid] < c:
+            low = mid + 1
+        elif lst[mid] == c:
+            return mid
 
- 
 
-if __name__ == '__main__':
-    lst = [1,2,3,4,5,6,7,8,9]
-    search1(lst, 6, 0, 9)
-
+if __name__ == "__main__":
+    c = 5
+    lst = [1, 2, 3, 4, 5]
+    result = search(5, lst)
+    print result
 

@@ -1,0 +1,33 @@
+# -*- coding: utf-8 -*-
+# Created Time: 2018-08-03 11:20:44
+# 时间复杂度是指执行算法所需要的计算工作量；而空间复杂度是指执行这个算法所需要的内存空间。（
+# 常数阶O(1),对数阶O(logn),线性阶O(n),
+def merge(a, b):
+    c = []
+    a_index = b_index = 0
+    while a_index < len(a) and b_index < len(b):
+        if a[a_index] < b[b_index]:
+            c.append(a[a_index])
+            a_index += 1
+        elif a[a_index] > b[b_index]:
+            c.append(b[b_index])
+            b_index += 1
+    if a[a_index:]:
+        c += a[a_index:]
+    if b[b_index:]:
+        c += b[b_index:]
+    return c
+
+
+def merge_sort(lists):
+    if len(lists) == 1:
+        return lists
+    middle = len(lists) // 2
+    left = merge_sort(lists[:middle])
+    right = merge_sort(lists[middle:])
+    return merge(left, right)
+
+
+if __name__ == '__main__':
+    m = [4, 7, 8, 3, 5, 9]
+    print merge_sort(m)

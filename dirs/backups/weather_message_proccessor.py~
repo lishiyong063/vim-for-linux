@@ -47,7 +47,7 @@ class Weather_Message_Proccessor(BaseMessageProccessor):
 
 
     def createMessages(self):
-        logging.info("weather push createdMessages")
+        logging.info("goods_boutique createdMessages")
         '''
         {
             "type":"activity_boutique",
@@ -77,15 +77,22 @@ class Weather_Message_Proccessor(BaseMessageProccessor):
             logging.info("self.message_event_dic:"+str(self.message_event_dic))
             title_type = mes["message_type"]
 
+            # fishing_zhishu=mes.get("fishing_zhishu",{})
+            # if fishing_zhishu:
+            #     tmp_result["fishing_zhishu"]=fishing_zhishu
+            #
+            # date_city = mes.get("date_city", {})
+            # if date_city:
+            #     tmp_result["date_city"] = date_city
+            #
+            # weahter = mes.get("weahter", {})
+            # if weahter:
+            #     tmp_result["weahter"] = weahter
+
             tmp_result["type"] = mes["message_type"]
-
-
             navigation_url = "ziya://exec/?action=weatherpush&title_type=%s&q=%s"%(title_type,mes["q"])
 
             tmp_result["navigation_url"] = navigation_url
-
-
-
 
 
             user_set=set([])
@@ -102,11 +109,37 @@ class Weather_Message_Proccessor(BaseMessageProccessor):
 
 
     def createMessagesToTarget(self,tmp_result,title_type,mes,user_set):
+        #lookup={
+        #    "username": mes["to_username"]
+        #}
+        #user = MongoClient.find_one(lookup,"users")
+        #users_ary = user
+
         lookup={
+<<<<<<< .mine
                 "username":{"$in":mes["to_username"]}
+||||||| .r12348
+            "username":mes["to_username"]
+=======
+            "username": {"$in":mes["to_username"]}
+>>>>>>> .r12599
         }
+<<<<<<< .mine
         user = MongoClient.find_all(lookup,"users")
         users_ary = user
+||||||| .r12348
+        user=MongoClient.find_one(lookup,"users")
+        users_ary=[user]
+
+
+
+=======
+        users = MongoClient.find_all(lookup,"users")
+        users_ary = users
+
+
+
+>>>>>>> .r12599
         message_entities=self.createMessageEntities(tmp_result,title_type,users_ary,user_set,mes)
         return message_entities
 

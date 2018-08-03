@@ -15,7 +15,7 @@ import time
 from log import get_logger
 from model.advices import Advice
 from model.permissions_ht import Permissions_ht
- 
+
 from utils.secret import *
 import traceback
 from utils.redis_client import RedisClient
@@ -78,15 +78,16 @@ class LocationShopErrorHandler(BaseHtHandler):
                 dic["actor"] = self.get_userinfo(error.get("username"))
                 dic["id"] = error.get("fish_id","")
                 if error.get("fish_id",""):
-                    log.info(error.get("fish_id",""))
+                    if types == "shop":
+                        types = "store"
                     fish_obj = MongoFront.find_one({"_id": ObjectId(error.get("fish_id"))}, "fishing_%s" % types)
                     if not fish_obj:continue
                     dic["name"] = fish_obj.get("name")
                 dic["error_id"] = error.get("_id","")
                 dic["classes"] = error.get("classes", "")
                 dic["desc"] = error.get("error_desc", "")
-                dic["created"] = error.get("created", "") 
-                dic["types"] = types 
+                dic["created"] = error.get("created", "")
+                dic["types"] = types
                 dic["img"] = error.get("img", "")
                 # 类型为四时有哪些不一样
                 dic["error_info"] = error_info
@@ -95,7 +96,7 @@ class LocationShopErrorHandler(BaseHtHandler):
             response = {}
             response["entities"] = fishing_shop
             # count 一共有多少数据
-            response["count"] = fishing_shop.count()
+            response["count"] = len(fishing_shop)
             self.write(json.dumps(response, indent=2, ensure_ascii=False, cls=MongoFieldEncoder))
             self.finish()
 
@@ -111,7 +112,7 @@ class LocationShopErrorHandler(BaseHtHandler):
         """
         if not error_id:
             return ''
-        error_info = MongoClient.find_one({"id": error_id}, "fishing_report_error")
+        error_info = MongoClient.find_one({"_id": ObjectId(error_id)}, "fishing_report_error")
         content = error_type.get(types)
 
         update_val = {
@@ -138,7 +139,7 @@ class LocationShopErrorHandler(BaseHtHandler):
                     "invite_code": actor_user.get("invite_code", "")
         }
         return actor
-     
+
 
 
     @requires_auth

@@ -122,7 +122,7 @@ function fill_errors_list(entities){
                 html_text=html_text+template.replace("{avatar_url}",errorr_avatar_url)
                         .replace("{nick}",errorr_nick)
                         .replace("{created}",error_created)
-                        .replace("{img_url}",error.image_url)
+                        .replace("{img_url}",error.img)
                         .replaceAll("{username}",username)
                         .replace("{shop_name}",error.name)
                         .replaceAll("{place_id}",error.id)
@@ -138,7 +138,7 @@ function fill_errors_list(entities){
 
 function delete_place(place_id){
     if(confirm('您确定审核不通过吗？')){
-        var d= {"status": 1, "place_id": place_id, "types": 'img'}
+        var d= {"status": 2, "place_id": place_id, "types": 'img'}
         request_url = fishing_admin_Url + "/location_audit"
         result = getRequest(request_url, d, 'put', '', '')
         if (result && result.entities=="ok"){
@@ -152,7 +152,7 @@ function delete_place(place_id){
 
 function pass_place(place_id){
     if(confirm('您确定审核通过吗？')){
-        var d= {"status": 2, "place_id": place_id, "types": 'img'}
+        var d= {"status": 1, "place_id": place_id, "types": 'img'}
         request_url = fishing_admin_Url + "/location_audit"
         result = getRequest(request_url,d, 'put', '', '')
         if (result && result.entities=="ok"){

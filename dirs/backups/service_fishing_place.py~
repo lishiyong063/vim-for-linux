@@ -40,6 +40,7 @@ def getNearPlaces(where={},center=[],min=0,maxDistance=300,limit=20):
                                         "$minDistance":min,
                                         "$maxDistance":maxDistance
                                 }}
+    print(where)
     return getNearPlaceList(where,limit,center)
 
 

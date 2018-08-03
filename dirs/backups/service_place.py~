@@ -1,0 +1,75 @@
+# -*- coding: utf-8 -*-
+# Created Time: 2018-07-27 14:31:21
+from bson import ObjectId
+from utils.mongo_client import MongoClient
+
+class Context:
+    """ 公共方法
+    """
+    pass
+
+
+class Place:
+    """ 地点的基类
+    """
+    def __init__(self):
+        self.name = None
+        # 城市信息
+        self.gps_info = None
+        # 图片列表
+        self.pages = None
+        self.contact_tel = None
+        # 状态信息
+        self.status = None
+        self.desc = None
+        self.id = None
+        self.status = None
+        # 创建时间
+        self.created = None
+
+    def get(self, id):
+        """ 对象的获取
+        """
+        place = MongoClient.find_one({"_id":ObjectId(id)}, self.model)
+        self.gps_info = place["gps_info"]
+        self.pages = place["pages"]
+        self.name = place["name"]
+        self.contact_tel = place["contact_tel"]
+        self.desc = place["desc"]
+
+    def checkPramate(self):
+        """ 参数检查
+        """
+        pass
+
+    def saveModel(self, model):
+        """ 保存对属性的修改
+        """
+        pass
+
+    def add(self):
+        """ 增加一条记录
+        """
+        pass
+
+    def delete(self):
+        """ 删除一条记录
+        """
+
+    def filter(self):
+        """ 满足条件的查询
+        """
+        pass
+
+
+class FishingPlace(Place):
+    """ 钓点
+    """
+    pass
+
+
+class FishingShop(Place):
+    """ 渔具店
+    """
+    pass
+

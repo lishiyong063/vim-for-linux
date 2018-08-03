@@ -34,6 +34,14 @@
 <title>分类管理</title>
 </head>
 <body>
+	<div id="fish_videos">
+		<div id="video_bg"></div>
+		<div id="fish_video">
+			<div id="close_video"></div>
+			<video src=""></video>
+		</div>
+	</div>
+
 <nav class="breadcrumb"><i class="iconfont">&#xf012b;</i> 首页 <span class="c-gray en">&gt;</span> 建议管理 <span class="c-gray en">&gt;</span> 用户建议 </nav>
 <div class="pd-20 text-c">
   <div class="article-class-list cl mt-20" >
@@ -43,11 +51,11 @@
       <thead>
         <tr class="text-c" id="tab_div">
           <!--<th width="25"><input type="checkbox" name="" value="" error_id=""></th>-->
-          <th width="80">头像</th>
+          <th width="80">图片</th>
           <th width="80">用户信息</th>
           <th width="200">钓场名称</th>
           <th width="100">发送日期</th>
-          <th width="150">上传图片</th>
+          <th width="150">评论内容</th>
           <th width="50">操作</th>
         </tr>
       </thead>
@@ -69,7 +77,7 @@
 <script type="text/javascript" src="js/H-ui.admin.doc.js"></script>
 <script type="text/javascript" src="bizjs/base.js"></script>
 <script type="text/javascript" src="bizjs/map.js"></script>
-<script type="text/javascript" src="bizjs/location-img.js?t=0133">
+<script type="text/javascript" src="bizjs/location-comment.js?t=0133">
 </script>
 
 <script>

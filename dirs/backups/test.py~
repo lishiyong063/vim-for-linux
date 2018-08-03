@@ -1,37 +1,4 @@
 # -*- coding: utf-8 -*-
-import pyaes
-from binascii import b2a_hex, a2b_hex
-from Crypto.Cipher import AES
-import base64
-BS = AES.block_size
-
-
-def pad(s):
-    return s + (BS - len(s) % BS) * chr(BS - len(s) % BS)
-
-def unpad(s):
-    return s[0:-ord(s[-1])]
-
-class AES1:
-    def __init__(self):
-        self.key = "qwertyuikjhgfdsa"
-        self.aes = pyaes.AESModeOfOperationECB(self.key)
-
-    def encrypt(self, value):
-        ciphertext = self.aes.encrypt(pad(value))
-        return b2a_hex(ciphertext)
-
-    def decrypt(self, value):
-        decrypted = self.aes.decrypt(unpad(a2b_hex(value)))
-        return decrypted
-
-
-
-aes = AES1()
-
-
-if __name__ == '__main__':
-   s= aes.encrypt('123456')
-   print(s)
-   b=aes.decrypt(s)
-   print(b)
+# Created Time: 2018-07-25 18:13:39
+import zenipy
+zenipy.zenipy.message(title='', text='', width=330, height=120, timeout=None)

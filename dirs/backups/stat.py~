@@ -1,0 +1,156 @@
+# -*- coding: utf-8 -*-
+# Created Time: 2018-07-26 15:21:50
+"""  需求:当水的温度不同时候 变成不同的 状态
+分析: 如果不按设计模式写的程序 Water1 的方式 如果此时增加一个状态 需要改变类的内容 不满足设计模式基本原则 开放封闭原则
+
+状态模式的特点: 每个状态的实现可以使用单例模式
+"""
+
+class Water1:
+    def __init__(self):
+        self.temprature = None
+        self.status = 'water'
+
+    def setTemprature(self, value):
+        self.temprature = value
+        if self.temprature < 0 :
+            self.setStatus('solid')
+        elif self.temprature > 100:
+            self.setStatus('qitai')
+
+    def setStatus(self, status):
+        before = self.status
+        self.status = status
+        print('我从',before, '变为', self.status, '当前温度为:', self.temprature)
+
+    def getStatus(self):
+        return self.status
+
+    def getTemprature(self):
+        return self.temprature
+
+def main():
+    water = Water1()
+    water.setTemprature(-1)
+    water.setTemprature(101)
+
+
+
+
+class Context:
+    def __init__(self):
+        # 状态类
+        self.status = []
+        # 当前的状态
+        self.cur_status = None
+        # 状态信息 可以单独定义一个类
+        self.statuinfo = 0
+
+    def setStatusInfo(self, info):
+        self.statuinfo = info
+        for status in self.status:
+            if status.isMatch(info):
+                self.changeStatus(status)
+
+    def changeStatus(self, status):
+        """ 改变状态
+        """
+        if isinstance(status, Status):
+            print("状态从", self.cur_status.getStatusName(), '变为', status.getStatusName())
+            self.cur_status = status
+            return True
+        else:
+            return False
+
+    def addStatus(self, statu):
+        if statu not in self.status:
+            self.status.append(statu)
+
+    def getStatusInfo(self):
+        return self.statuinfo
+
+    def getCurStatus(self):
+        return self.cur_status
+
+
+class Water(Context):
+    def __init__(self):
+        super().__init__()
+
+    def getTemprature(self):
+        return self.getStatusInfo()
+
+    def setTemprature(self, temprature):
+        if self.setStatusInfo(temprature):
+            self.behavior()
+
+    def behavior(self):
+        statu = self.getStatus()
+        if(isinstance(statu, Status)):
+            statu.behavior(self)
+
+class Status:
+    """ 状态的基类
+    """
+    def __init__(self, name):
+        self.name = name
+
+    def getStatusName(self):
+        return self.name
+
+    def isMatch(self, statu):
+        """ 判断是否满足某个状态
+        """
+        return False
+
+    def behavior(self, context):
+        pass
+
+class SolidStatus(Status):
+    def __init__(self):
+        super().__init__(self)
+        self.name = "固态"
+
+    def isMatch(self, statuinfo):
+        return statuinfo < 0
+
+    def behavior(self, context):
+        # 满足状态后的行为
+        if isinstance(context, Water):
+            print("我现在是固态, 当前体温:",context.getTemprature())
+
+
+
+def testCase():
+    water = Water()
+    water.addStatus(GaseousStatus())
+    water.addStatus(SolidStatus())
+    water.setStatusInfo(35)
+    water.setStatusInfo(101)
+    water.setStatusInfo(-1)
+
+
+
+
+class GaseousStatus(Status):
+    def __init__(self):
+        super().__init__(self)
+        self.name = "气态"
+
+    def isMatch(self, statuinfo):
+        """ 满足状态的条件
+        """
+        return statuinfo > 100
+
+
+    def behavior(self, context):
+        """ 满足条件后的动作
+        """
+        if isinstance(context, Water):
+            print("我现在是气态, 当前体温:",context.getTemprature())
+if __name__ == '__main__':
+    # main()
+    testCase()
+
+
+

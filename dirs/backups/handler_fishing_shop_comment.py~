@@ -50,12 +50,12 @@ class FishingShopComment(BaseHandler):
     @gen.coroutine
     @asynchronous
     @access_log
-    @requires_auth
+    # @requires_auth
     def get(self):
         self.set_header("Access-Control-Allow-Origin", "*")
         log.info('FishingShopComment.get is called'+str(self.request.arguments))
-        # 渔具id
-        shop_id = self.get_argument("fishing_id")
+        # 渔具店id
+        shop_id = self.get_argument("id")
         request_cursor = self.get_argument("cursor", "")
         where = {
             "shop_id": shop_id,
@@ -72,16 +72,16 @@ class FishingShopComment(BaseHandler):
                 userinfo = {
                     "username": user["username"],
                     "nickname": user["nick"],
-                    "avator": user["avatar_url"],
+                    "avatar": user["avatar_url"],
                 }
-                dic = {"userinfo": userinfo, 'comment_content': comment['content'], 
+                dic = {"userinfo": userinfo, 'comment_content': comment['content'],
                        'pages': comment.get("pages", ""),
                        'stars': comment.get("stars", ""),
                        "created": comment["created"]}
 
                 response.append(dic)
 
-            self.write(json.dumps({"entities": response, "cursor": cursor}, 
+            self.write(json.dumps({"entities": response, "cursor": cursor},
                                    indent=2, ensure_ascii=False, cls=MongoFieldEncoder))
             self.finish()
         except Exception as e:
@@ -97,7 +97,7 @@ class FishingShopComment(BaseHandler):
         log.info("FishingShopComment.post:"+str(self.request.body))
         try:
             body = json.loads(self.request.body, encoding="utf-8")
-            fish_shop_id = body.get("fishing_id", "")
+            fish_shop_id = body.get("id", "")
             # 默认为5个小星星
             stars = body.get("stars", "5")
             comment = body.get("comment", '')
@@ -110,13 +110,13 @@ class FishingShopComment(BaseHandler):
                 self.fire_response_bad_content("common_error", "keyword", "关键字不能为空")
                 return
 
-            if not MongoClient.find_one({"shop_id": fish_shop_id}, "fishing_shop"):
+            if not MongoClient.find_one({"_id": ObjectId(fish_shop_id)}, "fishing_shop"):
                 self.fire_response_bad_content("common_error", "keyword", "渔具店不存在")
                 return
 
             created = datetime.datetime.utcnow()
             update_val = {
-                "fishing_id": fishshop_id,
+                "fishing_id": fish_shop_id,
                 "username": self.username,
                 "created": created,
                 "pages": pages,
@@ -127,11 +127,7 @@ class FishingShopComment(BaseHandler):
             }
             MongoClient.insert(update_val, "fishing_shop_comment")
 
-            response = {}
-            response["entities"] = []
-            self.write(json.dumps(response, indent=2, ensure_ascii=False, cls=MongoFieldEncoder))
-            self.finish()
-
+            self.fire_response_sys_info("评论成功,管理员会尽快处理")
         except Exception as e:
             log.info('FishingShopComment.get Exception:%s' % e.message)
             log.error(traceback.format_exc())

@@ -140,14 +140,16 @@ function fill_errors_list(entities){
                         .replace("{nick}",errorr_nick)
                         .replace("{content}",error_content)
                         .replace("{created}",error_created)
-                        .replace("{img_url}",error.img[0].image_url)
                         .replaceAll("{username}",username)
                         .replace("{error_id}",error._id)
                         .replace("{shop_name}",error.name)
                         .replace("{id}",error.id)
                         .replace("{is_reply}",is_reply);
+                 
+              if (error.img.length > 0){
+                html_text=html_text.replace(error.img[0].image_url)
+              }
 
-                console.log(html_text)
             }
 
         }

@@ -48,8 +48,8 @@ class BaseHandler(tornado.web.RequestHandler):
             #     token = token.split(' ')[1]
             # except:
             #     return self._me
-            
-            # lookup = {'token': token} 
+
+            # lookup = {'token': token}
             # filters = {'_id':0, 'username':1}
             # account = options.dbconn.Account.find_one(lookup, filters)
             # if account is None:
@@ -89,7 +89,7 @@ class BaseHandler(tornado.web.RequestHandler):
             except:
                 return self._token
         return self._token
-    
+
     @property
     def act_random(self):
         if self._username is None:
@@ -98,7 +98,7 @@ class BaseHandler(tornado.web.RequestHandler):
                 token = token.split(' ')[1]
             except:
                 return self._username
-            
+
             real_token=decrypt(token,options.token_key)
             token_array=real_token.split(":")
             self._act_random=token_array[3]
@@ -107,6 +107,16 @@ class BaseHandler(tornado.web.RequestHandler):
 
     def fire_response_sys_error(self):
         self.set_status(400)
+        response = {}
+        response["error"] = "sys_error"
+        response["error_description"] = "System Exception,please retry"
+        self.write(json.dumps(response, indent=2, ensure_ascii=False))
+        self.finish()
+
+    def fire_response_sys_info(self):
+        """  前端提示框
+        """
+        self.set_status(200)
         response = {}
         response["error"] = "sys_error"
         response["error_description"] = "System Exception,please retry"
@@ -134,8 +144,8 @@ class BaseHandler(tornado.web.RequestHandler):
             response["error_description"] = "%s is required" % key_required
         self.write(json.dumps(response, indent=2, ensure_ascii=False))
         self.finish()
-        
-        
+
+
     def fire_response_bad(self,error,des):
         self.set_status(400)
         response = {}

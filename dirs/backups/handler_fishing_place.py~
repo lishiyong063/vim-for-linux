@@ -154,14 +154,7 @@ class FishingPlaceHandler(BaseHandler):
             count = counter_cursor["value"]
             update["place_num"] = count
             c = MongoClient.insert(update, "fishing_place")
-            log.info(str(c))
-
-            response = {}
-            response["entities"] = []
-            self.write(json.dumps(response, indent=2, ensure_ascii=False, cls=MongoFieldEncoder))
-            self.finish()
-            return
-
+            self.fire_response_sys_info("上传钓场成功,管理员会尽快处理")
         except Exception as e:
             log.info('FishingLocationHandler.get Exception:%s' % e.message)
             log.error(traceback.format_exc())
@@ -170,14 +163,14 @@ class FishingPlaceHandler(BaseHandler):
 
     @gen.coroutine
     def fetch_places(self):
-        response_dic={}
-        place_cursor=""
-        gps_info={}
+        response_dic = {}
+        place_cursor = ""
+        gps_info = {}
         try:
             limit = 10
             request_cursor = self.get_argument('cursor', '')
             place_where = {
-                "status":1
+                "status": 1
             }
             keyword = self.get_argument('keyword', '')
             map = self.get_argument('map', '')
@@ -185,9 +178,9 @@ class FishingPlaceHandler(BaseHandler):
             sort = self.get_argument('sort', '10')
             # 关键字搜索
             if keyword:
-                place_where["name"]={"$regex":keyword,"$options":'i'}
+                place_where["name"] = {"$regex": keyword, "$options": 'i'}
                 if request_cursor:
-                    place_where["place_num"]={"$gt":int(request_cursor)}
+                    place_where["place_num"] = {"$gt": int(request_cursor)}
                 fishing_place_array, place_cursor = getPlaceByKw(place_where)
             # 附近查询
             elif near:
@@ -197,7 +190,7 @@ class FishingPlaceHandler(BaseHandler):
                 lon = float(self.get_argument("lon"))
                 lat = float(self.get_argument("lat"))
                 coordinates = [lon, lat]
-                distance = 50
+                distance = 500
                 min = 0.0
                 if request_cursor:
                     min = float(request_cursor)
@@ -211,18 +204,18 @@ class FishingPlaceHandler(BaseHandler):
                 lon = float(self.get_argument("lon"))
                 lat = float(self.get_argument("lat"))
                 coordinates = [lon, lat]
-                distance = 50
+                distance = 500
                 min = 0.0
                 # limit = 20
                 # 附近的钓场查询
                 fishing_place_array, cursor = getNearPlaces(where=place_where, center=coordinates, min=min,
                                                                   maxDistance=int(distance) * 1000)
 
-            # 按城市、距离查询
+            # 按城市,区域,距离查询
             else:
                 # 检查经纬度
                 self.location_check()
-                # all:1 不限城市
+                # all:1 限城市
                 all = self.get_argument('all', '')
                 lon = float(self.get_argument("lon"))
                 lat = float(self.get_argument("lat"))
@@ -233,9 +226,9 @@ class FishingPlaceHandler(BaseHandler):
                 if not gps_info:
                     gps_info = yield geocoderByGaode(lon, lat)
                 # 按城市查询
-                if all:
+                if all == "1":
                     city_name = gps_info["city"]
-                    place_where["gps_info.city"]=city_name
+                    place_where["gps_info.city"] = city_name
                 # 按区查询
                 else:
                     area = gps_info["area"]
@@ -244,18 +237,19 @@ class FishingPlaceHandler(BaseHandler):
                     place_where["gps_info.city"] = city_name
 
                 # 人气查询
-                if sort==u'20':
+                if sort == u'20':
                     sort_key = "display_count"
                     if request_cursor:
-                        place_where[sort_key]={"$lt":int(request_cursor)}
-                    fishing_place_array, place_cursor = getPlaceList(place_where,sort_key=sort_key)
+                        place_where[sort_key] = {"$lt": int(request_cursor)}
+                    fishing_place_array, place_cursor = getPlaceList(place_where, sort_key=sort_key)
 
-                elif sort==u"10":
-                    lon = float(self.get_argument("lon_local",lon))
-                    lat = float(self.get_argument("lat_local",lat))
+                # 离我最近
+                elif sort == u"10":
+                    lon = float(self.get_argument("lon_local", lon))
+                    lat = float(self.get_argument("lat_local", lat))
                     coordinates_local = [lon, lat]
-                    coordinate_len = getDistance(coordinates,coordinates_local)
-                    if coordinate_len/1000<=500:
+                    coordinate_len = getDistance(coordinates, coordinates_local)
+                    if coordinate_len/1000 <= 500:
                         coordinates = coordinates_local
 
                     min = 0.0
@@ -264,15 +258,12 @@ class FishingPlaceHandler(BaseHandler):
 
                     # 附近的钓场查询
                     fishing_place_array, place_cursor = getNearPlaces(where=place_where, center=coordinates, min=min,
-                                                                   maxDistance=int(options.max_distance) * 1000, limit=limit)
+                                                                      maxDistance=int(options.max_distance) * 1000, limit=limit)
                 else:
                     # 距离查询
                     coordinates = [lon, lat]
-                    distance = self.get_argument("distance", "0")
                     # 同城或不选距离，默认距离为500km
-                    if distance == "0":
-                        # 同城查询500km的
-                        distance = 500
+                    distance = self.get_argument("distance", "500")
                     min = 0.0
                     if request_cursor:
                         min = float(request_cursor)
@@ -305,8 +296,8 @@ class FishingPlaceHandler(BaseHandler):
             fishing_place_sort = copy.deepcopy(options.fishing_place_sort)
             for place_sort in fishing_place_sort:
                 code = place_sort["code"]
-                if code==int(sort):
-                    place_sort["selected"]=True
+                if code == int(sort):
+                    place_sort["selected"] = True
             response_dic["sort"] = fishing_place_sort
 
             if place_cursor:
@@ -363,16 +354,21 @@ class FishingPlaceHandler(BaseHandler):
                         page["image_url"] = image_url_temp
                         return_pages.append(page)
 
-
-            place_tmp["pages"]=return_pages
-
+            place_tmp["pages"] = return_pages
+            # 钓场传图 默认30张
+            limit = 30
+            sort = [("created", -1)]
+            img_cursor = MongoClient.find_all_sorted_limited({"fishing_id": place_id,
+                            "status": 1}, "fishing_place_upimg", sort, limit, filter={"_id": 0})
+            for img in img_cursor:
+                place_tmp["pages"].append(img)
             # 获附近的钓场
             coordinates = place_tmp["gps_info"]["location"]["coordinates"]
 
             lon = float(coordinates[0])
             lat = float(coordinates[1])
             coordinates = [lon, lat]
-            distance = self.get_argument("distance", "20")
+            distance = self.get_argument("distance", "500")
             min = 0.0
             post_cursor_req = "2730122372130"
             timestamp = post_cursor_req
@@ -393,6 +389,14 @@ class FishingPlaceHandler(BaseHandler):
                                                                    maxDistance=int(distance) * 1000, limit=limit,
                                                                    timestamp=timestamp)
 
+            # 是否收藏
+            where = {
+                'place_id': place_id,
+                'username': unicode(self.username)
+            }
+            collect_place = MongoClient.find_one(where, "user_collect_place")
+            place_tmp["is_collect"] = bool(collect_place)
+
             entities=[]
             entities.append(place_tmp)
             response_dic["entities"] = entities
@@ -412,13 +416,6 @@ class FishingPlaceHandler(BaseHandler):
             # 广告位
             response_dic["banners"] = self.get_banner_ad("new")
 
-            # 是否收藏
-            where = {
-                'place_id': place_id,
-                'username': unicode(self.username)
-            }
-            collect_place = MongoClient.find_one(where, "user_collect_place")
-            response_dic["is_collect"] = bool(collect_place)
 
             # 评论列表
             try:
@@ -428,21 +425,24 @@ class FishingPlaceHandler(BaseHandler):
                 }
                 part_comments_list = []
                 # 默认评论为两条
-                comments_list, cursor = getPlaceCommentList(where, limit=2)
-                for comment in comments_list:
+                comments_list, cursor = getPlaceCommentList(where)
+                for comment in comments_list[:2]:
                     user = MongoClient.find_one({"username": comment["username"]}, 'users')
                     userinfo = {
                         "username": user["username"],
                         "nickname": user["nick"],
-                        "avator": user["avatar_url"],
+                        "avatar": user["avatar_url"],
                     }
-                    dic = {"userinfo": userinfo, 'comment_content': comment['content'], 
+                    dic = {"userinfo": userinfo,
+                           'comment_content': comment['content'],
+                           'stars': comment.get("stars", 0),
                            'pages': comment.get("pages", ""), "created": comment["created"]}
 
                     part_comments_list.append(dic)
             except:
                 log.error(traceback.format_exc())
             response_dic["comments_list"] = part_comments_list
+            response_dic["comments_count"] = len(comments_list)
             response = json.dumps(response_dic,
                                   indent=2,
                                   ensure_ascii=False,

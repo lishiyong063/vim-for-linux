@@ -38,11 +38,7 @@ from services.service_fishing_place import *
 from services.service_geocoder import *
 from services.city_location import *
 from services.service_fishing_place import get_image_info, get_gps_info
-
-
 log = get_logger()
-location_dic = get_city_location()
-
 
 class FishingPlaceUpImgHandler(BaseHandler):
 
@@ -62,18 +58,17 @@ class FishingPlaceUpImgHandler(BaseHandler):
         log.info('FishingPlaceUpImgHandler.get is called'+str(self.request.arguments))
         # 钓场id
         place_id = self.get_argument("place_id")
-        cursor, img_list = self.getimgList({"fishing_id": place_id, "status": 1})
+        img_list, cursor = self.getimgList({"fishing_id": place_id, "status": 1})
         response = {"images": img_list, "cursor": cursor}
         self.write(json.dumps(response, indent=2, ensure_ascii=False, cls=MongoFieldEncoder))
         self.finish()
-
 
     def getimgList(self, where, sort_key="created", limit=10):
         """ 获取钓场图片列表
         """
         cursor = ""
         sort = [(sort_key, -1)]
-        img_cursor = MongoClient.find_all_sorted_limited(where, "fishing_place_upimg", sort, limit + 1,filter={"_id":0})
+        img_cursor = MongoClient.find_all_sorted_limited(where, "fishing_place_upimg", sort, limit + 1, filter={"_id": 0})
         img_url_array = []
         for img in img_cursor:
             img_url_array.append(img)
@@ -83,7 +78,6 @@ class FishingPlaceUpImgHandler(BaseHandler):
 
         return img_url_array, cursor
 
-
     @requires_auth
     @asynchronous
     @gen.coroutine
@@ -91,12 +85,12 @@ class FishingPlaceUpImgHandler(BaseHandler):
         log.info("FishingPlaceUpImgHandler.post:"+str(self.request.body))
         try:
             body = json.loads(self.request.body, encoding="utf-8")
-            pages = body.get("pages", [])
-            fish_place_id = body.get("place_id", [])
-            if not isinstance(pages, list) or not pages:
+            pages = body.get("page", [])
+            fish_place_id = body.get("place_id", "")
+            if not isinstance(pages, list) or not pages or not fish_place_id:
                 self.fire_response_bad_content("common_error", "keyword", "关键信息没填")
                 return
-            if not MongoClient.find_one({"fishing_id": fish_place_id}, "fishing_place"):
+            if not MongoClient.find_one({"_id": ObjectId(fish_place_id)}, "fishing_place"):
                 self.fire_response_bad_content("common_error", "keyword", "钓场不存在")
                 return
 
@@ -116,11 +110,7 @@ class FishingPlaceUpImgHandler(BaseHandler):
                 }
                 MongoClient.insert(update_val, "fishing_place_upimg")
 
-            response = {}
-            response["entities"] = []
-            self.write(json.dumps(response, indent=2, ensure_ascii=False, cls=MongoFieldEncoder))
-            self.finish()
-
+            self.fire_response_sys_info("上传成功,管理员会尽快处理")
         except Exception as e:
             log.info('FishingLocationHandler.get Exception:%s' % e.message)
             log.error(traceback.format_exc())

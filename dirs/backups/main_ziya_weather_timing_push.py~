@@ -88,6 +88,7 @@ def main():
         "last_login": {"$gte": begin_date},
         "user_type": {"$in": ["1", "3"]},
         # "username":{"$in": ["a85e8050a1d411e7847400163e0044d9", "cffe09e44f6911e8934800163e0044d9", "5b387ab003a511e7b91800163e0044d9", "f5857d9c226011e69e5f00163e0044d9", "44d4ca20f12b11e7a59200163e0044d9", "b56c7e308fac11e7b1ba00163e0044d9", "e825f5e433ed11e5838100163e0044d9", "74dd9f8a3e9011e5bfbe00163e0044d9"]}
+        "username":{"$in": ["3ba1d7f21f5a11e7b4df000c29160262"] }
         # "gps_info": {"$ne": ""}
     }
 
@@ -105,7 +106,7 @@ def main():
     now_hour = now.hour
     log.info("now_hour:" + str(now_hour))
 
-    # now_hour = 22
+    now_hour = 22
     if now_hour == 22:
         startdate = totimestamp(now)
         day_index = "今天"
@@ -120,9 +121,9 @@ def main():
     # 只有这两个时间点推送
     if now_hour not in [22, 12]:
         return
-    
+
     user_cursor = MongoClient.find_all(lookup, "users", filter=filter)
-    
+
     userinfo_arrary = []
     for user in user_cursor:
         # 过滤推送条件 和 创建消息列表
@@ -162,7 +163,6 @@ def main():
         # all_lst = [[1-100],[100-200]]
         all_lst = [username_list[i: i+100] for i in range(0, total_length, 100)]
         for user_lst in all_lst:
-            print(user_lst)
             message["to_username"] = user_lst
             # 生成监控信息
             message_monitor_entity = {

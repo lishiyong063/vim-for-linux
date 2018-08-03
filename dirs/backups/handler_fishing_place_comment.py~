@@ -50,12 +50,12 @@ class FishingPlaceComment(BaseHandler):
     @gen.coroutine
     @asynchronous
     @access_log
-    @requires_auth
+    # @requires_auth
     def get(self):
         self.set_header("Access-Control-Allow-Origin", "*")
         log.info('FishingPlaceComment.get is called'+str(self.request.arguments))
         # 钓场id
-        place_id = self.get_argument("fishing_id")
+        place_id = self.get_argument("id")
         request_cursor = self.get_argument("cursor", "")
         where = {
             "fishing_id": place_id,
@@ -74,13 +74,13 @@ class FishingPlaceComment(BaseHandler):
                     "nickname": user["nick"],
                     "avator": user["avatar_url"],
                 }
-                dic = {"userinfo": userinfo, 'comment_content': comment['content'], 
-                       'pages': comment.get("pages", ""), 
-                       'stars': comment.get("stars", "0"), 
+                dic = {"userinfo": userinfo, 'comment_content': comment['content'],
+                       'pages': comment.get("pages", ""),
+                       'stars': comment.get("stars", "0"),
                        "created": comment["created"]}
 
                 response.append(dic)
-            self.write(json.dumps({"entities": response, "cursor": cursor}, 
+            self.write(json.dumps({"entities": response, "cursor": cursor},
                                    indent=2, ensure_ascii=False, cls=MongoFieldEncoder))
             self.finish()
         except Exception as e:
@@ -96,9 +96,9 @@ class FishingPlaceComment(BaseHandler):
         log.info("FishingPlaceComment.post:"+str(self.request.body))
         try:
             body = json.loads(self.request.body, encoding="utf-8")
-            fish_place_id = body.get("fishing_id", "")
+            fish_place_id = body.get("id", "")
             comment = body.get("comment", '')
-            pages = body.get("pages", [])
+            pages = body.get("page", [])
             # 默认为5个小星星
             stars = body.get("stars", "5")
             if len(pages) > 9:
@@ -109,7 +109,7 @@ class FishingPlaceComment(BaseHandler):
                 self.fire_response_bad_content("common_error", "keyword", "关键字不能为空")
                 return
 
-            if not MongoClient.find_one({"fishing_id": fish_place_id}, "fishing_place"):
+            if not MongoClient.find_one({"_id": ObjectId(fish_place_id)}, "fishing_place"):
                 self.fire_response_bad_content("common_error", "keyword", "钓场不存在")
                 return
 
@@ -126,10 +126,7 @@ class FishingPlaceComment(BaseHandler):
             }
             MongoClient.insert(update_val, "fishing_place_comment")
 
-            response = {}
-            response["entities"] = []
-            self.write(json.dumps(response, indent=2, ensure_ascii=False, cls=MongoFieldEncoder))
-            self.finish()
+            self.fire_response_sys_info("上传钓场成功,管理员会尽快处理")
 
         except Exception as e:
             log.info('FishingPlaceComment.get Exception:%s' % e.message)

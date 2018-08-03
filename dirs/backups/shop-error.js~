@@ -60,10 +60,10 @@ function fill_errors_list(entities){
     var template='<tr class="text-c">'
         +'<td><img class="picture-thumb" src="{avatar_url}" width="30"></td>'
         +'<td><u style="cursor:pointer" class="text-primary" title="查看用户资料" onclick="layer_show(\'1000\',\'\',\'\',\'user-show.html?username={username}\')">{nick}</u></td>'
-        +'<td><a href="javascript:;" title="渔具店修改"  onclick="layer_show(\'900\',\'700\',\'渔具店修改\',\'fishing-shop-modify.html?id={id}&r='+ (new Date()).getTime() + '\')">{shop_name}</a>&nbsp;&nbsp;</td>'
+        +'<td><a class="ml-5" title="编辑"><i class="icon-edit" onclick="layer_show(\'1000\',\'600\',\'修改\',\'fishing-location-modify.html?place_id={id}\')">{shop_name}</i></a>&nbsp;&nbsp;</td>'
         +'<td>{content}</td>'
         +'<td>{created}</td>'
-        +'<td>{picture}</td>'
+        +'<td><img width="70px" src="{img_url}" ></td>'
         +'<td>{is_reply}</td>'
         +'</tr>'
 
@@ -89,7 +89,8 @@ function fill_errors_list(entities){
             if (error.actor && error.actor.username){
                 username=error.actor.username
                 var nick=error.actor.nick
-                var errorr_avatar_url=error.actor.errorr_avatar_url
+                var errorr_avatar_url=error.actor.advicer_avatar_url
+                var img_url=
                 var errorr_nick="昵称："+nick
                 var question_content=error.content
                 var error_created=new Date(error.created).pattern("yyyy-MM-dd HH:mm:ss")
@@ -140,12 +141,17 @@ function fill_errors_list(entities){
                         .replace("{nick}",errorr_nick)
                         .replace("{content}",error_content)
                         .replace("{created}",error_created)
-                        .replace("{picture}",image_display)
                         .replaceAll("{username}",username)
                         .replace("{error_id}",error._id)
                         .replace("{shop_name}",error.name)
                         .replace("{id}",error.id)
                         .replace("{is_reply}",is_reply);
+                        .replace("{img_url}",);
+                 
+              if (error.img.length > 0){
+                html_text=html_text.replace(error.img[0].image_url)
+              }
+
             }
 
         }

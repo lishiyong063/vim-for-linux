@@ -37,15 +37,11 @@ from services.service_fishing_shop import *
 from services.service_geocoder import *
 from services.city_location import *
 from services.service_fishing_place import get_image_info, get_gps_info
-
-
-
 log = get_logger()
 
 location_dic = get_city_location()
 
 class FishingShopHandler(BaseHandler):
-
     def __init__(self, application, request, **kwargs):
         super(FishingShopHandler, self).__init__(application, request, **kwargs)
         # 默认钓场营业时间
@@ -99,7 +95,7 @@ class FishingShopHandler(BaseHandler):
                 self.fire_response_bad_content("error", "data error!", "数据有误")
                 return
 
-            # 0待审核 1审核通过 2已下架 
+            # 0待审核 1审核通过 2已下架
             body_dic["status"] = 0
             body_dic["username"] = self.username
             # 子牙发布标示 1 后台管理员 2 用户发布
@@ -133,14 +129,12 @@ class FishingShopHandler(BaseHandler):
             lat = gps_info["location"].get("lat")
             gps_info["location"] = {"type": "Point", "coordinates": [lon, lat]}
             body_dic["gps_info"] = gps_info
-            body_dic["contact_tel"] = body_dic["contact_tel"].replace("，", ",").split(",")
+            body_dic["contact_tel"] = body_dic["tel"].replace("，", ",").split(",")
 
             body_dic.pop("address", "")
             # 经纬度 出错不能入库
             MongoClient.insert(body_dic, "fishing_store")
-            self.set_status(200)
-            self.write({})
-            self.finish()
+            self.fire_response_sys_info("上传钓场成功,管理员会尽快处理")
         except Exception as e:
             log.info('FishingShopHandler.post Exception:%s' % e.message)
             log.error(traceback.format_exc())
@@ -354,29 +348,6 @@ class FishingShopHandler(BaseHandler):
 
             if shop_cursor:
                 response_dic["cursor"] = shop_cursor
-
-            # 渔具店评论 默认显示两条
-            shop_comment_list = []
-            try:
-                comments_list, cursor = getShopCommentList(where, limit=2)
-                for comment in comments_list:
-                    user = MongoClient.find_one({"username": comment["username"]}, 'users')
-                    userinfo = {
-                        "username": user["username"],
-                        "nickname": user["nick"],
-                        "avator": user["avatar_url"],
-                    }
-                    dic = {"userinfo": userinfo, 'comment_content': comment['content'], 
-                           'pages': comment.get("pages", ""), 
-                           'stars': comment.get("stars", ""), 
-                           "created": comment["created"]}
-
-                    shop_comment_list.append(dic)
-            except Exception as e:
-                log.error(traceback.format_exc())
-
-            # 身份标识
-            response_dic["comment_list"] = shop_comment_list
             response_dic["role"] = self.roles
             response = json.dumps(response_dic,
                                   indent=2,
@@ -427,6 +398,14 @@ class FishingShopHandler(BaseHandler):
             # 获附近的渔具店
             coordinates = store_tmp["gps_info"]["location"]["coordinates"]
 
+            # 钓场传图 默认30张
+            limit = 30
+            sort = [("created", -1)]
+            img_cursor = MongoClient.find_all_sorted_limited({"fishing_id": shop_id,
+                            "status": 1}, "fishing_shop_upimg", sort, limit, filter={"_id": 0})
+            for img in img_cursor:
+                store_tmp["pages"].append(img)
+
             lon = float(coordinates[0])
             lat = float(coordinates[1])
             coordinates = [lon, lat]
@@ -450,6 +429,36 @@ class FishingShopHandler(BaseHandler):
                                                                     username=self.username,min=min,
                                                                    maxDistance=int(distance) * 1000, limit=limit,
                                                                    timestamp=timestamp)
+
+            # 渔具店评论 默认显示两条
+            shop_comment_list = []
+            try:
+                comments_list, cursor = getShopCommentList(where)
+                for comment in comments_list[:2]:
+                    user = MongoClient.find_one({"username": comment["username"]}, 'users')
+                    userinfo = {
+                        "username": user["username"],
+                        "nickname": user["nick"],
+                        "avator": user["avatar_url"],
+                    }
+                    dic = {"userinfo": userinfo, 'comment_content': comment['content'],
+                           'pages': comment.get("pages", ""),
+                           'stars': comment.get("stars", ""),
+                           "created": comment["created"]}
+
+                    shop_comment_list.append(dic)
+            except Exception as e:
+                log.error(traceback.format_exc())
+            response_dic["comment_list"] = shop_comment_list
+            response_dic["comment_count"] = len(shop_comment_list)
+            # 是否收藏
+            where = {
+                'shop_id': shop_id,
+                'username': unicode(self.username)
+            }
+
+            collect_shop = MongoClient.find_one(where, "user_collect_shop")
+            store_tmp["is_collect"] = bool(collect_shop)
 
             entities=[]
             entities.append(store_tmp)
@@ -477,16 +486,6 @@ class FishingShopHandler(BaseHandler):
                                   cls=MongoFieldEncoder)
             self.write(response)
             self.finish()
-
-            # 是否收藏
-            where = {
-                'shop_id': shop_id,
-                'username': unicode(self.username)
-            }
-
-            collect_shop = MongoClient.find_one(where, "user_collect_shop")
-            response["is_collect"] = bool(collect_shop)
-
 
             # 添加浏览次数和电话次数
             display_count_inc = 1

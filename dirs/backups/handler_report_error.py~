@@ -59,7 +59,7 @@ class ReportErrorHandler(BaseHandler):
             # types:place 钓场  shop 渔具店
             types = body.get("type", "shop")
             pages = body.get("page", [])
-            
+
             updata_val = {
                 # 0-未处理 1-已处理
                 "status": "0",
@@ -73,7 +73,8 @@ class ReportErrorHandler(BaseHandler):
             if classes == "1":
                 # 与老板的合照
                 updata_val["pages"] = pages
-                updata_val["wechat_number"] = pages
+                updata_val["wechat_number"] = body.get("wechat_number")
+                updata_val["contact_name"] = body.get("contact_name")
 
             elif classes == "2":
                 # 关闭原因
@@ -90,31 +91,29 @@ class ReportErrorHandler(BaseHandler):
                 if types == "place":
                     dic["place_type"] = body.get("place_type")
 
-                updata_val["wechat_number"] = pages
+                updata_val["wechat_number"] = body.get("wechat_number")
+                updata_val["contact_name"] = body.get("contact_name")
                 updata_val[types] = dic
 
             elif classes == "5":
                 updata_val["error_desc"] = body.get("error_desc")
+                updata_val["contact_name"] = body.get("contact_name")
+                updata_val["wechat_number"] = body.get("wechat_number")
 
             elif classes == "6":
                 updata_val["error_desc"] = body.get("error_desc")
+                updata_val["contact_name"] = body.get("contact_name")
+                updata_val["wechat_number"] = body.get("wechat_number")
 
             updata_val["classes"] = classes
-            MongoClient.insert(updata_val, "fishing_report_error")
+            c = MongoClient.insert(updata_val, "fishing_report_error")
+            log.info(c)
 
         except Exception as e:
             log.info('ReportErrorHandler.psot Exception:%s' % e.message)
             self.fire_response_bad_request(key_required=e.message)
             return
- 
-        response = json.dumps({"info": "上传成功,管理员会尽快处理"},
-                              indent=2,
-                              ensure_ascii=False,
-                              cls=MongoFieldEncoder)
-
-        self.write(response)
-        self.finish()
-
+        self.fire_response_sys_info("上传成功,管理员会尽快处理")
 
     def get_error_info(self, body, types):
 
@@ -126,9 +125,10 @@ class ReportErrorHandler(BaseHandler):
         unit = body.get("unit", "")
         name = body.get("name", "")
         role = body.get("role", "")
-        lon, lat = body.get("lon", ""), body.get("lat", "")
+        gps_info = body.get("gps_info", "")
+        #lon, lat = body.get("lon", ""), body.get("lat", "")
 
-        gps_info = get_gps_info(lon, lat)
+        #gps_info = get_gps_info(lon, lat)
 
         contact_tel = body["tel"].replace("，", ",").split(",")
 

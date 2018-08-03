@@ -1,0 +1,458 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# @Date    : 2016-07-02 15:35:12
+# @Author  : Your Name (you@example.org)
+# @Link    : http://example.org
+# @Version : $Id$
+
+import tornado.web
+from tornado.web import asynchronous
+from tornado.options import options
+import uuid
+import json
+import datetime
+import hashlib
+from utils.secret import *
+import random
+import time
+from handler_base import BaseHandler
+from mongo_field_encoder import MongoFieldEncoder
+from log import get_logger
+from tornado import gen
+import optionsSetting
+import traceback
+import datetime
+from utils.mongo_client import MongoClient
+from tornado.httpclient import HTTPRequest
+from paramAuth import param_auth
+from utils.redis_client import RedisClient
+from services.service_activity import *
+from bson import ObjectId
+import math
+import hashlib
+from utils.redis_weibo_client import RedisWeiboClient
+try:
+    from tornado.curl_httpclient import CurlAsyncHTTPClient as AsyncHTTPClient
+except ImportError:
+    from tornado.simple_httpclient import SimpleAsyncHTTPClient as AsyncHTTPClient
+log = get_logger()
+
+class ActivityJoinHandler(BaseHandler):
+    """
+    活动
+    """
+    def __init__(self, application, request, **kwargs):
+        super(ActivityJoinHandler, self).__init__(application, request, **kwargs)
+
+    @asynchronous
+    def get(self,id):
+        log.info("ActivityJoinHandler.get")
+
+        '''
+        "even_type":"1",//"1":自定义团期，"2":每天发团
+        自定义团期返回全部数据
+        每日发团只返回报名的数据，与开始日期
+        :return:
+        '''
+        try:
+            page_code = str(random.randint(10000000,99999999))
+            id = id[1:]
+            response,activity = getActivityDate(id)
+            origin = self.get_argument("origin","")
+            if activity:
+                if origin=="b":
+                    self.clear_cookie("token", domain=self.primary_domain)
+                    print "******"+self.primary_domain
+                    reward_coupon = int(activity["reward_coupon"])
+                    if reward_coupon!=0:
+                        response["reward_coupon"]=reward_coupon
+
+                elif self.token:#在浏览器内并且有token
+                    ticket = int(activity["ticket"])
+                    ticket_info=getBestTicket(ticket,self.username)
+                    if ticket_info:
+                        value = int(ticket_info.get("value",0))
+                        if value!=0:
+                            response["ticket"]=value
+
+                    coupon_info = getCoupon(id, self.username)
+                    if coupon_info:
+                        coupon_value = int(coupon_info.get("value",0))
+                        if coupon_value!=0:
+                            response["reward_coupon"]=coupon_value
+
+            payment = activity["payment"]
+            response["payment"] = payment
+            response["page_code"] = page_code
+            response["token"]=self.token
+            self.write(json.dumps(response, indent=2, ensure_ascii=False, cls=MongoFieldEncoder))
+            self.finish()
+
+        except Exception as e:
+            log.error("ActivityStockHandler exception:"+e.message)
+            log.error(traceback.format_exc())
+            self.fire_response_sys_error()
+            return
+
+
+    @gen.coroutine
+    @asynchronous
+    def post(self,id):
+        log.info("ActivityJoinHandler.post"+str(self.request.body))
+        '''
+        活动报名
+        {   "id":"",
+            "code":"",
+            "name":"",
+            "mobile":"",
+            "join_people_count":2
+        }
+        '''
+        try:
+            body_dic = json.loads(self.request.body,encoding="utf-8")
+            page_code = body_dic.get("page_code","")
+
+            register_code = body_dic["code"]
+            mobile = body_dic["mobile"]
+            sms_key="register_code:"+mobile
+            register_code_correct=RedisClient.get(sms_key)
+            if register_code_correct is None or register_code!=register_code_correct:
+                  history_register_code=RedisClient.hget("history_register_code_mobile:"+mobile,register_code)
+                  if history_register_code is None:
+                     error = "common_error"
+                     des = "activity mobile code error"
+                     content = "短信验证码错误，请重新填写"
+                     self.fire_response_bad_content(error,des,content)
+                     return
+            del body_dic["code"]
+
+            id = body_dic["id"]
+            join_people_count = int(body_dic["join_people_count"])
+            check,activity,item = check_join_activity(id,join_people_count)
+            if check=="1":
+                 error = "common_error"
+                 des = "out of limit"
+                 content = "活动已满员，请选择其他活动"
+                 self.fire_response_bad_content(error,des,content)
+                 return
+            elif check=="4":
+                error = "common_error"
+                des = "out of limit"
+                content = "超出可预定人数，请减少人数后重试"
+                self.fire_response_bad_content(error,des,content)
+                return
+            elif check=="2" or check=="3" :
+               error = "activity_invalid"
+               des = "activity is invalid"
+               self.fire_response_bad(error,des)
+               return
+
+            if page_code:
+                value=RedisClient.get(page_code)
+                if value==None:
+                    RedisClient.setex(page_code,3600,"")
+                else:
+                   error = "common_error"
+                   des = "repeat order error"
+                   content = "请勿重复下单"
+                   self.fire_response_bad_content(error,des,content)
+                   return
+
+
+            activity_id = item["activity_id"]
+            user = self.me #默认user
+            origin = body_dic.get("origin","")
+            source = body_dic.get("utm_source","")
+            rm = body_dic.get("rm", "")
+
+            if origin!="b" and user is None:
+                error = "unauthorized"
+                des = "Subject does not have permission"
+                self.fire_response_bad(error, des, status=401)
+                return
+
+            elif origin=="b" and rm:
+                where = {"mobile":mobile}
+                user = MongoClient.find_one(where,"users")
+                if not user:
+                    recommend_user={
+                        "mobile":mobile,
+                        "username":unicode(''.join(str(uuid.uuid1()).split('-'))),
+                        "created":datetime.datetime.utcnow(),
+                        "status":0,
+                        "source":source,
+                        "type":3,
+                        "is_maturity":0,
+                        "input_ip":self.accessIP()
+                    }
+                    rm = body_dic.get("rm","")
+                    if rm:
+                        recommend_user["recommend_username"]=rm
+                    MongoClient.insert(recommend_user,"recommend_user")
+                    password = str(random.randint(100000,999999))
+                    user = yield self.register(mobile,register_code,password)
+                    now = datetime.datetime.utcnow()
+                    ziya_order_future_task ={
+		                "type":11,
+                        "object_id":user["username"]	,	#针对type值不同，目标id的意义是不同的：活动id  或 订单id 或 activities_item_id  或 usename
+                        "act_time":now, #执行时间
+                        "is_complete":0,		#执行状态：0，未执行，，1，执行完成
+                        "addition":{"password":password},
+                        "created":now
+	                }
+                    MongoClient.insert(ziya_order_future_task,"ziya_order_future_task")
+                #origin=="b"代表非app内进入
+
+                where = {"username":user["username"]}
+                accounts = MongoClient.find_one(where,"accounts")
+                if accounts:
+                    self._token = accounts["token"]
+                    self.set_token_cookie(self._token)
+                #减免
+                reward_coupon = int(activity["reward_coupon"])
+                if reward_coupon>0:
+                    self.send_coupon(user["username"],rm,reward_coupon,activity_id)
+
+            ticket = activity["ticket"]
+            name = body_dic["name"]
+            title = activity["title"]
+            actor = activity["actor"]
+            activity_username = actor["username"]
+            isblock = activity.get("isblock",0)
+            reward_single = activity.get("reward_money",0)
+            if isblock==1:
+                join_people_count = int(item["people_count"])
+            activity_code = activity["activity_code"]
+            payment = activity.get("payment","1")
+            # order_code = str(int(time.time()*1000))+user["invite_code"]
+            # order_code 生成
+            order_code = self.order_code_define(activity,item["begin_date"])
+            #判断第一次支付需要支付多少钱,如果定金计算尾款需要多少钱
+            price = int(item["price"])
+            original_price = int(item["original_price"])
+            first_pay = 0 #第一次支付
+            rest_pay = 0 #尾款
+
+            # 需要查询是否有券
+            # ticket_where={
+            #     "username":user["username"],
+            #     "value":ticket,
+            #     "status":1,
+            #     "type":1
+            # }
+            # fish_ticket = MongoClient.find_one(ticket_where,"ziya_ticket")
+            # if fish_ticket==None:
+            #     real_ticket=0
+            # else:
+            #     real_ticket=ticket
+
+            if payment=="1":
+                if isblock:
+                    order_price = price
+                    order_original_price = original_price
+                    first_pay = order_price
+                else:
+                    order_price = int(price*join_people_count)
+                    order_original_price = int(original_price*join_people_count)
+                    first_pay = order_price
+            elif payment=="3":
+                deposit = activity["deposit"]
+                if isblock:
+                    order_price = price
+                    order_original_price = original_price
+                    first_pay = int(order_price*deposit)
+                    rest_pay = order_price - first_pay
+                else:
+                    order_price = price*join_people_count
+                    order_original_price = original_price*join_people_count
+                    first_pay = int(int(price*deposit)*join_people_count)
+                    rest_pay = order_price - first_pay
+
+            status=100
+            # if payment=="2":
+            #     status=0   #线下支付，默认为0，待确定
+
+            now=datetime.datetime.utcnow()
+            admin_area = activity.get("admin_area","11")
+            ziya_order = {
+                "actor":{
+                    "username":user["username"],
+                    "mobile":mobile,
+                    "name":name
+                },
+                "original_price":order_original_price,
+                "first_pay":first_pay,
+                "rest_pay":rest_pay,
+                "biz_username":activity["actor"]["username"],
+                "type":1,#1:活动订单
+                "activity_id":activity_id,
+                "sub_activity_id":item["sub_activity_id"],
+                "activities_item_id":str(item["_id"]),
+                "price":order_price,
+                "status":status,
+                "created":now,
+                "begin_date":item["begin_date"],
+                "end_date":item["end_date"],
+                "day_count":int(item["day_count"]),
+                "buyer_cancel_refund":activity.get("buyer_cancel_refund",1),
+                "join_people_count":join_people_count,
+                "product_detail":{"title":title,"isblock":isblock,"actor":actor,"ticket":ticket},
+                "payment":payment,
+                "activity_code":activity_code,
+                "order_code":order_code,
+                "pay_status":0,
+                "reward":int(reward_single*join_people_count),
+                "status_modified":now,
+                "pay_end_date":item["pay_end_date"],
+                "admin_area":admin_area
+            }
+            order_type = body_dic.get("order_type","")
+            if order_type:
+                ziya_order["order_type"] = order_type
+
+            # 记录合作价
+            cooperation_price = item.get("cooperation_price",0)
+            if cooperation_price:
+                ziya_order["cooperation_price"] = cooperation_price
+
+            # 记录推荐人
+            if origin == "b":
+                ziya_order["recommend"] = "1"
+
+            if origin == "b" and rm:
+                ziya_order["recommend_username"] = rm
+            # if fish_ticket!=None:
+            #     pay_channel = []
+            #     ticket_channel = {
+				# 	"channel" : 3,
+				# 	"money": ticket,
+				# 	"ticket_id": str(fish_ticket["_id"])
+				# }
+            #     pay_channel.append(ticket_channel)
+            #     ziya_order["pay_channel"]=pay_channel
+            id,error = MongoClient.insert(ziya_order,"ziya_order")
+
+            if error:
+                ziya_order={"_id":""}
+                log.info("************order insert error,activity_id=%s***********"%(str(activity_id)))
+                response = json.dumps(ziya_order, indent=2, ensure_ascii=False, cls=MongoFieldEncoder)
+                self.write(response)
+                self.finish()
+                return
+            else:
+                ziya_order["_id"]=str(id)
+        
+            response = json.dumps(ziya_order, indent=2, ensure_ascii=False, cls=MongoFieldEncoder)
+            self.write(response)
+            self.finish()
+            message = {
+                "act":"new_order",
+                "object_id":str(id)
+            }
+            queue_name = options.activity_order_queue
+            # result = RedisClient.rpush(queue_name,json.dumps(message))
+
+            # 换队列
+            result = RedisWeiboClient.rpush(queue_name,json.dumps(message))
+            log.info("insert end")
+
+            # 添加用户行为
+            log.info("********活动下单添加用户行为，id是%s*******" % (activity_id))
+            data = {}
+            data["act"] = "activity_order"
+            data["objectid"] = activity_id
+            data["username"] = self.username
+            url = options.ziyafish_api + "/user_act"
+            response = self.request_post_json(url, data)
+            result = yield response
+            log.info("******活动下单添加用户行为，id是%s，返回状态%s，结果是%s*******" % (activity_id, str(result.code), str(result.body)))
+
+
+
+
+
+
+            # insert_ziya_order_execute_history(id,status,0,user["username"],1)
+            #
+            # if status==0:
+            #     insert_ziya_order_future_task(6,str(id),now)
+            #
+            # if payment=="1" or payment=="3":
+            #     #####下单后5分钟未支付提醒
+            #     pay_remind_date=now+datetime.timedelta(seconds=60*5)
+            #     insert_ziya_order_future_task(2,str(id),pay_remind_date)
+            #
+            #
+            #     ####下单后25分钟未支付取消订单
+            #     pay_time_out_date=now+datetime.timedelta(seconds=60*25)
+            #     insert_ziya_order_future_task(4,str(id),pay_time_out_date)
+
+
+        except Exception as e:
+            log.error("ActivityStockHandler exception:"+e.message)
+            log.error(traceback.format_exc())
+            self.fire_response_sys_error()
+            return
+
+
+    @gen.coroutine
+    def register(self,mobile,register_code,password):
+        password_md5 = hashlib.md5(password).hexdigest()
+        body={
+         "mobile": mobile,
+         "password":password_md5,
+         "avatar_url": "http://7xjbxi.com1.z0.glb.clouddn.com/default.jpg",
+         "register_code": register_code
+        }
+        headers = {}
+        url = options.ziyafish_api+"/register"
+        request = HTTPRequest(url=url,method="POST",headers=headers,body=json.dumps(body, ensure_ascii=False),follow_redirects=False,request_timeout=3000)
+        response=yield gen.Task(AsyncHTTPClient().fetch,request)
+        code=response.code
+        user = None
+        if code==200:
+            result_dic=json.loads(response.body, encoding='utf-8')
+            user=result_dic.get("entities")[0]
+        raise gen.Return(user)
+
+
+    def order_code_define(self,activity,begin_date):
+        # 订单编号=活动编号（61058）+出发日期（170318）+三位编码（001）
+        activity_code = activity["activity_code"]
+        # utc 时间转换为本地时间
+        begin_date = begin_date + datetime.timedelta(hours=8)
+        begin_date = begin_date.strftime("%y%m%d")
+        key = str(activity_code)+str(begin_date)
+        ##redis有效期
+        expire_second = 60 * 60 * 24 * 365*50
+        index = RedisClient.incr(key,expire_second)
+        # index = RedisClient.get(key)
+        index_str = str(index).zfill(3)
+        order_code_str = key+str(index_str)
+        log.info("rder_code_str"+str(order_code_str))
+        return order_code_str
+
+
+    def send_coupon(self,username,recommend_username,value,activity_id):
+        created = datetime.datetime.utcnow()
+        ziya_ticket = {
+            "username" : username,
+            "source":recommend_username,
+            "created" : created,
+            "type":1,		#类型:   1,活动减免
+            "status" : 0,   #0:未使用  1:已使用
+            "value":int(value),
+            "activity_id":activity_id
+            }
+        MongoClient.insert(ziya_ticket,"ziya_order_coupon")
+
+    def accessIP(self):
+        ip=""
+        if self.request.remote_ip:
+            ip=str(self.request.remote_ip)
+        return ip
+
+
+
+
+

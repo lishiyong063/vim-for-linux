@@ -5,27 +5,71 @@ import json
 import time
 from lxml import etree
 from multiprocessing import Pool
-from selenium import webdriver
-from selenium.webdriver import DesiredCapabilities
 from mongo_client import MongoClient
 from mongo_client import mongo
-from selenium.webdriver.common.action_chains import ActionChains
+import datetime
+import uuid
+from binascii import b2a_base64
 
 
 def get_json(url):
+    token_pool = [
+            'Token token="6sK38KFc2GoG8n1hCh-wj3TN3JmdnFbtRJ3VRJuWTOH2imukhEaTXfuq0s13"',
+            'Token token="BE5TAExeBFgiNLG6Z-fCntYH0QW-w06Z_mVb6HL_USXqFPuPINdWzpB9AFvh"',
+            # 'Token token="EfA_jC7GQNnxYgmzT5ATEfdvL6CgF9g8n_7PtX9uORv6J6hGTm2jDiyGBRCu"',
+            'Token token="eGDaUf0YfwrW5CqkKtzNshxbgPa3snJqS3pEGWscNgLytcW6kkvHRgM-ziWX"',
+            'Token token="wdWVL9otOkHjGtC7uWp6ECQZnLanjiJIRAaRbp_0DnkAqFtUiun474re_hzW"',
+            'Token token="HMC13NM3F4zZ--Cftx7r-cCLlblSOzuUWT4o5VNc4bqiAdwWADv1FwbMgrtz"',
+            'Token token="xh4YNCY6pQYWJ6aF4RcBzb8GvgsuL8HjY-j7LjyQywfafwsO5Ebej4co93le"',
+    ]
 
+    headers = {
+            'Accept': '*/*',
+            'Accept-Language': 'en-CN',
+            'Host': 'rutilus.fishbrain.com',
+            'If-None-Match': 'W/"8a530dba8a3e222bf2046d9f25fd338d"',
+            'Authorization': 'Token token="9ZLCd53-wBpt9lZ1e6LQKCU7PAtb6p992onudGgKXDRquOr0Z4lVRzuZh-b2"',
+            'User-Agent': 'Fishbrain/6.0 (iPhone; iOS 12.0; Scale/2.00)',
+            'Connection': 'keep-alive'}
+
+    second = datetime.datetime.now().second
+    token_length = len(token_pool)
+    avg_second = 60 // token_length
+    当前秒数除以 平均 秒数 = 第几个token
+    token_index = int(round(float(second) / float(avg_second)))
+    token_index = second // avg_second
+    # token_list = []
+    # headers['Authorization'] = b2a_base64(uuid.uuid1().hex).strip()
+    headers['Authorization'] = token_pool[token_index]
+
+    for token in token_pool:
+        respone = requests.get(url, timeout=10, headers=headers)
+        print url, respone.status_code, headers["Authorization"]
+        if respone.status_code == 200:
+            content = json.loads(respone.content)
+            return content
+        elif respone.status_code == 404:
+            mongo.upsert({"url": url}, {"content": {}, "url": url}, "response")
+            return
+        else:
+            headers['Authorization'] = token
+    return
+
+
+
+def get_json_back(url):
     headers = {
             'Accept': '*/*',
             'Accept-Language': 'en-US,en;q=0.8',
             'Accept-Language': 'en-CN',
             'Host': 'rutilus.fishbrain.com',
-            'If-None-Match': 'W/"8a530dba8a3e222bf2046d9f25fd338d"',
+            'If-None-Match': 'W/"8a530dba8age222bf2046d9f25fd338d"',
             'Authorization': 'Token token="6sK38KFc2GoG8n1hCh-wj3TN3JmdnFbtRJ3VRJuWTOH2imukhEaTXfuq0s13"',
             'User-Agent': 'Fishbrain/6.0 (iPhone; iOS 12.0; Scale/2.00)',
             'Connection': 'keep-alive'}
 
     respone = requests.get(url, timeout = 10,headers = headers)
-    print respone.status_code
+    print url,respone.status_code
     if respone.status_code == 200:
         content = json.loads(respone.content)
         return content
@@ -49,16 +93,16 @@ def get_img(image_info, index=None):
         return result
 
 def main(users_list):
+    print '------------------'+str(len(users_list))
     for users in users_list:
+        all_content = []
+        all_user_recard = []
         _url = "https://rutilus.fishbrain.com/catches?page=1&per_page={caches}&q%5Bowner_id_eq%5D={uid}&q%5Bs%5D=created_at%20desc&verbosity=verbose"
         try:
             url = _url.format(uid=users.get("user_id"), caches=users.get("caches_count"))
         except:
             continue
-        print url
-
         content = get_json(url)
-
         if not content:
             continue
         yuhuo_content = {}
@@ -95,10 +139,16 @@ def main(users_list):
                 yuhuo_content["is_location"] = 'true'
             else:
                 yuhuo_content["is_location"] = 'false'
+            print yuhuo_content
+            all_content.append(yuhuo_content)
+            all_user_recard.append({"user_id": users.get("user_id")})
 
-            a = mongo.insert(yuhuo_content, "catches")
-            print a
-            mongo.insert(user.get("user_id"), "recard")
+        try:
+            mongo.insert(all_user_recard, "recard")
+            a = mongo.insert(all_content, "catches")
+            print(a)
+        except:
+            continue
 
 from concurrent import futures
 def muilt_thread(args):
@@ -106,10 +156,10 @@ def muilt_thread(args):
     # executor.__exit__方法会调用executor.shutdown(wait=True)方法，
     # 它会在所有线程都执行完毕前阻塞线程
 
-    avg = len(args) // 40
-    args_list = (args[avg*i: avg+avg*i] for i in range(40))
+    avg = len(args) // 60
+    args_list = (args[avg*i: avg+avg*i] for i in range(60))
 
-    with futures.ThreadPoolExecutor(40) as executor:  # <5>
+    with futures.ThreadPoolExecutor(60) as executor:  # <5>
         # map 与内置map方法类似，不过download_one 函数会在多个线程中并发调用；
         # map 方法返回一个生成器，因此可以迭代，
         # 迭代器的__next__方法调用各个Future 的 result 方法

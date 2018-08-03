@@ -1,100 +1,100 @@
-def unpad(s):,v
-    let g:pymode_quickfix_minheight = 3,V
-1,v
-    let g:pymode_options_colorcolumn = 1,V
-    let g:pymode_options_max_line_length = 79,V
-    let g:pymode = 1,V
-,V
-class,v
-import os.path,V
- ,v
-response_dic,v
-            # 是否收藏            where = {                'place_id': place_id,                'username': unicode(self.username)            }            collect_place = MongoClient.find_one(where, "user_collect_place")            response_dic["is_collect"] = bool(collect_place),v
-response,v
-            # 是否收藏            where = {                'shop_id': shop_id,                'username': unicode(self.username)            }            collect_shop = MongoClient.find_one(where, "user_collect_shop")            response["is_collect"] = bool(collect_shop),v
-            self.write(response)            self.finish(),V
-            if collect_shop:                self.fire_response_bad_content("common_error", "user has collected this shop", "已经收藏"),V
-        # where = {            # 'shop_id': shop_id,            # 'username': unicode(self.username)        # }        # collect_shop = MongoClient.find_one(where, "user_collect_shop")        # if collect_shop:            # self.fire_response_bad_content("common_error", "user has collected this shop", "已经收藏"),v
-        # username = self.username,V
+    print a_index, b_index,V
+a,v
+    print left,right,middle,V
+b_index,v
+            c.append(a.pop(a_index))            a_index -= 1,V
+    return c,V
+        a, b = b, a+b,V
+        print(a),V
+return n,v
+    print n,V
+    print i,V
+        a = b        a = a+b,V
+, b, a+b,v
+fib2(),v
+        a = ,V
+        b = a,V
+        a = a,V
         ,V
-self.get_banner_ad("new"),v
-banners,v
-            response_dic["banners"] = self.get_banner_ad("new"),V
-        where = {            'place_id': place_id,            'username': unicode(self.username)        }        collect_place = MongoClient.find_one(where, "user_collect_place"),v
-        collect_place = MongoClient.find_one(where, "user_collect_place"),V
-tail -f nohup.out,v
-work,v
-root,v
-127.0.0.53,v
-nameserver 127.0.0.53,V
-FishingPlaceUpImgHandler,v
-from handler_fishing_place_upimg import FishingPlaceUpImgHandler,V
-Place,v
-         (r"/place_img", FishingPlaceUpImgHandler),  ###上传钓场图片,V
+10,v
+    pass,V
+    return a,V
+,,v
+a[h:]+,v
++b[:],v
+        c = c+a[h:]+b[:],V
+,V
+append,v
+    if j == len(a):,V
+array[r],v
+				,4
+# def partition(lst, l, r):    # key_index = l - 1    # key = lst[r]    # for i in range(l+1, r):        # if lst[i] <= key:            # key_index += 1            # lst[key_index], lst[i] = lst[i], lst[key_index]    # lst[r], lst[key_index+1] = lst[key_index+1], lst[r]    # return key_index + 1# def quick_sort(lst, l, r):    # if l < r:        # index = partition(lst, l, r)        # quick_sort(lst, l, index-1)        # quick_sort(lst, index+1, r),v
+	array[i+1], array[r] = array[r], array[i+1],V
+key_index,v
+    print l,V
+lst[key_index], ,v
+    index = partition(lst, l, r),V
+    lst[key_index], lst[key_index+1] = key, lst[],V
+l,v
+ + 1,v
+quick_sort,v
+partition,v
+1,v
+-,v
++,v
+r,v
+        quick_sort(lst, l, r-1),V
+def quick_sort(lst, key_index):,V
+            if lst[],V
+    for i in range(len(lst)):        for  in lst:,V
+i,v
+        print(mid),V
+            low = mid + 1,V
+            hight = mid - 1,V
+        else:            return "nothing",V
+low,v
+            log.info(c),V
+        self.fire_response_sys_info("上传成功,管理员会尽快处理"),V
+errorr_avatar_url,v
+                var img_url=,V
+cwerrorr_avatar_url,v
+is_reply,v
+                        .replace("{is_reply}",is_reply);,V
 place,v
-                console.log(html_text),V
-[0].image_url,v
-                        .replace("{img_url}", error.img[0].image_url),V
-s,v
-get_user_follow,v
-service_user,v
-from services.service_user import get_user_follow,V
-class Prpcrypt():    """ 使用key 对数据进行加密    """    def __init__(self, key):        self.key = key        # 密码分组链接模式        self.mode = AES.MODE_ECB    # 加密函数，如果text不是16的倍数【加密文本text必须为16的倍数！】，那就补足为16的倍数    def encrypt(self, text):        # cryptor = AES.new(self.key, self.mode, self.key)        cryptor = AES.new(self.key, self.mode)        # 这里密钥key 长度必须为16（AES-128）、24（AES-192）、或32（AES-256）Bytes 长度.目前AES-128足够用        length = 16        count = len(text)        if(count % length != 0):            add = length - (count % length)        else:            add = 0        text = text + (' ' * add)        self.ciphertext = cryptor.encrypt(text)        # 因为AES加密时候得到的字符串不一定是ascii字符集的，输出到终端或者保存时候可能存在问题        # 所以这里统一把加密后的字符串转化为16进制字符串        return b2a_hex(self.ciphertext)    # 解密后，去掉补足的空格用strip() 去掉    def decrypt(self, text):        cryptor = AES.new(self.key, self.mode)        plain_text = cryptor.decrypt(a2b_hex(text))        if plain_text[-1] != ']':            return plain_text.rstrip(plain_text[-1])        else:            return plain_textaes = Prpcrypt("qwertyuikjhgfdsa"),v
-        else:,V
-    def ,V
-def unpad(s):    return s[0:-ord(s[-1])],v
-        length = 16,V
-def pad(s):    return s + (BS - len(s) % BS) * chr(BS - len(s) % BS),V
-BS = AES.block_size,V
-from Crypto.Cipher import AES,V
-ed,v
-   print(s),V
-#定义 padding 即 填充 为PKCS7,V
-ciphertext,v
-),v
-    # True    print decrypted == plaintext,V
-    #aes = pyaes.AESModeOfOperationECB(key),V
-    # is not necessary to create a new aes object for decryption.,V
-    # Since there is no state stored in this mode of operation, it,V
-    print b2a_hex(repr(ciphertext)),V
-    # 'L6\x95\x85\xe4\xd9\xf1\x8a\xfb\xe5\x94X\x80|\x19\xc3',V
-    plaintext = "TextMustBe16Byte",V
-    aes = ,V
-plaintext,v
-pyaes.AESModeOfOperationECB(key),v
-key,v
-        self.key = ,V
-key = "qwertyuikjhgfdsa",V
-"qwertyuikjhgfdsa",v
-from binascii import b2a_hex, a2b_hex,V
-# Created Time: 2018-06-12 14:32:32{ "count": 54,         "entities": [             { "content": "gg",               "verb": "advice",               "_id": "5b0b5d635f845e1f297d0211",               "actor":                     {"username": "2193f4fc580311e8b2e500163e0acf7f",                      "nick": "Enzo",                      "invite_code": "7985654",                      "advicer_avatar_url": "http://avatar.ziyadiaoyu.com/2193f4_1526363111146.jpg"},                      "created": 1527471459603 }            ]},v
-            'Authorization': 'Token token="6sK38KFc2GoG8n1hCh-wj3TN3JmdnFbtRJ3VRJuWTOH2imukhEaTXfuq0s13"',,V
-users,v
-    mongo_user = mongo.find_all({"user_id": {"$ne": ""}}, "users"),V
-            mongo.insert(user.get("user_id"), "recard"),V
-            ,V
-catches,v
-yuhuo_content,v
-            mongo.insert(yuhuo_content, "catches"),V
-2,v
-6,v
-{page},v
-        for i in range(1, 10000000):,V
-                break,V
-40,v
-100,v
-private_position,v
-                        "private_position": item["private_position"],,V
-description,v
-content,v
-                        "content": item["description"],,V
-   ,V
-0,v
-2018936,v
-    main(),V
-    muilt_thread(list(all_users)),V
-    all_users = set([i.get("user_id") for i in mongo_user]),V
-    mongo,V
-from concurrent import futures,V
-def muilt_thread(args):    # args 为 list    # executor.__exit__方法会调用executor.shutdown(wait=True)方法，    # 它会在所有线程都执行完毕前阻塞线程    avg = len(args) // 40    args_list = (args[avg*i: avg+avg*i] for i in range(40))    with futures.ThreadPoolExecutor(40) as executor:  # <5>        # map 与内置map方法类似，不过download_one 函数会在多个线程中并发调用；        # map 方法返回一个生成器，因此可以迭代，        # 迭代器的__next__方法调用各个Future 的 result 方法        res = executor.map(main, args_list)    print(len(list(res))),v
-from mongo_client import mongo,V
+                    log.info(error.get("fish_id","")),V
+shop,v
+place_id,v
+           # 钓场传图 默认30张            limit = 30            sort = [("created", -1)]            img_cursor = MongoClient.find_all_sorted_limited({"fishing_id": place_id,                            "status": 1}, "fishing_place_upimg", sort, limit, filter={"_id": 0})            for img in img_cursor:                place_tmp["pages"].append(img),v
+                ,V
+                img_url_array.append(img),V
+place_tmp["pages"],v
+            img_url_array = [],V
+            # ,V
+            place_tmp,V
+sort_key,v
+        sort = [(sort_key, -1)],V
+{"fishing_id": place_id, "status": 1},v
+        img_cursor = MongoClient.find_all_sorted_limited(where, "fishing_place_upimg", sort, limit + 1, filter={"_id": 0})        img_url_array = []        for img in img_cursor:            img_url_array.append(img),v
+        img_cursor = MongoClient.find_all_sorted_limited(where, "fishing_place_upimg", sort, limit + 1, filter={"_id": 0}),V
+        sound="",V
+            sound="",V
+        if not sound:            sound = 'push_d.aif',V
+,V
+=======,V
+<<<<<<< .mine,V
+                "username":{"$in":mes["to_username"]},V
+>>>>>>> .r12599,V
+        users_ary=[user],V
+o,v
+    return,V
+user["username"],v
+ ,v
+(,v
+ObjectId,v
+                },V
+                    "_id": ObjectId(),,V
+            # 身份标识,V
+            # 渔具店评论 默认显示两条            shop_comment_list = []            try:                where = {                    "status": 1,                    "_id": ObjectId(),                }                comments_list, cursor = getShopCommentList(where)                for comment in comments_list[:2]:                    user = MongoClient.find_one({"username": comment["username"]}, 'users')                    userinfo = {                        "username": user["username"],                        "nickname": user["nick"],                        "avator": user["avatar_url"],                    }                    dic = {"userinfo": userinfo, 'comment_content': comment['content'],                           'pages': comment.get("pages", ""),                           'stars': comment.get("stars", ""),                           "created": comment["created"]}                    shop_comment_list.append(dic)            except Exception as e:                log.error(traceback.format_exc())            # 身份标识            response_dic["comment_list"] = shop_comment_list            response_dic["comment_count"] = len(shop_comment_list),v
+                    "fishing_id": place_id,,V
+comment_list,v
+    print(image_url_tmp),V

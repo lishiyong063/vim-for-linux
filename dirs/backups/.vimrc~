@@ -408,6 +408,8 @@ let g:pymode_rope = 0
 let g:pymode_options_colorcolumn = 0
 let g:pymode_rope_goto_definition_bind = ',d'
 let g:pymode_rope_goto_definition_cmd = 'e'
+
+let g:pymode_quickfix_minheight = 3
 nmap ,D :tab split<CR>:PymodePython rope.goto()<CR>
 nmap ,o :RopeFindOccurrences<CR>
 
@@ -644,3 +646,14 @@ vmap <c-c> "+y
 nmap <s-v> "+gp
 " 退出vim 后终端界面停留在vim中的内容
 " set t_ti= t_te=
+"remember last update or view postion"
+ " Only do this part when compiled with support for autocommands 
+if has("autocmd")
+" In text files, always limit the width of text to 78 characters 
+autocmd BufRead *.txt set tw=78
+" When editing a file, always jump to the last cursor position 
+autocmd BufReadPost *
+\ if line("'\"") > 0 && line ("'\"") <= line("$") |
+\ exe "normal g'\"" |
+\ endif 
+endif
